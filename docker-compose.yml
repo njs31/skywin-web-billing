@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: skywin-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skywin
+      POSTGRES_PASSWORD: skywin
+      POSTGRES_DB: skywin_bill
+    ports:
+      - "5432:5432"
+    volumes:
+      - skywin_pg_data:/var/lib/postgresql/data
+
+volumes:
+  skywin_pg_data:
