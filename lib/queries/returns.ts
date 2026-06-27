@@ -5,6 +5,10 @@ import {
   products,
   stockMovements,
   sales,
+  purchaseReturns,
+  purchaseReturnItems,
+  purchases,
+  suppliers,
 } from "@/db/schema";
 import {
   calculateGstBreakdown,
@@ -147,6 +151,152 @@ export async function getSaleReturnById(id: number) {
     .from(saleReturnItems)
     .innerJoin(products, eq(saleReturnItems.productId, products.id))
     .where(eq(saleReturnItems.returnId, id));
+
+  return { ...ret, items };
+}
+
+const purchaseReturnItemSchema = z.object({
+  productId: z.number().optional().nullable(),
+  customName: z.string().optional(),
+  qty: z.number().positive(),
+  rate: z.number().nonnegative(),
+});
+
+const createPurchaseReturnSchema = z.object({
+  purchaseId: z.number().optional(),
+  supplierId: z.number(),
+  reason: z.string().optional(),
+  items: z.array(purchaseReturnItemSchema).min(1),
+});
+
+async function generateDebitReturnNo() {
+  const today = format(new Date(), "yyyyMMdd");
+  const prefix = `DEB-${today}-`;
+  const [last] = await db
+    .select({ returnNo: purchaseReturns.returnNo })
+    .from(purchaseReturns)
+    .where(sql`${purchaseReturns.returnNo} like ${prefix + "%"}`)
+    .orderBy(desc(purchaseReturns.returnNo))
+    .limit(1);
+  let seq = 1;
+  if (last?.returnNo) {
+    seq = parseInt(last.returnNo.split("-").pop() ?? "0", 10) + 1;
+  }
+  return `${prefix}${String(seq).padStart(4, "0")}`;
+}
+
+export async function createPurchaseReturn(input: z.infer<typeof createPurchaseReturnSchema>) {
+  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const data = createPurchaseReturnSchema.parse(input);
+
+  let subtotal = 0;
+  for (const item of data.items) {
+    subtotal += item.qty * item.rate;
+  }
+  const grandTotal = Math.round(subtotal * 100) / 100;
+  const returnNo = await generateDebitReturnNo();
+
+  const purchaseReturn = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(purchaseReturns)
+      .values({
+        returnNo,
+        purchaseId: data.purchaseId,
+        supplierId: data.supplierId,
+        subtotal: grandTotal.toFixed(2),
+        grandTotal: grandTotal.toFixed(2),
+        reason: data.reason,
+      })
+      .returning();
+
+    for (const item of data.items) {
+      const amount = item.qty * item.rate;
+      await tx.insert(purchaseReturnItems).values({
+        returnId: created.id,
+        productId: item.productId || null,
+        customName: item.customName || null,
+        qty: item.qty.toFixed(2),
+        rate: item.rate.toFixed(2),
+        amount: amount.toFixed(2),
+      });
+
+      if (item.productId) {
+        await tx
+          .update(products)
+          .set({
+            stockQty: sql`${products.stockQty}::numeric - ${item.qty}`,
+          })
+          .where(eq(products.id, item.productId));
+
+        await tx.insert(stockMovements).values({
+          productId: item.productId,
+          type: "return",
+          qtyDelta: (-item.qty).toFixed(2),
+          referenceId: created.id,
+          notes: `Debit Note: ${data.reason || "Supplier Return"}`,
+        });
+      }
+    }
+
+    return created;
+  });
+
+  revalidateTag("purchases", "max");
+  revalidateTag("products", "max");
+  revalidateTag("suppliers", "max");
+  revalidatePath("/returns");
+  revalidatePath("/products");
+  revalidatePath("/stock");
+
+  return purchaseReturn;
+}
+
+export async function getPurchaseReturns() {
+  return db
+    .select({
+      id: purchaseReturns.id,
+      returnNo: purchaseReturns.returnNo,
+      date: purchaseReturns.date,
+      grandTotal: purchaseReturns.grandTotal,
+      reason: purchaseReturns.reason,
+      purchaseInvoiceNo: purchases.invoiceNo,
+      supplierName: suppliers.name,
+    })
+    .from(purchaseReturns)
+    .leftJoin(purchases, eq(purchaseReturns.purchaseId, purchases.id))
+    .innerJoin(suppliers, eq(purchaseReturns.supplierId, suppliers.id))
+    .orderBy(desc(purchaseReturns.date))
+    .limit(100);
+}
+
+export async function getPurchaseReturnById(id: number) {
+  const [ret] = await db
+    .select({
+      id: purchaseReturns.id,
+      returnNo: purchaseReturns.returnNo,
+      date: purchaseReturns.date,
+      grandTotal: purchaseReturns.grandTotal,
+      reason: purchaseReturns.reason,
+      supplierName: suppliers.name,
+    })
+    .from(purchaseReturns)
+    .innerJoin(suppliers, eq(purchaseReturns.supplierId, suppliers.id))
+    .where(eq(purchaseReturns.id, id))
+    .limit(1);
+
+  if (!ret) return null;
+
+  const items = await db
+    .select({
+      productName: products.name,
+      customName: purchaseReturnItems.customName,
+      qty: purchaseReturnItems.qty,
+      rate: purchaseReturnItems.rate,
+      amount: purchaseReturnItems.amount,
+    })
+    .from(purchaseReturnItems)
+    .leftJoin(products, eq(purchaseReturnItems.productId, products.id))
+    .where(eq(purchaseReturnItems.returnId, id));
 
   return { ...ret, items };
 }

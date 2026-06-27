@@ -8,6 +8,7 @@ import {
 import { getSales } from "@/lib/queries/sales";
 import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TallyExportButton } from "@/components/reports/tally-export-button";
 import {
   Table,
   TableBody,
@@ -33,11 +34,16 @@ export default async function ReportsPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">Reports</h1>
-        <p className="text-sm text-slate-500">
-          Sale book, purchase book, product & party analysis — this month
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Reports</h1>
+          <p className="text-sm text-slate-500">
+            Sale book, purchase book, product & party analysis — this month
+          </p>
+        </div>
+        <div className="w-full md:w-96">
+          <TallyExportButton />
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">

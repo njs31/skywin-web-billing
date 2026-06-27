@@ -33,9 +33,14 @@ import { ProductScanBar } from "@/components/scanner/product-scan-bar";
 import { useRouter } from "next/navigation";
 
 type CartItem = {
-  product: Product;
+  id: string;
+  product?: Product | null;
+  name: string;
   qty: number;
-  discountPercent: number;
+  rate: number;
+  gstRate: number;
+  discountType: "percent" | "value";
+  discountValue: number;
 };
 
 type PosScreenProps = {
@@ -61,6 +66,15 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
 
+  // Custom Item Form State
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customName, setCustomNameField] = useState("");
+  const [customQty, setCustomQty] = useState("1");
+  const [customRate, setCustomRate] = useState("");
+  const [customGst, setCustomGst] = useState("18");
+  const [customDiscType, setCustomDiscType] = useState<"percent" | "value">("percent");
+  const [customDiscVal, setCustomDiscVal] = useState("0");
+
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (query.trim().length >= 1) {
@@ -72,30 +86,67 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const getRate = useCallback(
-    (product: Product) => getProductRate(product, billType),
-    [billType]
-  );
-
   const addToCart = useCallback(
     (product: Product, qty = 1) => {
       setCart((prev) => {
-        const existing = prev.find((c) => c.product.id === product.id);
+        const id = `p-${product.id}`;
+        const existing = prev.find((c) => c.id === id);
         if (existing) {
           return prev.map((c) =>
-            c.product.id === product.id
-              ? { ...c, qty: c.qty + qty }
-              : c
+            c.id === id ? { ...c, qty: c.qty + qty } : c
           );
         }
-        return [...prev, { product, qty, discountPercent: 0 }];
+        const rate = getProductRate(product, billType);
+        return [
+          ...prev,
+          {
+            id,
+            product,
+            name: product.name,
+            qty,
+            rate,
+            gstRate: toNumber(product.gstRate),
+            discountType: "percent",
+            discountValue: 0,
+          },
+        ];
       });
       setQuery("");
       setResults([]);
       searchRef.current?.focus();
     },
-    []
+    [billType]
   );
+
+  const addCustomItem = () => {
+    if (!customName.trim() || !customQty || !customRate) return;
+    const qty = parseFloat(customQty) || 0;
+    const rate = parseFloat(customRate) || 0;
+    const gstRate = parseFloat(customGst) || 0;
+    const discountValue = parseFloat(customDiscVal) || 0;
+    if (qty <= 0 || rate < 0) return;
+
+    setCart((prev) => [
+      ...prev,
+      {
+        id: `c-${Date.now()}`,
+        product: null,
+        name: customName.trim(),
+        qty,
+        rate,
+        gstRate,
+        discountType: customDiscType,
+        discountValue,
+      },
+    ]);
+
+    // Reset fields
+    setCustomNameField("");
+    setCustomQty("1");
+    setCustomRate("");
+    setCustomDiscVal("0");
+    setShowCustomForm(false);
+  };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && results.length > 0) {
@@ -103,42 +154,45 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
     }
   };
 
-  const updateQty = (productId: number, delta: number) => {
+  const updateQty = (id: string, delta: number) => {
     setCart((prev) =>
       prev
         .map((c) =>
-          c.product.id === productId
-            ? { ...c, qty: Math.max(0, c.qty + delta) }
-            : c
+          c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c
         )
         .filter((c) => c.qty > 0)
     );
   };
 
-  const updateLineDiscount = (productId: number, discountPercent: number) => {
+  const updateLineDiscount = (id: string, discountValue: number, discountType: "percent" | "value") => {
     setCart((prev) =>
       prev.map((c) =>
-        c.product.id === productId ? { ...c, discountPercent } : c
+        c.id === id ? { ...c, discountValue, discountType } : c
       )
     );
   };
 
-  const removeItem = (productId: number) => {
-    setCart((prev) => prev.filter((c) => c.product.id !== productId));
+  const removeItem = (id: string) => {
+    setCart((prev) => prev.filter((c) => c.id !== id));
   };
 
   const gst = calculateGstBreakdown(
     cart.map((c) => ({
       qty: c.qty,
-      rate: getRate(c.product),
-      gstRate: toNumber(c.product.gstRate),
-      discountPercent: c.discountPercent,
+      rate: c.rate,
+      gstRate: c.gstRate,
+      discountType: c.discountType,
+      discountValue: c.discountValue,
     })),
     { billDiscount: parseFloat(billDiscount) || 0 }
   );
 
   const completeSale = () => {
     if (cart.length === 0) return;
+    if (paymentMode === "credit" && (!customerId || customerId === "none")) {
+      setError("Customer registration required for credit transactions.");
+      return;
+    }
     setError("");
     startTransition(async () => {
       try {
@@ -154,11 +208,13 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
           operatorName,
           discountAmount: parseFloat(billDiscount) || 0,
           items: cart.map((c) => ({
-            productId: c.product.id,
+            productId: c.product ? c.product.id : undefined,
+            customName: c.product ? undefined : c.name,
             qty: c.qty,
-            rate: getRate(c.product),
-            gstRate: toNumber(c.product.gstRate),
-            discountPercent: c.discountPercent,
+            rate: c.rate,
+            gstRate: c.gstRate,
+            discountType: c.discountType,
+            discountValue: c.discountValue,
           })),
         });
         setCart([]);
@@ -182,7 +238,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
               Retail & wholesale counter billing
             </p>
           </div>
-          <div className="flex rounded-lg border border-slate-200 p-1">
+          <div className="flex rounded-lg border border-slate-200 p-1 bg-white shadow-sm">
             {(["retail", "wholesale"] as const).map((type) => (
               <button
                 key={type}
@@ -190,7 +246,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                 onClick={() => setBillType(type)}
                 className={`rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
                   billType === type
-                    ? "bg-emerald-600 text-white"
+                    ? "bg-emerald-600 text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
@@ -236,7 +292,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                     </p>
                   </div>
                   <span className="ml-2 font-semibold text-emerald-700">
-                    {formatCurrency(getRate(product))}
+                    {formatCurrency(getProductRate(product, billType))}
                   </span>
                 </button>
               ))}
@@ -244,10 +300,105 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <Scan className="h-4 w-4" />
-          Scan QR to add · type to search · Enter to pick first result
+        <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+          <span className="flex items-center gap-1">
+            <Scan className="h-4 w-4" />
+            Scan QR to add · type to search · Enter to pick first result
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowCustomForm(!showCustomForm)}
+            className="h-7 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 font-semibold"
+          >
+            {showCustomForm ? "Hide Manual Entry" : "Manual Entry Form"}
+          </Button>
         </div>
+
+        {showCustomForm && (
+          <Card className="border-dashed border-emerald-300 bg-emerald-50/30">
+            <CardHeader className="py-3">
+              <CardTitle className="text-sm font-semibold text-slate-800">
+                Add Product Manually (Custom Item)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+              <div className="sm:col-span-2">
+                <Label className="text-xs">Product Name</Label>
+                <Input
+                  className="h-9 bg-white"
+                  placeholder="Enter product name..."
+                  value={customName}
+                  onChange={(e) => setCustomNameField(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Quantity</Label>
+                <Input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="h-9 bg-white"
+                  value={customQty}
+                  onChange={(e) => setCustomQty(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Price / Rate (Excl. Tax)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="h-9 bg-white"
+                  placeholder="0.00"
+                  value={customRate}
+                  onChange={(e) => setCustomRate(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="text-xs">GST Rate %</Label>
+                <select
+                  value={customGst}
+                  onChange={(e) => setCustomGst(e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500"
+                >
+                  <option value="0">0%</option>
+                  <option value="5">5% (Seeds / Fertilizers)</option>
+                  <option value="12">12% (Sprayers / Pumps)</option>
+                  <option value="18">18% (General Agro)</option>
+                  <option value="28">28% (Machinery)</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5 pt-1">
+                <div className="flex-1">
+                  <Label className="text-xs">Discount</Label>
+                  <div className="flex h-9 items-center rounded-md border border-slate-200 bg-white">
+                    <select
+                      value={customDiscType}
+                      onChange={(e) => setCustomDiscType(e.target.value as "percent" | "value")}
+                      className="h-full rounded-l-md border-r border-slate-200 bg-slate-50 px-1.5 text-xs focus:outline-none"
+                    >
+                      <option value="percent">%</option>
+                      <option value="value">₹</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={customDiscVal}
+                      onChange={(e) => setCustomDiscVal(e.target.value)}
+                      className="h-full w-full rounded-r-md px-2 text-sm focus:outline-none"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="sm:col-span-2 md:col-span-3 flex justify-end pt-1">
+                <Button size="sm" onClick={addCustomItem} className="bg-emerald-600 hover:bg-emerald-700">
+                  Add Item to Bill
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <div className="lg:col-span-2">
@@ -264,22 +415,28 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                 Cart is empty
               </p>
             ) : (
-              <div className="max-h-52 space-y-2 overflow-auto">
+              <div className="max-h-64 space-y-2 overflow-auto">
                 {cart.map((item) => (
                   <div
-                    key={item.product.id}
-                    className="rounded-lg border border-slate-100 p-2.5"
+                    key={item.id}
+                    className="rounded-lg border border-slate-100 p-2.5 bg-white shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="line-clamp-2 text-sm font-medium">
-                        {item.product.name}
+                      <p className="line-clamp-2 text-sm font-medium text-slate-800">
+                        {item.name}
+                        {item.product === null && (
+                          <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-700 uppercase">
+                            Manual
+                          </span>
+                        )}
                       </p>
-                      <p className="text-sm font-semibold">
+                      <p className="text-sm font-semibold text-slate-900">
                         {formatCurrency(
                           calculateLineAmount(
                             item.qty,
-                            getRate(item.product),
-                            item.discountPercent
+                            item.rate,
+                            item.discountValue,
+                            item.discountType
                           )
                         )}
                       </p>
@@ -289,7 +446,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                         size="icon"
                         variant="outline"
                         className="h-7 w-7"
-                        onClick={() => updateQty(item.product.id, -1)}
+                        onClick={() => updateQty(item.id, -1)}
                       >
                         <Minus className="h-3 w-3" />
                       </Button>
@@ -300,29 +457,47 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                         size="icon"
                         variant="outline"
                         className="h-7 w-7"
-                        onClick={() => updateQty(item.product.id, 1)}
+                        onClick={() => updateQty(item.id, 1)}
                       >
                         <Plus className="h-3 w-3" />
                       </Button>
-                      <Input
-                        type="number"
-                        className="h-7 w-14 px-1 text-xs"
-                        placeholder="Disc%"
-                        min={0}
-                        max={100}
-                        value={item.discountPercent || ""}
-                        onChange={(e) =>
-                          updateLineDiscount(
-                            item.product.id,
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                      />
+                      
+                      <div className="flex h-7 items-center rounded border border-slate-200 bg-white">
+                        <select
+                          value={item.discountType}
+                          onChange={(e) =>
+                            updateLineDiscount(
+                              item.id,
+                              item.discountValue,
+                              e.target.value as "percent" | "value"
+                            )
+                          }
+                          className="h-full border-r border-slate-200 bg-slate-50 px-1 text-[10px] font-semibold text-slate-600 focus:outline-none"
+                        >
+                          <option value="percent">%</option>
+                          <option value="value">₹</option>
+                        </select>
+                        <input
+                          type="number"
+                          value={item.discountValue || ""}
+                          min={0}
+                          onChange={(e) =>
+                            updateLineDiscount(
+                              item.id,
+                              parseFloat(e.target.value) || 0,
+                              item.discountType
+                            )
+                          }
+                          className="h-full w-14 px-1 text-center text-xs focus:outline-none"
+                          placeholder="Disc"
+                        />
+                      </div>
+
                       <Button
                         size="icon"
                         variant="ghost"
                         className="ml-auto h-7 w-7"
-                        onClick={() => removeItem(item.product.id)}
+                        onClick={() => removeItem(item.id)}
                       >
                         <Trash2 className="h-3 w-3 text-red-500" />
                       </Button>
@@ -361,7 +536,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
 
             <div className="grid gap-2">
               <div>
-                <Label className="text-xs">Customer</Label>
+                <Label className="text-xs text-slate-600 font-medium">Customer</Label>
                 <Select value={customerId} onValueChange={setCustomerId}>
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Walk-in customer" />
@@ -394,7 +569,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
               )}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-xs">Payment</Label>
+                  <Label className="text-xs text-slate-600 font-medium">Payment</Label>
                   <Select
                     value={paymentMode}
                     onValueChange={(v) =>
@@ -411,12 +586,14 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                       <SelectItem value="upi">UPI</SelectItem>
                       <SelectItem value="card">Card</SelectItem>
                       <SelectItem value="cheque">Cheque</SelectItem>
-                      <SelectItem value="credit">Credit</SelectItem>
+                      <SelectItem value="credit" disabled={customerId === "none"}>
+                        Credit (Registered Only)
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">Bill Discount ₹</Label>
+                  <Label className="text-xs text-slate-600 font-medium">Bill Discount ₹</Label>
                   <Input
                     className="h-9"
                     type="number"
@@ -435,7 +612,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
             </div>
 
             {error && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 font-medium">
                 {error}
               </p>
             )}

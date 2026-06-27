@@ -6,6 +6,8 @@ import {
   products,
   stockMovements,
   customers,
+  partyPayments,
+  saleReturns,
 } from "@/db/schema";
 import {
   calculateGstBreakdown,
@@ -13,15 +15,18 @@ import {
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { format } from "date-fns";
-import { desc, eq, gte, sql } from "drizzle-orm";
+import { desc, eq, gte, sql, and } from "drizzle-orm";
 import { z } from "zod";
 
 const saleItemSchema = z.object({
-  productId: z.number(),
+  productId: z.number().optional().nullable(),
+  customName: z.string().optional(),
   qty: z.number().positive(),
   rate: z.number().nonnegative(),
   gstRate: z.number().nonnegative(),
   discountPercent: z.number().min(0).max(100).optional(),
+  discountType: z.enum(["percent", "value"]).default("percent"),
+  discountValue: z.number().min(0).default(0),
 });
 
 const createSaleSchema = z.object({
@@ -65,20 +70,26 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const settings = await getSettings();
   const allowNegative = settings.allowNegativeStock === "true";
 
+  if (data.paymentMode === "credit" && (!data.customerId || data.customerId === undefined)) {
+    throw new Error("Customer registration required for credit transactions.");
+  }
+
   for (const item of data.items) {
-    const [product] = await db
-      .select()
-      .from(products)
-      .where(eq(products.id, item.productId))
-      .limit(1);
+    if (item.productId) {
+      const [product] = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, item.productId))
+        .limit(1);
 
-    if (!product) throw new Error(`Product ${item.productId} not found`);
+      if (!product) throw new Error(`Product ${item.productId} not found`);
 
-    const stock = parseFloat(product.stockQty);
-    if (!allowNegative && stock < item.qty) {
-      throw new Error(
-        `Insufficient stock for ${product.name}. Available: ${stock}`
-      );
+      const stock = parseFloat(product.stockQty);
+      if (!allowNegative && stock < item.qty) {
+        throw new Error(
+          `Insufficient stock for ${product.name}. Available: ${stock}`
+        );
+      }
     }
   }
 
@@ -88,6 +99,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       rate: i.rate,
       gstRate: i.gstRate,
       discountPercent: i.discountPercent ?? 0,
+      discountType: i.discountType,
+      discountValue: i.discountValue,
     })),
     { billDiscount: data.discountAmount ?? 0 }
   );
@@ -146,6 +159,45 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       }
     }
 
+    if (data.paymentMode === "credit" && finalCustomerId) {
+      const [customerRecord] = await tx
+        .select()
+        .from(customers)
+        .where(eq(customers.id, finalCustomerId))
+        .limit(1);
+
+      if (customerRecord && customerRecord.creditLimit) {
+        const limit = parseFloat(customerRecord.creditLimit);
+        if (limit > 0) {
+          const [salesTotal] = await tx
+            .select({ total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)), 0)` })
+            .from(sales)
+            .where(eq(sales.customerId, finalCustomerId));
+
+          const [returnsTotal] = await tx
+            .select({ total: sql<string>`coalesce(sum(${saleReturns.grandTotal}::numeric), 0)` })
+            .from(saleReturns)
+            .where(eq(saleReturns.customerId, finalCustomerId));
+
+          const [paymentsTotal] = await tx
+            .select({ total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)` })
+            .from(partyPayments)
+            .where(and(eq(partyPayments.customerId, finalCustomerId), eq(partyPayments.type, "receipt")));
+
+          const currentOutstanding =
+            parseFloat(salesTotal?.total ?? "0") -
+            parseFloat(returnsTotal?.total ?? "0") -
+            parseFloat(paymentsTotal?.total ?? "0");
+
+          if (currentOutstanding + gst.grandTotal > limit) {
+            throw new Error(
+              `Credit limit exceeded. Outstanding: ₹${currentOutstanding.toFixed(2)}, Limit: ₹${limit.toFixed(2)}, New invoice: ₹${gst.grandTotal.toFixed(2)}`
+            );
+          }
+        }
+      }
+    }
+
     const [created] = await tx
       .insert(sales)
       .values({
@@ -170,32 +222,38 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       const amount = calculateLineAmount(
         item.qty,
         item.rate,
-        item.discountPercent ?? 0
+        item.discountValue,
+        item.discountType
       );
 
       await tx.insert(saleItems).values({
         saleId: created.id,
-        productId: item.productId,
+        productId: item.productId || null,
+        customName: item.customName || null,
         qty: item.qty.toFixed(2),
         rate: item.rate.toFixed(2),
-        discountPercent: (item.discountPercent ?? 0).toFixed(2),
+        discountPercent: item.discountType === "percent" ? item.discountValue.toFixed(2) : "0.00",
+        discountType: item.discountType,
+        discountValue: item.discountValue.toFixed(2),
         gstRate: item.gstRate.toFixed(2),
         amount: amount.toFixed(2),
       });
 
-      await tx
-        .update(products)
-        .set({
-          stockQty: sql`${products.stockQty}::numeric - ${item.qty}`,
-        })
-        .where(eq(products.id, item.productId));
+      if (item.productId) {
+        await tx
+          .update(products)
+          .set({
+            stockQty: sql`${products.stockQty}::numeric - ${item.qty}`,
+          })
+          .where(eq(products.id, item.productId));
 
-      await tx.insert(stockMovements).values({
-        productId: item.productId,
-        type: "sale",
-        qtyDelta: (-item.qty).toFixed(2),
-        referenceId: created.id,
-      });
+        await tx.insert(stockMovements).values({
+          productId: item.productId,
+          type: "sale",
+          qtyDelta: (-item.qty).toFixed(2),
+          referenceId: created.id,
+        });
+      }
     }
 
     return created;

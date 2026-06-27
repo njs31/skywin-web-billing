@@ -104,6 +104,7 @@ export const purchases = pgTable("purchases", {
   gstTotal: numeric("gst_total", { precision: 14, scale: 2 }).default("0").notNull(),
   grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
   paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).default("0"),
+  handlingCharges: numeric("handling_charges", { precision: 14, scale: 2 }).default("0").notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -114,10 +115,12 @@ export const purchaseItems = pgTable("purchase_items", {
     .references(() => purchases.id, { onDelete: "cascade" })
     .notNull(),
   productId: integer("product_id")
-    .references(() => products.id)
-    .notNull(),
+    .references(() => products.id),
+  customName: text("custom_name"),
   qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
+  discountType: text("discount_type").default("percent").notNull(),
+  discountValue: numeric("discount_value", { precision: 14, scale: 2 }).default("0").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
 });
 
@@ -149,13 +152,15 @@ export const saleItems = pgTable("sale_items", {
     .references(() => sales.id, { onDelete: "cascade" })
     .notNull(),
   productId: integer("product_id")
-    .references(() => products.id)
-    .notNull(),
+    .references(() => products.id),
+  customName: text("custom_name"),
   qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
   discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
     .default("0")
     .notNull(),
+  discountType: text("discount_type").default("percent").notNull(),
+  discountValue: numeric("discount_value", { precision: 14, scale: 2 }).default("0").notNull(),
   gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
 });
@@ -180,11 +185,36 @@ export const saleReturnItems = pgTable("sale_return_items", {
     .references(() => saleReturns.id, { onDelete: "cascade" })
     .notNull(),
   productId: integer("product_id")
-    .references(() => products.id)
-    .notNull(),
+    .references(() => products.id),
+  customName: text("custom_name"),
   qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
   gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+});
+
+export const purchaseReturns = pgTable("purchase_returns", {
+  id: serial("id").primaryKey(),
+  returnNo: text("return_no").notNull().unique(),
+  purchaseId: integer("purchase_id").references(() => purchases.id),
+  supplierId: integer("supplier_id").references(() => suppliers.id).notNull(),
+  date: timestamp("date").defaultNow().notNull(),
+  subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
+  grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
+  reason: text("reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const purchaseReturnItems = pgTable("purchase_return_items", {
+  id: serial("id").primaryKey(),
+  returnId: integer("return_id")
+    .references(() => purchaseReturns.id, { onDelete: "cascade" })
+    .notNull(),
+  productId: integer("product_id")
+    .references(() => products.id),
+  customName: text("custom_name"),
+  qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
+  rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
 });
 
@@ -293,6 +323,29 @@ export const saleReturnsRelations = relations(saleReturns, ({ one, many }) => ({
   items: many(saleReturnItems),
 }));
 
+export const purchaseReturnsRelations = relations(purchaseReturns, ({ one, many }) => ({
+  purchase: one(purchases, {
+    fields: [purchaseReturns.purchaseId],
+    references: [purchases.id],
+  }),
+  supplier: one(suppliers, {
+    fields: [purchaseReturns.supplierId],
+    references: [suppliers.id],
+  }),
+  items: many(purchaseReturnItems),
+}));
+
+export const purchaseReturnItemsRelations = relations(purchaseReturnItems, ({ one }) => ({
+  return: one(purchaseReturns, {
+    fields: [purchaseReturnItems.returnId],
+    references: [purchaseReturns.id],
+  }),
+  product: one(products, {
+    fields: [purchaseReturnItems.productId],
+    references: [products.id],
+  }),
+}));
+
 export type Category = typeof categories.$inferSelect;
 export type Supplier = typeof suppliers.$inferSelect;
 export type Customer = typeof customers.$inferSelect;
@@ -301,3 +354,5 @@ export type Purchase = typeof purchases.$inferSelect;
 export type Sale = typeof sales.$inferSelect;
 export type SaleReturn = typeof saleReturns.$inferSelect;
 export type PartyPayment = typeof partyPayments.$inferSelect;
+export type PurchaseReturn = typeof purchaseReturns.$inferSelect;
+export type PurchaseReturnItem = typeof purchaseReturnItems.$inferSelect;

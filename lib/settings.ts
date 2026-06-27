@@ -18,6 +18,8 @@ export const DEFAULT_SETTINGS = {
   allowNegativeStock: "false",
   defaultGstRetail: "18",
   wholesaleMarkup: "5",
+  inventoryAdminPinRequired: "false",
+  inventoryAdminPin: "1234",
 } as const;
 
 export type AppSettings = Record<keyof typeof DEFAULT_SETTINGS, string>;

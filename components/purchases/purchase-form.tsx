@@ -23,9 +23,13 @@ import { ProductScanBar } from "@/components/scanner/product-scan-bar";
 import { useRouter } from "next/navigation";
 
 type LineItem = {
-  product: Product;
+  id: string;
+  product?: Product | null;
+  name: string;
   qty: number;
   rate: number;
+  discountType: "percent" | "value";
+  discountValue: number;
 };
 
 function parseExcelFile(file: File): Promise<{ code: string; qty: number; rate?: number }[]> {
@@ -115,6 +119,18 @@ export function PurchaseForm({
   } | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
+  // Handling Charges and Paid Amount States
+  const [handlingCharges, setHandlingCharges] = useState("0");
+  const [paidAmount, setPaidAmount] = useState("0");
+
+  // Custom Item Form State
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customName, setCustomNameField] = useState("");
+  const [customQty, setCustomQty] = useState("1");
+  const [customRate, setCustomRate] = useState("");
+  const [customDiscType, setCustomDiscType] = useState<"percent" | "value">("percent");
+  const [customDiscVal, setCustomDiscVal] = useState("0");
+
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -134,7 +150,8 @@ export function PurchaseForm({
       setItems((prev) => {
         const updated = [...prev];
         for (const item of res.resolved) {
-          const existingIdx = updated.findIndex((i) => i.product.id === item.product.id);
+          const id = `p-${item.product.id}`;
+          const existingIdx = updated.findIndex((i) => i.id === id);
           if (existingIdx !== -1) {
             updated[existingIdx] = {
               ...updated[existingIdx],
@@ -143,9 +160,13 @@ export function PurchaseForm({
             };
           } else {
             updated.push({
+              id,
               product: item.product,
+              name: item.product.name,
               qty: item.qty,
               rate: item.rate,
+              discountType: "percent",
+              discountValue: 0,
             });
           }
         }
@@ -178,39 +199,84 @@ export function PurchaseForm({
 
   const addItem = (product: Product, qty = 1) => {
     setItems((prev) => {
-      const existing = prev.find((i) => i.product.id === product.id);
+      const id = `p-${product.id}`;
+      const existing = prev.find((i) => i.id === id);
       if (existing) {
         return prev.map((i) =>
-          i.product.id === product.id ? { ...i, qty: i.qty + qty } : i
+          i.id === id ? { ...i, qty: i.qty + qty } : i
         );
       }
       return [
         ...prev,
-        { product, qty, rate: toNumber(product.purchaseRate) },
+        {
+          id,
+          product,
+          name: product.name,
+          qty,
+          rate: toNumber(product.purchaseRate),
+          discountType: "percent",
+          discountValue: 0,
+        },
       ];
     });
     setQuery("");
     setResults([]);
   };
 
+  const addCustomItem = () => {
+    if (!customName.trim() || !customQty || !customRate) return;
+    const qty = parseFloat(customQty) || 0;
+    const rate = parseFloat(customRate) || 0;
+    const discountValue = parseFloat(customDiscVal) || 0;
+    if (qty <= 0 || rate < 0) return;
+
+    setItems((prev) => [
+      ...prev,
+      {
+        id: `c-${Date.now()}`,
+        product: null,
+        name: customName.trim(),
+        qty,
+        rate,
+        discountType: customDiscType,
+        discountValue,
+      },
+    ]);
+
+    // Reset
+    setCustomNameField("");
+    setCustomQty("1");
+    setCustomRate("");
+    setCustomDiscVal("0");
+    setShowCustomForm(false);
+  };
+
   const updateItem = (
-    productId: number,
-    field: "qty" | "rate",
-    value: number
+    id: string,
+    field: "qty" | "rate" | "discountValue",
+    value: number,
+    discountType?: "percent" | "value"
   ) => {
     setItems((prev) =>
-      prev.map((i) =>
-        i.product.id === productId ? { ...i, [field]: value } : i
-      )
+      prev.map((i) => {
+        if (i.id === id) {
+          const updated = { ...i, [field]: value };
+          if (discountType !== undefined) {
+            updated.discountType = discountType;
+          }
+          return updated;
+        }
+        return i;
+      })
     );
   };
 
-  const removeItem = (productId: number) => {
-    setItems((prev) => prev.filter((i) => i.product.id !== productId));
+  const removeItem = (id: string) => {
+    setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
   const subtotal = items.reduce(
-    (sum, i) => sum + calculateLineAmount(i.qty, i.rate),
+    (sum, i) => sum + calculateLineAmount(i.qty, i.rate, i.discountValue, i.discountType),
     0
   );
 
@@ -226,10 +292,15 @@ export function PurchaseForm({
           supplierId: parseInt(supplierId, 10),
           invoiceNo: invoiceNo || undefined,
           paymentType,
+          handlingCharges: parseFloat(handlingCharges) || 0,
+          paidAmount: paymentType === "cash" ? undefined : (parseFloat(paidAmount) || 0),
           items: items.map((i) => ({
-            productId: i.product.id,
+            productId: i.product ? i.product.id : undefined,
+            customName: i.product ? undefined : i.name,
             qty: i.qty,
             rate: i.rate,
+            discountType: i.discountType,
+            discountValue: i.discountValue,
           })),
         });
         router.push("/purchases");
@@ -250,7 +321,7 @@ export function PurchaseForm({
         <CardHeader>
           <CardTitle className="text-base">Purchase Details</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
           <div className="space-y-2">
             <Label>Supplier</Label>
             <Select value={supplierId} onValueChange={setSupplierId}>
@@ -285,10 +356,34 @@ export function PurchaseForm({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="credit">Credit</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="cash">Cash (Auto Paid)</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2">
+            <Label>Handling Charges (Proportional Landed Cost)</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={handlingCharges}
+              onChange={(e) => setHandlingCharges(e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+          {paymentType === "credit" && (
+            <div className="space-y-2">
+              <Label>Amount Paid to Supplier</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={paidAmount}
+                onChange={(e) => setPaidAmount(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -332,6 +427,82 @@ export function PurchaseForm({
               </div>
             </div>
           </div>
+
+          <div className="flex justify-between items-center text-xs border-t pt-2 text-slate-500">
+            <span>Type to search product or scan barcode</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCustomForm(!showCustomForm)}
+              className="h-7 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 font-semibold"
+            >
+              {showCustomForm ? "Hide Manual Entry" : "Manual Entry Form"}
+            </Button>
+          </div>
+
+          {showCustomForm && (
+            <Card className="border-dashed border-emerald-300 bg-emerald-50/30">
+              <CardContent className="grid gap-3 pt-4 sm:grid-cols-2 md:grid-cols-4">
+                <div className="sm:col-span-2">
+                  <Label className="text-xs">Product Name</Label>
+                  <Input
+                    className="h-9 bg-white"
+                    placeholder="Enter manual product name..."
+                    value={customName}
+                    onChange={(e) => setCustomNameField(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Quantity</Label>
+                  <Input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    className="h-9 bg-white"
+                    value={customQty}
+                    onChange={(e) => setCustomQty(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Purchase Rate</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="h-9 bg-white"
+                    placeholder="0.00"
+                    value={customRate}
+                    onChange={(e) => setCustomRate(e.target.value)}
+                  />
+                </div>
+                <div className="sm:col-span-2 md:col-span-2">
+                  <Label className="text-xs">Line Discount</Label>
+                  <div className="flex h-9 items-center rounded-md border border-slate-200 bg-white">
+                    <select
+                      value={customDiscType}
+                      onChange={(e) => setCustomDiscType(e.target.value as "percent" | "value")}
+                      className="h-full rounded-l-md border-r border-slate-200 bg-slate-50 px-1.5 text-xs focus:outline-none"
+                    >
+                      <option value="percent">%</option>
+                      <option value="value">₹</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={customDiscVal}
+                      onChange={(e) => setCustomDiscVal(e.target.value)}
+                      className="h-full w-full rounded-r-md px-2 text-sm focus:outline-none"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <div className="sm:col-span-2 md:col-span-2 flex justify-end items-end pt-1">
+                  <Button size="sm" onClick={addCustomItem} className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto h-9">
+                    Add Manual Item
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {importStatus && (
             <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 space-y-2 text-xs">
@@ -383,55 +554,105 @@ export function PurchaseForm({
             <div className="space-y-2">
               {items.map((item) => (
                 <div
-                  key={item.product.id}
-                  className="flex flex-wrap items-center gap-3 rounded-lg border p-3"
+                  key={item.id}
+                  className="flex flex-wrap items-center gap-3 rounded-lg border p-3 bg-white shadow-sm"
                 >
-                  <p className="min-w-0 flex-1 text-sm font-medium">
-                    {item.product.name}
+                  <p className="min-w-0 flex-1 text-sm font-medium text-slate-800">
+                    {item.name}
+                    {item.product === null && (
+                      <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-700 uppercase">
+                        Manual
+                      </span>
+                    )}
                   </p>
-                  <Input
-                    type="number"
-                    className="w-24"
-                    value={item.qty}
-                    min={0.01}
-                    step={0.01}
-                    onChange={(e) =>
-                      updateItem(
-                        item.product.id,
-                        "qty",
-                        parseFloat(e.target.value) || 0
-                      )
-                    }
-                  />
-                  <Input
-                    type="number"
-                    className="w-28"
-                    value={item.rate}
-                    min={0}
-                    step={0.01}
-                    onChange={(e) =>
-                      updateItem(
-                        item.product.id,
-                        "rate",
-                        parseFloat(e.target.value) || 0
-                      )
-                    }
-                  />
-                  <span className="w-24 text-right text-sm font-semibold">
-                    {formatCurrency(calculateLineAmount(item.qty, item.rate))}
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-[10px] text-slate-400">Qty</Label>
+                    <Input
+                      type="number"
+                      className="w-20 h-8 text-xs"
+                      value={item.qty}
+                      min={0.01}
+                      step={0.01}
+                      onChange={(e) =>
+                        updateItem(
+                          item.id,
+                          "qty",
+                          parseFloat(e.target.value) || 0
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-[10px] text-slate-400">Rate</Label>
+                    <Input
+                      type="number"
+                      className="w-24 h-8 text-xs"
+                      value={item.rate}
+                      min={0}
+                      step={0.01}
+                      onChange={(e) =>
+                        updateItem(
+                          item.id,
+                          "rate",
+                          parseFloat(e.target.value) || 0
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-[10px] text-slate-400">Discount</Label>
+                    <div className="flex h-8 items-center rounded border border-slate-200 bg-white">
+                      <select
+                        value={item.discountType}
+                        onChange={(e) =>
+                          updateItem(
+                            item.id,
+                            "discountValue",
+                            item.discountValue,
+                            e.target.value as "percent" | "value"
+                          )
+                        }
+                        className="h-full border-r border-slate-200 bg-slate-50 px-1 text-[10px] font-semibold text-slate-600 focus:outline-none"
+                      >
+                        <option value="percent">%</option>
+                        <option value="value">₹</option>
+                      </select>
+                      <input
+                        type="number"
+                        value={item.discountValue || ""}
+                        min={0}
+                        onChange={(e) =>
+                          updateItem(
+                            item.id,
+                            "discountValue",
+                            parseFloat(e.target.value) || 0,
+                            item.discountType
+                          )
+                        }
+                        className="h-full w-14 px-1 text-center text-xs focus:outline-none"
+                        placeholder="Disc"
+                      />
+                    </div>
+                  </div>
+                  <span className="w-24 text-right text-sm font-semibold text-slate-950">
+                    {formatCurrency(calculateLineAmount(item.qty, item.rate, item.discountValue, item.discountType))}
                   </span>
                   <Button
                     size="icon"
                     variant="ghost"
-                    onClick={() => removeItem(item.product.id)}
+                    onClick={() => removeItem(item.id)}
                   >
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>
               ))}
-              <div className="flex justify-between border-t pt-3 font-bold">
-                <span>Total</span>
+              <div className="flex justify-between border-t pt-3 font-bold text-sm text-slate-800">
+                <span>Items Subtotal</span>
                 <span>{formatCurrency(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-base font-bold text-slate-900">
+                <span>Grand Total (incl. Handling)</span>
+                <span className="text-emerald-700">{formatCurrency(subtotal + (parseFloat(handlingCharges) || 0))}</span>
               </div>
             </div>
           )}
@@ -439,12 +660,12 @@ export function PurchaseForm({
       </Card>
 
       {error && (
-        <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">
+        <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 font-medium">
           {error}
         </p>
       )}
 
-      <Button size="lg" disabled={isPending} onClick={submit}>
+      <Button size="lg" disabled={isPending} onClick={submit} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700">
         {isPending ? "Saving..." : "Save Purchase"}
       </Button>
     </div>

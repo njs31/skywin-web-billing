@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { searchProducts } from "@/lib/actions/products";
-import { adjustStock } from "@/lib/actions/billing";
+import { adjustStock, isInventoryPinRequired, verifyInventoryAdminPin } from "@/lib/actions/billing";
 import type { Product } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,8 +30,22 @@ export default function StockAdjustPage() {
   const submit = () => {
     if (!selected || !qtyDelta) return;
     startTransition(async () => {
-      await adjustStock(selected.id, parseFloat(qtyDelta), notes || "Manual adjustment");
-      router.push("/stock");
+      try {
+        const pinRequired = await isInventoryPinRequired();
+        if (pinRequired) {
+          const pin = window.prompt("Enter Supervisor/Admin PIN to adjust stock quantity:");
+          if (pin === null) return;
+          const valid = await verifyInventoryAdminPin(pin);
+          if (!valid) {
+            alert("Incorrect PIN. Access denied.");
+            return;
+          }
+        }
+        await adjustStock(selected.id, parseFloat(qtyDelta), notes || "Manual adjustment");
+        router.push("/stock");
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Failed to adjust stock");
+      }
     });
   };
 

@@ -156,7 +156,7 @@ const productSchema = z.object({
   mrp: z.number().nonnegative().optional(),
   stockQty: z.number().nonnegative().default(0),
   reorderLevel: z.number().nonnegative().default(10),
-  hsnCode: z.string().optional(),
+  hsnCode: z.string().min(1, "HSN code is mandatory"),
   gstRate: z.number().nonnegative().default(18),
   expiryDate: z.string().optional(),
 });

@@ -76,9 +76,12 @@ export async function getPurchasesBySupplier(supplierId: number) {
 }
 
 const purchaseItemSchema = z.object({
-  productId: z.number(),
+  productId: z.number().optional().nullable(),
+  customName: z.string().optional(),
   qty: z.number().positive(),
   rate: z.number().nonnegative(),
+  discountType: z.enum(["percent", "value"]).default("percent"),
+  discountValue: z.number().min(0).default(0),
 });
 
 const createPurchaseSchema = z.object({
@@ -86,6 +89,8 @@ const createPurchaseSchema = z.object({
   invoiceNo: z.string().optional(),
   paymentType: z.enum(["credit", "cash"]),
   notes: z.string().optional(),
+  handlingCharges: z.number().nonnegative().optional().default(0),
+  paidAmount: z.number().nonnegative().optional(),
   items: z.array(purchaseItemSchema).min(1),
 });
 
@@ -95,13 +100,24 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
 
   let subtotal = 0;
   const lineItems = data.items.map((item) => {
-    const amount = calculateLineAmount(item.qty, item.rate);
+    const amount = calculateLineAmount(
+      item.qty,
+      item.rate,
+      item.discountValue,
+      item.discountType
+    );
     subtotal += amount;
     return { ...item, amount };
   });
   subtotal = Math.round(subtotal * 100) / 100;
 
   const purchase = await db.transaction(async (tx) => {
+    const handling = data.handlingCharges ?? 0;
+    const grandTotal = subtotal + handling;
+    const paidAmount = data.paymentType === "cash"
+      ? grandTotal
+      : (data.paidAmount ?? 0);
+
     const [created] = await tx
       .insert(purchases)
       .values({
@@ -110,7 +126,9 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
         paymentType: data.paymentType,
         subtotal: subtotal.toFixed(2),
         gstTotal: "0",
-        grandTotal: subtotal.toFixed(2),
+        grandTotal: grandTotal.toFixed(2),
+        paidAmount: paidAmount.toFixed(2),
+        handlingCharges: handling.toFixed(2),
         notes: data.notes,
       })
       .returning();
@@ -118,32 +136,57 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
     for (const item of lineItems) {
       await tx.insert(purchaseItems).values({
         purchaseId: created.id,
-        productId: item.productId,
+        productId: item.productId || null,
+        customName: item.customName || null,
         qty: item.qty.toFixed(2),
         rate: item.rate.toFixed(2),
+        discountType: item.discountType,
+        discountValue: item.discountValue.toFixed(2),
         amount: item.amount.toFixed(2),
       });
 
-      await tx
-        .update(products)
-        .set({
-          stockQty: sql`${products.stockQty}::numeric + ${item.qty}`,
-          purchaseRate: item.rate.toFixed(2),
-        })
-        .where(eq(products.id, item.productId));
+      if (item.productId) {
+        const landedRate = subtotal > 0
+          ? item.rate * (1 + handling / subtotal)
+          : item.rate;
 
-      await tx.insert(stockMovements).values({
-        productId: item.productId,
-        type: "purchase",
-        qtyDelta: item.qty.toFixed(2),
-        referenceId: created.id,
-      });
+        const [product] = await tx
+          .select({ stockQty: products.stockQty, purchaseRate: products.purchaseRate })
+          .from(products)
+          .where(eq(products.id, item.productId))
+          .limit(1);
+
+        let newPurchaseRate = landedRate;
+        if (product) {
+          const currentStock = parseFloat(product.stockQty);
+          const currentRate = parseFloat(product.purchaseRate);
+          const totalStock = currentStock + item.qty;
+          if (totalStock > 0) {
+            newPurchaseRate = ((currentStock * currentRate) + (item.qty * landedRate)) / totalStock;
+          }
+        }
+
+        await tx
+          .update(products)
+          .set({
+            stockQty: sql`${products.stockQty}::numeric + ${item.qty}`,
+            purchaseRate: newPurchaseRate.toFixed(2),
+          })
+          .where(eq(products.id, item.productId));
+
+        await tx.insert(stockMovements).values({
+          productId: item.productId,
+          type: "purchase",
+          qtyDelta: item.qty.toFixed(2),
+          referenceId: created.id,
+        });
+      }
     }
 
     await tx
       .update(suppliers)
       .set({
-        totalPurchased: sql`${suppliers.totalPurchased}::numeric + ${subtotal}`,
+        totalPurchased: sql`${suppliers.totalPurchased}::numeric + ${grandTotal}`,
       })
       .where(eq(suppliers.id, data.supplierId));
 

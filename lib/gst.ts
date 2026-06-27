@@ -5,6 +5,8 @@ export type CartLine = {
   rate: number;
   gstRate: number;
   discountPercent?: number;
+  discountType?: "percent" | "value";
+  discountValue?: number;
 };
 
 export type GstBreakdown = {
@@ -20,10 +22,16 @@ export type GstBreakdown = {
 export function calculateLineAmount(
   qty: number,
   rate: number,
-  discountPercent = 0
+  discountValue = 0,
+  discountType: "percent" | "value" = "percent"
 ) {
   const gross = qty * rate;
-  const discount = (gross * discountPercent) / 100;
+  let discount = 0;
+  if (discountType === "percent") {
+    discount = (gross * discountValue) / 100;
+  } else {
+    discount = discountValue;
+  }
   return Math.round((gross - discount) * 100) / 100;
 }
 
@@ -36,10 +44,13 @@ export function calculateGstBreakdown(
   let totalGst = 0;
 
   for (const line of lines) {
+    const discVal = line.discountValue !== undefined ? line.discountValue : (line.discountPercent ?? 0);
+    const discType = line.discountType ?? "percent";
     const lineAmount = calculateLineAmount(
       line.qty,
       line.rate,
-      line.discountPercent ?? 0
+      discVal,
+      discType
     );
     subtotal += lineAmount;
     totalGst += (lineAmount * toNumber(line.gstRate)) / 100;

@@ -15,6 +15,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { isInventoryPinRequired, verifyInventoryAdminPin } from "@/lib/actions/billing";
+
 export function ProductTable({ products }: { products: Product[] }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saleRate, setSaleRate] = useState("");
@@ -29,11 +31,25 @@ export function ProductTable({ products }: { products: Product[] }) {
 
   const save = (id: number) => {
     startTransition(async () => {
-      await updateProduct(id, {
-        saleRate: parseFloat(saleRate),
-        gstRate: parseFloat(gstRate),
-      });
-      setEditingId(null);
+      try {
+        const pinRequired = await isInventoryPinRequired();
+        if (pinRequired) {
+          const pin = window.prompt("Enter Supervisor/Admin PIN to edit product settings:");
+          if (pin === null) return;
+          const valid = await verifyInventoryAdminPin(pin);
+          if (!valid) {
+            alert("Incorrect PIN. Access denied.");
+            return;
+          }
+        }
+        await updateProduct(id, {
+          saleRate: parseFloat(saleRate),
+          gstRate: parseFloat(gstRate),
+        });
+        setEditingId(null);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Failed to update product");
+      }
     });
   };
 

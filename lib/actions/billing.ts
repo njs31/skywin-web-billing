@@ -1,7 +1,10 @@
 "use server";
 
 import { createCustomer as createCustomerMutation, updateCustomer as updateCustomerMutation } from "@/lib/queries/customers";
-import { createSaleReturn as createSaleReturnMutation } from "@/lib/queries/returns";
+import {
+  createSaleReturn as createSaleReturnMutation,
+  createPurchaseReturn as createPurchaseReturnMutation,
+} from "@/lib/queries/returns";
 import { createPartyPayment as createPartyPaymentMutation } from "@/lib/queries/payments";
 import { adjustStock as adjustStockMutation } from "@/lib/queries/reports";
 import { createProduct as createProductMutation } from "@/lib/queries/products";
@@ -26,6 +29,12 @@ export async function createSaleReturn(
   return createSaleReturnMutation(input);
 }
 
+export async function createPurchaseReturn(
+  input: Parameters<typeof createPurchaseReturnMutation>[0]
+) {
+  return createPurchaseReturnMutation(input);
+}
+
 export async function createPartyPayment(
   input: Parameters<typeof createPartyPaymentMutation>[0]
 ) {
@@ -48,4 +57,18 @@ export async function createProduct(
 
 export async function updateSettings(input: Partial<AppSettings>) {
   return updateSettingsMutation(input);
+}
+
+export async function verifyInventoryAdminPin(pin: string): Promise<boolean> {
+  const { getSetting } = await import("@/lib/settings");
+  const isRequired = await getSetting("inventoryAdminPinRequired");
+  if (isRequired !== "true") return true;
+  const correctPin = await getSetting("inventoryAdminPin");
+  return pin === correctPin;
+}
+
+export async function isInventoryPinRequired(): Promise<boolean> {
+  const { getSetting } = await import("@/lib/settings");
+  const isRequired = await getSetting("inventoryAdminPinRequired");
+  return isRequired === "true";
 }

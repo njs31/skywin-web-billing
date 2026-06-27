@@ -27,6 +27,8 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
         defaultOperator: fd.get("defaultOperator") as string,
         invoicePrefix: fd.get("invoicePrefix") as string,
         allowNegativeStock: fd.get("allowNegativeStock") as string,
+        inventoryAdminPinRequired: fd.get("inventoryAdminPinRequired") as string,
+        inventoryAdminPin: fd.get("inventoryAdminPin") as string,
       });
       router.refresh();
     });
@@ -88,6 +90,28 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
                 <option value="false">No</option>
                 <option value="true">Yes</option>
               </select>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 border-t pt-4">
+            <div>
+              <Label>Require PIN for Inventory alterations</Label>
+              <select
+                name="inventoryAdminPinRequired"
+                defaultValue={settings.inventoryAdminPinRequired}
+                className="flex h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
+              >
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </select>
+            </div>
+            <div>
+              <Label>Supervisor / Admin PIN</Label>
+              <Input
+                type="password"
+                name="inventoryAdminPin"
+                defaultValue={settings.inventoryAdminPin}
+                placeholder="e.g. 1234"
+              />
             </div>
           </div>
           <Button type="submit" disabled={isPending}>
