@@ -114,7 +114,7 @@ export function Sidebar() {
         </h1>
         <p className="mt-1 text-xs text-slate-400">Billing Software</p>
       </div>
-      <nav className="flex-1 overflow-y-auto p-3">
+      <nav className="flex-1 overflow-y-auto sidebar-scrollbar p-3">
         {navGroups.map((group) => {
           const isOpen = collapsed[group.label] !== true;
           return (
