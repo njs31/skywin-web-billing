@@ -28,6 +28,7 @@ const createSaleSchema = z.object({
   billType: z.enum(["retail", "wholesale"]).default("retail"),
   customerId: z.number().optional(),
   customerName: z.string().optional(),
+  customerPhone: z.string().optional(),
   paymentMode: z.enum(["cash", "upi", "credit", "card", "cheque"]),
   operatorName: z.string().optional(),
   discountAmount: z.number().min(0).optional(),
@@ -99,13 +100,59 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const invoiceNo = await generateInvoiceNo(data.billType);
 
   const sale = await db.transaction(async (tx) => {
+    let finalCustomerId = data.customerId;
+    let finalCustomerName = data.customerName;
+
+    if (!finalCustomerId && (data.customerName?.trim() || data.customerPhone?.trim())) {
+      let existingCustomer = null;
+      if (data.customerPhone?.trim()) {
+        [existingCustomer] = await tx
+          .select()
+          .from(customers)
+          .where(eq(customers.phone, data.customerPhone.trim()))
+          .limit(1);
+      }
+
+      if (!existingCustomer && data.customerName?.trim()) {
+        [existingCustomer] = await tx
+          .select()
+          .from(customers)
+          .where(eq(customers.name, data.customerName.trim()))
+          .limit(1);
+      }
+
+      if (existingCustomer) {
+        finalCustomerId = existingCustomer.id;
+        finalCustomerName = existingCustomer.name;
+
+        if (data.customerPhone?.trim() && !existingCustomer.phone) {
+          await tx
+            .update(customers)
+            .set({ phone: data.customerPhone.trim() })
+            .where(eq(customers.id, existingCustomer.id));
+        }
+      } else {
+        const [newCustomer] = await tx
+          .insert(customers)
+          .values({
+            name: data.customerName?.trim() || `Customer-${data.customerPhone?.trim()}`,
+            phone: data.customerPhone?.trim() || null,
+            type: "retail",
+            creditLimit: "0.00",
+          })
+          .returning();
+        finalCustomerId = newCustomer.id;
+        finalCustomerName = newCustomer.name;
+      }
+    }
+
     const [created] = await tx
       .insert(sales)
       .values({
         invoiceNo,
         billType: data.billType,
-        customerId: data.customerId,
-        customerName: data.customerName,
+        customerId: finalCustomerId,
+        customerName: finalCustomerName,
         paymentMode: data.paymentMode,
         operatorName: data.operatorName ?? settings.defaultOperator,
         subtotal: gst.subtotal.toFixed(2),

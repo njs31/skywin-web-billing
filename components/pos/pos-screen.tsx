@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ProductScanBar } from "@/components/scanner/product-scan-bar";
 import { useRouter } from "next/navigation";
 
 type CartItem = {
@@ -51,6 +52,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   const [billType, setBillType] = useState<"retail" | "wholesale">("retail");
   const [customerId, setCustomerId] = useState<string>("none");
   const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [paymentMode, setPaymentMode] = useState<
     "cash" | "upi" | "credit" | "card" | "cheque"
   >("cash");
@@ -76,15 +78,17 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   );
 
   const addToCart = useCallback(
-    (product: Product) => {
+    (product: Product, qty = 1) => {
       setCart((prev) => {
         const existing = prev.find((c) => c.product.id === product.id);
         if (existing) {
           return prev.map((c) =>
-            c.product.id === product.id ? { ...c, qty: c.qty + 1 } : c
+            c.product.id === product.id
+              ? { ...c, qty: c.qty + qty }
+              : c
           );
         }
-        return [...prev, { product, qty: 1, discountPercent: 0 }];
+        return [...prev, { product, qty, discountPercent: 0 }];
       });
       setQuery("");
       setResults([]);
@@ -145,6 +149,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
               ? parseInt(customerId, 10)
               : undefined,
           customerName: customerName || undefined,
+          customerPhone: customerPhone || undefined,
           paymentMode,
           operatorName,
           discountAmount: parseFloat(billDiscount) || 0,
@@ -158,6 +163,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
         });
         setCart([]);
         setCustomerName("");
+        setCustomerPhone("");
         setBillDiscount("");
         router.push(`/invoices/${sale.id}?print=1`);
       } catch (e) {
@@ -193,6 +199,11 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
             ))}
           </div>
         </div>
+
+        <ProductScanBar
+          onProductScanned={(product, qty) => addToCart(product, qty)}
+          placeholder="Scan QR / barcode — adds to cart instantly"
+        />
 
         <div className="relative">
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -235,7 +246,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
 
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Scan className="h-4 w-4" />
-          Press Enter to add first result. F2 focus search.
+          Scan QR to add · type to search · Enter to pick first result
         </div>
       </div>
 
@@ -366,12 +377,20 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                 </Select>
               </div>
               {(!customerId || customerId === "none") && (
-                <Input
-                  className="h-9"
-                  placeholder="Customer name (optional)"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                />
+                <div className="space-y-2">
+                  <Input
+                    className="h-9"
+                    placeholder="Customer name (optional)"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                  />
+                  <Input
+                    className="h-9"
+                    placeholder="Mobile number (optional)"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                  />
+                </div>
               )}
               <div className="grid grid-cols-2 gap-2">
                 <div>

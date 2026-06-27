@@ -6,7 +6,7 @@ import {
   purchases,
   sales,
 } from "@/db/schema";
-import { desc, eq, sql, asc } from "drizzle-orm";
+import { desc, eq, sql, asc, and, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 
 const paymentSchema = z.object({
@@ -112,44 +112,75 @@ export async function getSupplierOutstanding(supplierId: number) {
 
 export const getSuppliersWithOutstanding = async () => {
   const allSuppliers = await db.select().from(suppliers).orderBy(asc(suppliers.name));
+
+  const purchaseSums = await db
+    .select({
+      supplierId: purchases.supplierId,
+      total: sql<string>`sum(${purchases.grandTotal}::numeric - coalesce(${purchases.paidAmount}::numeric, 0))`
+    })
+    .from(purchases)
+    .where(isNotNull(purchases.supplierId))
+    .groupBy(purchases.supplierId);
+
+  const paymentSums = await db
+    .select({
+      supplierId: partyPayments.supplierId,
+      total: sql<string>`sum(${partyPayments.amount}::numeric)`
+    })
+    .from(partyPayments)
+    .where(and(isNotNull(partyPayments.supplierId), eq(partyPayments.type, "payment")))
+    .groupBy(partyPayments.supplierId);
+
+  const purchaseMap = new Map(purchaseSums.map(p => [p.supplierId, parseFloat(p.total)]));
+  const paymentMap = new Map(paymentSums.map(p => [p.supplierId, parseFloat(p.total)]));
+
   const result = [];
   for (const s of allSuppliers) {
-    const outstanding = await getSupplierOutstanding(s.id);
+    const pVal = purchaseMap.get(s.id) ?? 0;
+    const payVal = paymentMap.get(s.id) ?? 0;
+    const outstanding = Math.round((pVal - payVal) * 100) / 100;
     if (outstanding > 0) result.push({ ...s, outstanding });
   }
   return result.sort((a, b) => b.outstanding - a.outstanding);
 };
 
 export async function getOutstandingSummary() {
-  const customerList = await db.select().from(customers);
-  const supplierList = await db.select().from(suppliers);
+  const [salesTotal] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)), 0)`,
+    })
+    .from(sales)
+    .innerJoin(customers, eq(sales.customerId, customers.id));
 
-  let receivables = 0;
-  for (const c of customerList) {
-    const [salesTotal] = await db
-      .select({
-        total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)), 0)`,
-      })
-      .from(sales)
-      .where(eq(sales.customerId, c.id));
-    const [paymentsTotal] = await db
-      .select({
-        total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
-      })
-      .from(partyPayments)
-      .where(eq(partyPayments.customerId, c.id));
-    receivables +=
-      parseFloat(salesTotal?.total ?? "0") -
-      parseFloat(paymentsTotal?.total ?? "0");
-  }
+  const [paymentsTotal] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
+    })
+    .from(partyPayments)
+    .innerJoin(customers, eq(partyPayments.customerId, customers.id))
+    .where(eq(partyPayments.type, "receipt"));
 
-  let payables = 0;
-  for (const s of supplierList) {
-    payables += await getSupplierOutstanding(s.id);
-  }
+  const receivables = parseFloat(salesTotal?.total ?? "0") - parseFloat(paymentsTotal?.total ?? "0");
+
+  const [purchaseTotal] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${purchases.grandTotal}::numeric - coalesce(${purchases.paidAmount}::numeric, 0)), 0)`,
+    })
+    .from(purchases)
+    .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id));
+
+  const [supplierPaymentsTotal] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
+    })
+    .from(partyPayments)
+    .innerJoin(suppliers, eq(partyPayments.supplierId, suppliers.id))
+    .where(eq(partyPayments.type, "payment"));
+
+  const payables = parseFloat(purchaseTotal?.total ?? "0") - parseFloat(supplierPaymentsTotal?.total ?? "0");
 
   return {
     receivables: Math.round(receivables * 100) / 100,
     payables: Math.round(payables * 100) / 100,
   };
-};
+}

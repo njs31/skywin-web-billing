@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import { customers, sales, partyPayments, saleReturns } from "@/db/schema";
-import { asc, eq, ilike, or, sql, desc } from "drizzle-orm";
+import { asc, eq, ilike, or, sql, desc, and, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 
 export const getCustomers = unstable_cache(
@@ -118,9 +118,44 @@ export async function getCustomerOutstanding(customerId: number) {
 export const getCustomersWithOutstanding = unstable_cache(
   async () => {
     const allCustomers = await db.select().from(customers).orderBy(asc(customers.name));
+
+    const salesSums = await db
+      .select({
+        customerId: sales.customerId,
+        total: sql<string>`sum(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0))`
+      })
+      .from(sales)
+      .where(isNotNull(sales.customerId))
+      .groupBy(sales.customerId);
+
+    const returnsSums = await db
+      .select({
+        customerId: saleReturns.customerId,
+        total: sql<string>`sum(${saleReturns.grandTotal}::numeric)`
+      })
+      .from(saleReturns)
+      .where(isNotNull(saleReturns.customerId))
+      .groupBy(saleReturns.customerId);
+
+    const paymentsSums = await db
+      .select({
+        customerId: partyPayments.customerId,
+        total: sql<string>`sum(${partyPayments.amount}::numeric)`
+      })
+      .from(partyPayments)
+      .where(and(isNotNull(partyPayments.customerId), eq(partyPayments.type, "receipt")))
+      .groupBy(partyPayments.customerId);
+
+    const salesMap = new Map(salesSums.map(s => [s.customerId, parseFloat(s.total)]));
+    const returnsMap = new Map(returnsSums.map(r => [r.customerId, parseFloat(r.total)]));
+    const paymentsMap = new Map(paymentsSums.map(p => [p.customerId, parseFloat(p.total)]));
+
     const result = [];
     for (const c of allCustomers) {
-      const outstanding = await getCustomerOutstanding(c.id);
+      const sVal = salesMap.get(c.id) ?? 0;
+      const rVal = returnsMap.get(c.id) ?? 0;
+      const pVal = paymentsMap.get(c.id) ?? 0;
+      const outstanding = Math.round((sVal - rVal - pVal) * 100) / 100;
       if (outstanding > 0) {
         result.push({ ...c, outstanding });
       }

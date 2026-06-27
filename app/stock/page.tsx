@@ -30,9 +30,14 @@ export default async function StockPage() {
             Live inventory across all products
           </p>
         </div>
-        <Button asChild>
-          <Link href="/stock/adjust">Stock Adjustment</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild>
+            <Link href="/stock/import">Import Excel</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/stock/adjust">Adjust Stock</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">

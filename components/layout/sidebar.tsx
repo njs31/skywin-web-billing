@@ -61,6 +61,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/products", label: "Products", icon: Package },
       { href: "/stock", label: "Stock Status", icon: Warehouse },
+      { href: "/stock/import", label: "Stock Import", icon: Warehouse },
       { href: "/stock/expiry", label: "Near Expiry", icon: Warehouse },
     ],
   },
@@ -82,12 +83,25 @@ const navGroups: NavGroup[] = [
   },
 ];
 
+const allNavHrefs = navGroups.flatMap((g) => g.items.map((i) => i.href));
+
+function isNavActive(pathname: string, href: string) {
+  if (href === "/") return pathname === "/";
+  if (pathname === href) return true;
+  if (!pathname.startsWith(`${href}/`)) return false;
+
+  // Prefer the longest matching href so /purchases/new doesn't also highlight /purchases
+  return !allNavHrefs.some(
+    (other) =>
+      other !== href &&
+      other.startsWith(`${href}/`) &&
+      (pathname === other || pathname.startsWith(`${other}/`))
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-slate-900 text-white">
@@ -127,7 +141,7 @@ export function Sidebar() {
                 <div className="space-y-0.5">
                   {group.items.map((item) => {
                     const Icon = item.icon;
-                    const active = isActive(item.href);
+                    const active = isNavActive(pathname, item.href);
                     return (
                       <Link
                         key={item.href}
