@@ -4,12 +4,34 @@ POS billing software for **SKYWIN BIOTECH / AGRI SUPER MARKET** (Kumbakonam). Bu
 
 ## Features
 
-- **POS Billing** — fast product search, cart, GST (CGST/SGST), invoice print
-- **Products** — 1,000+ agri products with stock, sale rate, and GST editing
-- **Suppliers** — supplier list seeded from purchase records
-- **Purchases** — record stock inward, auto-update inventory
-- **Invoices** — sales history with printable GST invoices
-- **Dashboard** — today's sales, low-stock alerts, top products
+### Billing (like MARG ERP)
+- **Retail & Wholesale POS** — toggle billing mode, separate rates, invoice prefixes
+- **GST Invoices** — CGST/SGST, HSN, line & bill discounts, print + WhatsApp share
+- **Customer ledger** — retail, wholesale, farmer types; credit limit; party-wise outstanding
+- **Sales returns** — credit notes with automatic stock restoration
+
+### Purchase & Inventory
+- **Purchase entry & book** — supplier-wise inward stock
+- **Stock status** — valuation, reorder alerts, low-stock highlighting
+- **Stock adjustment** — manual corrections without fake transactions
+- **Near expiry** — products expiring within 90 days
+- **Categories** — Seeds, Fertilizers, Pesticides, Machinery, Irrigation, etc.
+
+### Accounts
+- **Receipts** — collect from customers against credit sales
+- **Payments** — pay suppliers against purchase outstanding
+- **Outstanding report** — debtors & creditors summary
+
+### Reports
+- Sale book, purchase book
+- Product-wise & party-wise sales
+- Daily summary with gross profit
+- Gross profit & margin (MTD)
+
+### System
+- **Settings** — business details, GSTIN, operator name, invoice prefix
+- **1,015 products** seeded from Excel with opening stock
+- **37 suppliers** from purchase records
 
 ## Tech Stack
 

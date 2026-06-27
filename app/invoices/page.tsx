@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getSales } from "@/lib/actions/sales";
+import { getSales } from "@/lib/queries/sales";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

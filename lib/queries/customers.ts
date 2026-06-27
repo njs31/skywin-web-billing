@@ -1,0 +1,141 @@
+import { unstable_cache } from "next/cache";
+import { db } from "@/db";
+import { customers, sales, partyPayments, saleReturns } from "@/db/schema";
+import { asc, eq, ilike, or, sql, desc } from "drizzle-orm";
+import { z } from "zod";
+
+export const getCustomers = unstable_cache(
+  async (search?: string) => {
+    if (search?.trim()) {
+      return db
+        .select()
+        .from(customers)
+        .where(
+          or(
+            ilike(customers.name, `%${search}%`),
+            ilike(customers.phone, `%${search}%`)
+          )
+        )
+        .orderBy(asc(customers.name))
+        .limit(50);
+    }
+    return db.select().from(customers).orderBy(asc(customers.name));
+  },
+  ["customers-list"],
+  { revalidate: 30, tags: ["customers"] }
+);
+
+export async function getCustomerById(id: number) {
+  const [customer] = await db
+    .select()
+    .from(customers)
+    .where(eq(customers.id, id))
+    .limit(1);
+  return customer ?? null;
+}
+
+const customerSchema = z.object({
+  name: z.string().min(1),
+  phone: z.string().optional(),
+  gstin: z.string().optional(),
+  address: z.string().optional(),
+  type: z.enum(["retail", "wholesale", "farmer"]).default("retail"),
+  creditLimit: z.number().min(0).optional(),
+});
+
+export async function createCustomer(input: z.infer<typeof customerSchema>) {
+  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const data = customerSchema.parse(input);
+  const [customer] = await db
+    .insert(customers)
+    .values({
+      name: data.name,
+      phone: data.phone,
+      gstin: data.gstin,
+      address: data.address,
+      type: data.type,
+      creditLimit: (data.creditLimit ?? 0).toFixed(2),
+    })
+    .returning();
+  revalidateTag("customers", "max");
+  revalidatePath("/customers");
+  return customer;
+}
+
+export async function updateCustomer(
+  id: number,
+  input: z.infer<typeof customerSchema>
+) {
+  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const data = customerSchema.parse(input);
+  const [customer] = await db
+    .update(customers)
+    .set({
+      name: data.name,
+      phone: data.phone,
+      gstin: data.gstin,
+      address: data.address,
+      type: data.type,
+      creditLimit: (data.creditLimit ?? 0).toFixed(2),
+    })
+    .where(eq(customers.id, id))
+    .returning();
+  revalidateTag("customers", "max");
+  revalidatePath("/customers");
+  return customer;
+}
+
+export async function getCustomerOutstanding(customerId: number) {
+  const [salesTotal] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)), 0)`,
+    })
+    .from(sales)
+    .where(eq(sales.customerId, customerId));
+
+  const [returnsTotal] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${saleReturns.grandTotal}::numeric), 0)`,
+    })
+    .from(saleReturns)
+    .where(eq(saleReturns.customerId, customerId));
+
+  const [paymentsTotal] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
+    })
+    .from(partyPayments)
+    .where(eq(partyPayments.customerId, customerId));
+
+  const outstanding =
+    parseFloat(salesTotal?.total ?? "0") -
+    parseFloat(returnsTotal?.total ?? "0") -
+    parseFloat(paymentsTotal?.total ?? "0");
+
+  return Math.round(outstanding * 100) / 100;
+}
+
+export const getCustomersWithOutstanding = unstable_cache(
+  async () => {
+    const allCustomers = await db.select().from(customers).orderBy(asc(customers.name));
+    const result = [];
+    for (const c of allCustomers) {
+      const outstanding = await getCustomerOutstanding(c.id);
+      if (outstanding > 0) {
+        result.push({ ...c, outstanding });
+      }
+    }
+    return result.sort((a, b) => b.outstanding - a.outstanding);
+  },
+  ["customers-outstanding"],
+  { revalidate: 30, tags: ["customers"] }
+);
+
+export async function getCustomerSales(customerId: number) {
+  return db
+    .select()
+    .from(sales)
+    .where(eq(sales.customerId, customerId))
+    .orderBy(desc(sales.date))
+    .limit(50);
+}

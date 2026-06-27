@@ -3,7 +3,6 @@
 import { useEffect, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { searchProducts } from "@/lib/actions/products";
-import { getSuppliers } from "@/lib/actions/suppliers";
 import { createPurchase } from "@/lib/actions/purchases";
 import { calculateLineAmount } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getSupplierById } from "@/lib/actions/suppliers";
-import { getPurchasesBySupplier } from "@/lib/actions/purchases";
+import { getSupplierById } from "@/lib/queries/suppliers";
+import { getPurchasesBySupplier } from "@/lib/queries/purchases";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
