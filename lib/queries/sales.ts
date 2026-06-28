@@ -331,15 +331,18 @@ export async function getSaleById(id: number) {
       id: saleItems.id,
       productId: saleItems.productId,
       productName: products.name,
+      customName: saleItems.customName,
       hsnCode: products.hsnCode,
       qty: saleItems.qty,
       rate: saleItems.rate,
       discountPercent: saleItems.discountPercent,
+      discountType: saleItems.discountType,
+      discountValue: saleItems.discountValue,
       gstRate: saleItems.gstRate,
       amount: saleItems.amount,
     })
     .from(saleItems)
-    .innerJoin(products, eq(saleItems.productId, products.id))
+    .leftJoin(products, eq(saleItems.productId, products.id))
     .where(eq(saleItems.saleId, id));
 
   return { ...sale, items };

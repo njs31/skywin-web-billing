@@ -20,11 +20,14 @@ type InvoiceSale = {
 };
 
 type InvoiceItem = {
-  productName: string;
+  productName: string | null;
+  customName?: string | null;
   hsnCode: string | null;
   qty: string;
   rate: string;
   discountPercent?: string | null;
+  discountType?: string | null;
+  discountValue?: string | null;
   gstRate: string;
   amount: string;
 };
@@ -121,7 +124,7 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
           {items.map((item, idx) => (
             <tr key={idx} className="border-b border-slate-200">
               <td className="px-2 py-2">{idx + 1}</td>
-              <td className="px-2 py-2">{item.productName}</td>
+              <td className="px-2 py-2">{item.productName ?? item.customName ?? "Custom Item"}</td>
               <td className="px-2 py-2">{item.hsnCode ?? "-"}</td>
               <td className="px-2 py-2 text-right">
                 {formatNumber(item.qty, 2)}

@@ -40,6 +40,7 @@ export async function getSetting(key: keyof AppSettings): Promise<string> {
 }
 
 export async function updateSettings(data: Partial<AppSettings>) {
+  const { revalidatePath, revalidateTag } = await import("next/cache");
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined) continue;
     await db
@@ -50,6 +51,10 @@ export async function updateSettings(data: Partial<AppSettings>) {
         set: { value: String(value) },
       });
   }
+  revalidateTag("settings", "max");
+  revalidatePath("/settings");
+  revalidatePath("/products");
+  revalidatePath("/stock");
 }
 
 export async function seedDefaultSettings() {

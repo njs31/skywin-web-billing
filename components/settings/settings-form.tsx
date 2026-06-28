@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { updateSettings } from "@/lib/actions/billing";
 import type { AppSettings } from "@/lib/settings";
 import { Button } from "@/components/ui/button";
@@ -13,24 +13,31 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
+  const [error, setError] = useState("");
+
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    setError("");
     startTransition(async () => {
-      await updateSettings({
-        businessName: fd.get("businessName") as string,
-        tagline: fd.get("tagline") as string,
-        address: fd.get("address") as string,
-        phone: fd.get("phone") as string,
-        email: fd.get("email") as string,
-        gstin: fd.get("gstin") as string,
-        defaultOperator: fd.get("defaultOperator") as string,
-        invoicePrefix: fd.get("invoicePrefix") as string,
-        allowNegativeStock: fd.get("allowNegativeStock") as string,
-        inventoryAdminPinRequired: fd.get("inventoryAdminPinRequired") as string,
-        inventoryAdminPin: fd.get("inventoryAdminPin") as string,
-      });
-      router.refresh();
+      try {
+        await updateSettings({
+          businessName: fd.get("businessName") as string,
+          tagline: fd.get("tagline") as string,
+          address: fd.get("address") as string,
+          phone: fd.get("phone") as string,
+          email: fd.get("email") as string,
+          gstin: fd.get("gstin") as string,
+          defaultOperator: fd.get("defaultOperator") as string,
+          invoicePrefix: fd.get("invoicePrefix") as string,
+          allowNegativeStock: fd.get("allowNegativeStock") as string,
+          inventoryAdminPinRequired: fd.get("inventoryAdminPinRequired") as string,
+          inventoryAdminPin: fd.get("inventoryAdminPin") as string,
+        });
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save settings");
+      }
     });
   };
 
@@ -114,6 +121,11 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
               />
             </div>
           </div>
+          {error && (
+            <div className="rounded-md bg-red-50 p-3 text-sm text-red-600 font-medium">
+              {error}
+            </div>
+          )}
           <Button type="submit" disabled={isPending}>
             {isPending ? "Saving..." : "Save Settings"}
           </Button>

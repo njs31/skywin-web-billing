@@ -56,12 +56,13 @@ export async function getPurchaseById(id: number) {
       id: purchaseItems.id,
       productId: purchaseItems.productId,
       productName: products.name,
+      customName: purchaseItems.customName,
       qty: purchaseItems.qty,
       rate: purchaseItems.rate,
       amount: purchaseItems.amount,
     })
     .from(purchaseItems)
-    .innerJoin(products, eq(purchaseItems.productId, products.id))
+    .leftJoin(products, eq(purchaseItems.productId, products.id))
     .where(eq(purchaseItems.purchaseId, id));
 
   return { ...purchase, items };
@@ -146,9 +147,10 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
       });
 
       if (item.productId) {
+        const effectiveRate = item.amount / item.qty; // after line discount
         const landedRate = subtotal > 0
-          ? item.rate * (1 + handling / subtotal)
-          : item.rate;
+          ? effectiveRate * (1 + handling / subtotal)
+          : effectiveRate;
 
         const [product] = await tx
           .select({ stockQty: products.stockQty, purchaseRate: products.purchaseRate })

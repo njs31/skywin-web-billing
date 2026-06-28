@@ -144,12 +144,13 @@ export async function getSaleReturnById(id: number) {
   const items = await db
     .select({
       productName: products.name,
+      customName: saleReturnItems.customName,
       qty: saleReturnItems.qty,
       rate: saleReturnItems.rate,
       amount: saleReturnItems.amount,
     })
     .from(saleReturnItems)
-    .innerJoin(products, eq(saleReturnItems.productId, products.id))
+    .leftJoin(products, eq(saleReturnItems.productId, products.id))
     .where(eq(saleReturnItems.returnId, id));
 
   return { ...ret, items };
