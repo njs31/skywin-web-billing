@@ -55,7 +55,22 @@ export async function createProduct(
   return createProductMutation(input);
 }
 
-export async function updateSettings(input: Partial<AppSettings>) {
+export async function updateSettings(
+  input: Partial<AppSettings>,
+  currentPin?: string
+) {
+  if (input.inventoryAdminPin !== undefined) {
+    const { getSetting } = await import("@/lib/settings");
+    const storedPin = await getSetting("inventoryAdminPin");
+    if (input.inventoryAdminPin !== storedPin) {
+      if (!currentPin) {
+        throw new Error("Current PIN is required to change the supervisor PIN.");
+      }
+      if (currentPin !== storedPin) {
+        throw new Error("Current PIN is incorrect. Please enter the correct current PIN.");
+      }
+    }
+  }
   return updateSettingsMutation(input);
 }
 

@@ -21,19 +21,22 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
     setError("");
     startTransition(async () => {
       try {
-        await updateSettings({
-          businessName: fd.get("businessName") as string,
-          tagline: fd.get("tagline") as string,
-          address: fd.get("address") as string,
-          phone: fd.get("phone") as string,
-          email: fd.get("email") as string,
-          gstin: fd.get("gstin") as string,
-          defaultOperator: fd.get("defaultOperator") as string,
-          invoicePrefix: fd.get("invoicePrefix") as string,
-          allowNegativeStock: fd.get("allowNegativeStock") as string,
-          inventoryAdminPinRequired: fd.get("inventoryAdminPinRequired") as string,
-          inventoryAdminPin: fd.get("inventoryAdminPin") as string,
-        });
+        await updateSettings(
+          {
+            businessName: fd.get("businessName") as string,
+            tagline: fd.get("tagline") as string,
+            address: fd.get("address") as string,
+            phone: fd.get("phone") as string,
+            email: fd.get("email") as string,
+            gstin: fd.get("gstin") as string,
+            defaultOperator: fd.get("defaultOperator") as string,
+            invoicePrefix: fd.get("invoicePrefix") as string,
+            allowNegativeStock: fd.get("allowNegativeStock") as string,
+            inventoryAdminPinRequired: fd.get("inventoryAdminPinRequired") as string,
+            inventoryAdminPin: fd.get("inventoryAdminPin") as string,
+          },
+          fd.get("currentPin") as string || undefined,
+        );
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to save settings");
@@ -112,7 +115,20 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
               </select>
             </div>
             <div>
-              <Label>Supervisor / Admin PIN</Label>
+              <Label>Current Supervisor PIN</Label>
+              <Input
+                type="password"
+                name="currentPin"
+                placeholder="Required to change PIN"
+                className={
+                  error && error.includes("PIN")
+                    ? "border-red-500"
+                    : ""
+                }
+              />
+            </div>
+            <div>
+              <Label>New Supervisor PIN</Label>
               <Input
                 type="password"
                 name="inventoryAdminPin"
