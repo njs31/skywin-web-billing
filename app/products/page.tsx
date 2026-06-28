@@ -12,6 +12,7 @@ export default async function ProductsPage({
 }: {
   searchParams: Promise<{ q?: string; page?: string }>;
 }) {
+  s
   const { q, page: pageParam } = await searchParams;
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
   const [products, totalCount] = await Promise.all([
