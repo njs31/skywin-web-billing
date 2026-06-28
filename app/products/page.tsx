@@ -24,12 +24,17 @@ export default async function ProductsPage({
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">Products</h1>
-        <p className="text-sm text-slate-500">
-          {total} products — edit sale rates and GST
-          {!q && totalPages > 1 && ` (page ${page} of ${totalPages})`}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Products</h1>
+          <p className="text-sm text-slate-500">
+            {total} products — edit sale rates and GST
+            {!q && totalPages > 1 && ` (page ${page} of ${totalPages})`}
+          </p>
+        </div>
+        <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
+          <Link href="/products/new">Add Product</Link>
+        </Button>
       </div>
 
       <Card>
