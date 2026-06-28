@@ -163,7 +163,15 @@ const productSchema = z.object({
 
 export async function createProduct(input: z.infer<typeof productSchema>) {
   const { revalidatePath, revalidateTag } = await import("next/cache");
-  const data = productSchema.parse(input);
+  let data;
+  try {
+    data = productSchema.parse(input);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new Error(err.issues.map((e) => e.message).join(", "));
+    }
+    throw err;
+  }
   const [product] = await db
     .insert(products)
     .values({

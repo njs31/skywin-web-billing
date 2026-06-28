@@ -52,11 +52,16 @@ export default function NewProductPage() {
         });
         router.push("/products");
       } catch (err) {
-        if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError("Failed to create product");
+        let msg = err instanceof Error ? err.message : "Failed to create product";
+        if (msg.trim().startsWith("[")) {
+          try {
+            const parsed = JSON.parse(msg);
+            if (Array.isArray(parsed) && parsed[0]?.message) {
+              msg = parsed.map((e: any) => e.message).join(", ");
+            }
+          } catch (e) {}
         }
+        setError(msg);
       }
     });
   };
