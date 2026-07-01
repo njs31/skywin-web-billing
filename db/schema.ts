@@ -35,6 +35,12 @@ export const partyPaymentTypeEnum = pgEnum("party_payment_type", [
   "receipt",
   "payment",
 ]);
+export const roleEnum = pgEnum("role", [
+  "admin",
+  "regional_manager",
+  "sales_officer",
+  "dealer",
+]);
 
 export const categories = pgTable("categories", {
   id: serial("id").primaryKey(),
@@ -163,6 +169,7 @@ export const saleItems = pgTable("sale_items", {
   discountValue: numeric("discount_value", { precision: 14, scale: 2 }).default("0").notNull(),
   gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  hsnCode: text("hsn_code"),
 });
 
 export const saleReturns = pgTable("sale_returns", {
@@ -346,6 +353,37 @@ export const purchaseReturnItemsRelations = relations(purchaseReturnItems, ({ on
   }),
 }));
 
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull().unique(),
+  role: roleEnum("role").notNull(),
+  customerId: integer("customer_id").references(() => customers.id),
+  otp: text("otp"),
+  otpExpiry: timestamp("otp_expiry"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const reportingLines = pgTable("reporting_lines", {
+  id: serial("id").primaryKey(),
+  managerId: integer("manager_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  officerId: integer("officer_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+});
+
+export const dealerMappings = pgTable("dealer_mappings", {
+  id: serial("id").primaryKey(),
+  officerId: integer("officer_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  dealerId: integer("dealer_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+});
+
 export type Category = typeof categories.$inferSelect;
 export type Supplier = typeof suppliers.$inferSelect;
 export type Customer = typeof customers.$inferSelect;
@@ -356,3 +394,6 @@ export type SaleReturn = typeof saleReturns.$inferSelect;
 export type PartyPayment = typeof partyPayments.$inferSelect;
 export type PurchaseReturn = typeof purchaseReturns.$inferSelect;
 export type PurchaseReturnItem = typeof purchaseReturnItems.$inferSelect;
+export type User = typeof users.$inferSelect;
+export type ReportingLine = typeof reportingLines.$inferSelect;
+export type DealerMapping = typeof dealerMappings.$inferSelect;

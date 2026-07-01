@@ -27,6 +27,7 @@ const saleItemSchema = z.object({
   discountPercent: z.number().min(0).max(100).optional(),
   discountType: z.enum(["percent", "value"]).default("percent"),
   discountValue: z.number().min(0).default(0),
+  hsnCode: z.string().optional().nullable(),
 });
 
 const createSaleSchema = z.object({
@@ -68,7 +69,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const { revalidatePath, revalidateTag } = await import("next/cache");
   const data = createSaleSchema.parse(input);
   const settings = await getSettings();
-  const allowNegative = settings.allowNegativeStock === "true";
+  // Enforce validation: Do not allow sales if product is not in inventory (force allowNegative = false)
+  const allowNegative = false;
 
   if (data.paymentMode === "credit" && (!data.customerId || data.customerId === undefined)) {
     throw new Error("Customer registration required for credit transactions.");
@@ -237,6 +239,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
         discountValue: item.discountValue.toFixed(2),
         gstRate: item.gstRate.toFixed(2),
         amount: amount.toFixed(2),
+        hsnCode: item.hsnCode || null,
       });
 
       if (item.productId) {
@@ -272,31 +275,51 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   return sale;
 }
 
-export const getSales = unstable_cache(
-  async () =>
-    db
-      .select({
-        id: sales.id,
-        invoiceNo: sales.invoiceNo,
-        date: sales.date,
-        billType: sales.billType,
-        customerName: sales.customerName,
-        customerId: sales.customerId,
-        paymentMode: sales.paymentMode,
-        grandTotal: sales.grandTotal,
-        paidAmount: sales.paidAmount,
-        operatorName: sales.operatorName,
-        customerRecordName: customers.name,
-      })
-      .from(sales)
-      .leftJoin(customers, eq(sales.customerId, customers.id))
+export async function getSales() {
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
+  const query = db
+    .select({
+      id: sales.id,
+      invoiceNo: sales.invoiceNo,
+      date: sales.date,
+      billType: sales.billType,
+      customerName: sales.customerName,
+      customerId: sales.customerId,
+      paymentMode: sales.paymentMode,
+      grandTotal: sales.grandTotal,
+      paidAmount: sales.paidAmount,
+      operatorName: sales.operatorName,
+      customerRecordName: customers.name,
+    })
+    .from(sales)
+    .leftJoin(customers, eq(sales.customerId, customers.id));
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return [];
+    return query
+      .where(inArray(sales.customerId, customerIds))
       .orderBy(desc(sales.date))
-      .limit(500),
-  ["sales-list"],
-  { revalidate: 15, tags: ["sales"] }
-);
+      .limit(500);
+  }
+
+  return query.orderBy(desc(sales.date)).limit(500);
+}
 
 export async function getSaleById(id: number) {
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
   const [sale] = await db
     .select({
       id: sales.id,
@@ -326,13 +349,20 @@ export async function getSaleById(id: number) {
 
   if (!sale) return null;
 
+  // Check visibility scoping
+  if (customerIds !== null) {
+    if (!sale.customerId || !customerIds.includes(sale.customerId)) {
+      throw new Error("Unauthorized access to this invoice.");
+    }
+  }
+
   const items = await db
     .select({
       id: saleItems.id,
       productId: saleItems.productId,
       productName: products.name,
       customName: saleItems.customName,
-      hsnCode: products.hsnCode,
+      hsnCode: sql<string>`coalesce(${saleItems.hsnCode}, ${products.hsnCode})`,
       qty: saleItems.qty,
       rate: saleItems.rate,
       discountPercent: saleItems.discountPercent,
@@ -348,55 +378,107 @@ export async function getSaleById(id: number) {
   return { ...sale, items };
 }
 
-export const getTodaySalesTotal = unstable_cache(
-  async () => {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+export async function getTodaySalesTotal() {
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
 
-    const [result] = await db
-      .select({
-        total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
-        count: sql<number>`count(*)::int`,
-        retail: sql<string>`coalesce(sum(case when ${sales.billType} = 'retail' then ${sales.grandTotal}::numeric else 0 end), 0)`,
-        wholesale: sql<string>`coalesce(sum(case when ${sales.billType} = 'wholesale' then ${sales.grandTotal}::numeric else 0 end), 0)`,
-      })
-      .from(sales)
-      .where(gte(sales.date, startOfDay));
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
 
+  const query = db
+    .select({
+      total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
+      count: sql<number>`count(*)::int`,
+      retail: sql<string>`coalesce(sum(case when ${sales.billType} = 'retail' then ${sales.grandTotal}::numeric else 0 end), 0)`,
+      wholesale: sql<string>`coalesce(sum(case when ${sales.billType} = 'wholesale' then ${sales.grandTotal}::numeric else 0 end), 0)`,
+    })
+    .from(sales);
+
+  const baseCondition = gte(sales.date, startOfDay);
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) {
+      return { total: 0, count: 0, retail: 0, wholesale: 0 };
+    }
+    const [result] = await query.where(and(baseCondition, inArray(sales.customerId, customerIds)));
     return {
       total: parseFloat(result?.total ?? "0"),
       count: result?.count ?? 0,
       retail: parseFloat(result?.retail ?? "0"),
       wholesale: parseFloat(result?.wholesale ?? "0"),
     };
-  },
-  ["today-sales"],
-  { revalidate: 15, tags: ["sales"] }
-);
+  }
 
-export const getRecentSales = unstable_cache(
-  async (limit = 5) =>
-    db.select().from(sales).orderBy(desc(sales.date)).limit(limit),
-  ["recent-sales"],
-  { revalidate: 15, tags: ["sales"] }
-);
+  const [result] = await query.where(baseCondition);
+  return {
+    total: parseFloat(result?.total ?? "0"),
+    count: result?.count ?? 0,
+    retail: parseFloat(result?.retail ?? "0"),
+    wholesale: parseFloat(result?.wholesale ?? "0"),
+  };
+}
 
-export const getTopSellingProducts = unstable_cache(
-  async (limit = 5) =>
-    db
-      .select({
-        productName: products.name,
-        totalQty: sql<string>`sum(${saleItems.qty}::numeric)`,
-        totalAmount: sql<string>`sum(${saleItems.amount}::numeric)`,
-      })
-      .from(saleItems)
-      .innerJoin(products, eq(saleItems.productId, products.id))
+export async function getRecentSales(limit = 5) {
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
+  const query = db.select().from(sales);
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return [];
+    return query
+      .where(inArray(sales.customerId, customerIds))
+      .orderBy(desc(sales.date))
+      .limit(limit);
+  }
+
+  return query.orderBy(desc(sales.date)).limit(limit);
+}
+
+export async function getTopSellingProducts(limit = 5) {
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
+  const query = db
+    .select({
+      productName: products.name,
+      totalQty: sql<string>`sum(${saleItems.qty}::numeric)`,
+      totalAmount: sql<string>`sum(${saleItems.amount}::numeric)`,
+    })
+    .from(saleItems)
+    .innerJoin(products, eq(saleItems.productId, products.id))
+    .innerJoin(sales, eq(saleItems.saleId, sales.id));
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return [];
+    return query
+      .where(inArray(sales.customerId, customerIds))
       .groupBy(products.name)
       .orderBy(desc(sql`sum(${saleItems.amount}::numeric)`))
-      .limit(limit),
-  ["top-products"],
-  { revalidate: 60, tags: ["sales"] }
-);
+      .limit(limit);
+  }
+
+  return query
+    .groupBy(products.name)
+    .orderBy(desc(sql`sum(${saleItems.amount}::numeric)`))
+    .limit(limit);
+}
+
 
 export async function getProductByBarcode(barcode: string) {
   const [product] = await db

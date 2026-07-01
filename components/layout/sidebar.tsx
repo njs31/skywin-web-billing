@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type NavItem = {
   href: string;
@@ -80,7 +80,10 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "System",
-    items: [{ href: "/settings", label: "Settings", icon: Settings }],
+    items: [
+      { href: "/users", label: "User Management", icon: Users },
+      { href: "/settings", label: "Settings", icon: Settings },
+    ],
   },
 ];
 
@@ -91,7 +94,6 @@ function isNavActive(pathname: string, href: string) {
   if (pathname === href) return true;
   if (!pathname.startsWith(`${href}/`)) return false;
 
-  // Prefer the longest matching href so /purchases/new doesn't also highlight /purchases
   return !allNavHrefs.some(
     (other) =>
       other !== href &&
@@ -109,6 +111,68 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    import("@/lib/actions/auth").then(({ getCurrentUser }) => {
+      getCurrentUser().then((user) => {
+        setCurrentUser(user);
+      });
+    });
+  }, []);
+
+  const filteredNavGroups = navGroups
+    .map((group) => {
+      const items = group.items.filter((item) => {
+        if (!currentUser) return false;
+        const role = currentUser.role;
+
+        if (role === "admin") return true;
+
+        if (role === "regional_manager") {
+          return (
+            item.href === "/" ||
+            item.href === "/invoices" ||
+            item.href === "/returns" ||
+            item.href === "/customers" ||
+            item.href === "/stock" ||
+            item.href === "/stock/expiry" ||
+            item.href === "/accounts/receipts" ||
+            item.href === "/accounts/outstanding" ||
+            item.href === "/reports"
+          );
+        }
+
+        if (role === "sales_officer") {
+          return (
+            item.href === "/" ||
+            item.href === "/pos" ||
+            item.href === "/invoices" ||
+            item.href === "/returns" ||
+            item.href === "/customers" ||
+            item.href === "/stock" ||
+            item.href === "/stock/expiry" ||
+            item.href === "/accounts/receipts" ||
+            item.href === "/accounts/outstanding" ||
+            item.href === "/reports"
+          );
+        }
+
+        if (role === "dealer") {
+          return (
+            item.href === "/" ||
+            item.href === "/pos" ||
+            item.href === "/invoices" ||
+            item.href === "/accounts/outstanding"
+          );
+        }
+
+        return false;
+      });
+
+      return { ...group, items };
+    })
+    .filter((g) => g.items.length > 0);
 
   return (
     <>
@@ -148,7 +212,7 @@ export function Sidebar({
           </button>
         </div>
         <nav className="flex-1 overflow-y-auto sidebar-scrollbar p-3">
-          {navGroups.map((group) => {
+          {filteredNavGroups.map((group) => {
             const isOpenGroup = collapsed[group.label] !== true;
             return (
               <div key={group.label} className="mb-2">
@@ -198,8 +262,31 @@ export function Sidebar({
             );
           })}
         </nav>
-        <div className="border-t border-slate-800 p-3 text-xs text-slate-500">
-          GSTIN: {BUSINESS.gstin}
+        <div className="border-t border-slate-800 p-3.5 space-y-3">
+          {currentUser && (
+            <div className="flex flex-col gap-0.5 text-xs">
+              <span className="font-semibold text-slate-200 truncate">{currentUser.name}</span>
+              <span className="text-[10px] text-emerald-400 font-medium capitalize tracking-wide">
+                Role: {currentUser.role.replace("_", " ")}
+              </span>
+              <span className="text-[10px] text-slate-400">{currentUser.phone}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2 border-t border-slate-800/60 pt-2.5">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">
+              GSTIN: {BUSINESS.gstin}
+            </span>
+            <button
+              onClick={async () => {
+                const { logout } = await import("@/lib/actions/auth");
+                await logout();
+                window.location.reload();
+              }}
+              className="text-[10px] font-semibold text-rose-400 hover:text-rose-300 transition-colors uppercase tracking-wider cursor-pointer"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </aside>
     </>

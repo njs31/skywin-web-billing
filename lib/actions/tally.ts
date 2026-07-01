@@ -34,7 +34,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       productName: products.name,
       customName: saleItems.customName,
       sku: products.sku,
-      hsnCode: products.hsnCode,
+      hsnCode: sql<string>`coalesce(${saleItems.hsnCode}, ${products.hsnCode})`,
       categoryName: categories.name,
       notes: sales.notes,
       qty: saleItems.qty,

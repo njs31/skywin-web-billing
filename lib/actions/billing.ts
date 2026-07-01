@@ -87,3 +87,9 @@ export async function isInventoryPinRequired(): Promise<boolean> {
   const isRequired = await getSetting("inventoryAdminPinRequired");
   return isRequired === "true";
 }
+
+export async function getCustomerOutstanding(customerId: number): Promise<number> {
+  const { getCustomerOutstanding: query } = await import("@/lib/queries/customers");
+  return query(customerId);
+}
+

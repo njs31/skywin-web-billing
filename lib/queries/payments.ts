@@ -53,7 +53,15 @@ export async function createPartyPayment(input: z.infer<typeof paymentSchema>) {
 }
 
 export async function getReceipts() {
-  return db
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
+  const query = db
     .select({
       id: partyPayments.id,
       date: partyPayments.date,
@@ -63,8 +71,20 @@ export async function getReceipts() {
       customerName: customers.name,
     })
     .from(partyPayments)
-    .innerJoin(customers, eq(partyPayments.customerId, customers.id))
-    .where(eq(partyPayments.type, "receipt"))
+    .innerJoin(customers, eq(partyPayments.customerId, customers.id));
+
+  const baseCondition = eq(partyPayments.type, "receipt");
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return [];
+    return query
+      .where(and(baseCondition, inArray(partyPayments.customerId, customerIds)))
+      .orderBy(desc(partyPayments.date))
+      .limit(100);
+  }
+
+  return query
+    .where(baseCondition)
     .orderBy(desc(partyPayments.date))
     .limit(100);
 }
@@ -145,22 +165,48 @@ export const getSuppliersWithOutstanding = async () => {
 };
 
 export async function getOutstandingSummary() {
-  const [salesTotal] = await db
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
+  const salesQuery = db
     .select({
       total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)), 0)`,
     })
     .from(sales)
     .innerJoin(customers, eq(sales.customerId, customers.id));
 
-  const [paymentsTotal] = await db
+  const paymentsQuery = db
     .select({
       total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
     })
     .from(partyPayments)
-    .innerJoin(customers, eq(partyPayments.customerId, customers.id))
-    .where(eq(partyPayments.type, "receipt"));
+    .innerJoin(customers, eq(partyPayments.customerId, customers.id));
 
-  const receivables = parseFloat(salesTotal?.total ?? "0") - parseFloat(paymentsTotal?.total ?? "0");
+  const receiptsCondition = eq(partyPayments.type, "receipt");
+
+  let salesTotal, paymentsTotal;
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) {
+      salesTotal = [{ total: "0" }];
+      paymentsTotal = [{ total: "0" }];
+    } else {
+      salesTotal = await salesQuery.where(inArray(sales.customerId, customerIds));
+      paymentsTotal = await paymentsQuery.where(
+        and(receiptsCondition, inArray(partyPayments.customerId, customerIds))
+      );
+    }
+  } else {
+    salesTotal = await salesQuery;
+    paymentsTotal = await paymentsQuery.where(receiptsCondition);
+  }
+
+  const receivables = parseFloat(salesTotal[0]?.total ?? "0") - parseFloat(paymentsTotal[0]?.total ?? "0");
 
   const [purchaseTotal] = await db
     .select({

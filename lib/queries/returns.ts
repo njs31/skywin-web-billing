@@ -118,7 +118,15 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
 }
 
 export async function getSaleReturns() {
-  return db
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
+  const query = db
     .select({
       id: saleReturns.id,
       returnNo: saleReturns.returnNo,
@@ -128,18 +136,40 @@ export async function getSaleReturns() {
       saleInvoiceNo: sales.invoiceNo,
     })
     .from(saleReturns)
-    .leftJoin(sales, eq(saleReturns.saleId, sales.id))
-    .orderBy(desc(saleReturns.date))
-    .limit(100);
+    .leftJoin(sales, eq(saleReturns.saleId, sales.id));
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return [];
+    return query
+      .where(inArray(saleReturns.customerId, customerIds))
+      .orderBy(desc(saleReturns.date))
+      .limit(100);
+  }
+
+  return query.orderBy(desc(saleReturns.date)).limit(100);
 }
 
 export async function getSaleReturnById(id: number) {
+  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
   const [ret] = await db
     .select()
     .from(saleReturns)
     .where(eq(saleReturns.id, id))
     .limit(1);
   if (!ret) return null;
+
+  // Scoping protection check
+  if (customerIds !== null) {
+    if (!ret.customerId || !customerIds.includes(ret.customerId)) {
+      throw new Error("Unauthorized access to this return record.");
+    }
+  }
 
   const items = await db
     .select({

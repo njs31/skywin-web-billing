@@ -31,7 +31,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             gstin: fd.get("gstin") as string,
             defaultOperator: fd.get("defaultOperator") as string,
             invoicePrefix: fd.get("invoicePrefix") as string,
-            allowNegativeStock: fd.get("allowNegativeStock") as string,
+            allowNegativeStock: "false",
             inventoryAdminPinRequired: fd.get("inventoryAdminPinRequired") as string,
             inventoryAdminPin: fd.get("inventoryAdminPin") as string,
           },
@@ -94,11 +94,11 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
               <Label>Allow Negative Stock</Label>
               <select
                 name="allowNegativeStock"
-                defaultValue={settings.allowNegativeStock}
-                className="flex h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
+                defaultValue="false"
+                disabled
+                className="flex h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 cursor-not-allowed"
               >
-                <option value="false">No</option>
-                <option value="true">Yes</option>
+                <option value="false">No (Locked by policy)</option>
               </select>
             </div>
           </div>
