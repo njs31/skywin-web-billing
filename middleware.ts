@@ -16,9 +16,10 @@ export function middleware(request: NextRequest) {
   const session = request.cookies.get("skywin_session")?.value;
 
   if (!session) {
-    if (pathname !== "/login") {
-      return NextResponse.redirect(new URL("/login", request.url));
+    if (pathname === "/login") {
+      return NextResponse.redirect(new URL("/", request.url));
     }
+    return NextResponse.next();
   } else {
     const [, role] = session.split(":");
     if (pathname === "/login") {

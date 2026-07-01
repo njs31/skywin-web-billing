@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
+
+  if (pathname === "/login") {
+    return <main className="h-screen w-screen overflow-auto bg-slate-900">{children}</main>;
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 flex-col md:flex-row">
