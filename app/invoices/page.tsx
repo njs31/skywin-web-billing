@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSales } from "@/lib/queries/sales";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -50,7 +50,7 @@ export default async function InvoicesPage() {
                   <TableRow key={sale.id}>
                     <TableCell className="font-medium">{sale.invoiceNo}</TableCell>
                     <TableCell>
-                      {new Date(sale.date).toLocaleString("en-IN")}
+                      {formatDateTimeIST(sale.date)}
                     </TableCell>
                     <TableCell>{sale.customerName ?? "-"}</TableCell>
                     <TableCell className="capitalize">{sale.paymentMode}</TableCell>

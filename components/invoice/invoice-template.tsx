@@ -1,4 +1,4 @@
-import { formatCurrency, formatNumber, toNumber } from "@/lib/utils";
+import { formatCurrency, formatDateTimeIST, formatNumber, toNumber } from "@/lib/utils";
 
 type InvoiceSale = {
   invoiceNo: string;
@@ -70,7 +70,7 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
           </p>
           <p>
             <span className="font-semibold">Date:</span>{" "}
-            {new Date(sale.date).toLocaleString("en-IN")}
+            {formatDateTimeIST(sale.date)}
           </p>
           <p>
             <span className="font-semibold">Bill Type:</span>{" "}

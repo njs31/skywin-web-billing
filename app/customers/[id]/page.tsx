@@ -4,8 +4,7 @@ import {
   getCustomerById,
   getCustomerOutstanding,
   getCustomerSales,
-} from "@/lib/queries/customers";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDateIST } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -101,7 +100,7 @@ export default async function CustomerDetailPage({
                       </Link>
                     </TableCell>
                     <TableCell>
-                      {new Date(s.date).toLocaleDateString("en-IN")}
+                      {formatDateIST(s.date)}
                     </TableCell>
                     <TableCell className="capitalize">{s.paymentMode}</TableCell>
                     <TableCell className="text-right font-semibold">

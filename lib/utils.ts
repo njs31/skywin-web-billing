@@ -27,3 +27,15 @@ export function toNumber(value: string | number | null | undefined) {
   const num = typeof value === "number" ? value : parseFloat(value);
   return Number.isFinite(num) ? num : 0;
 }
+
+export function formatDateTimeIST(date: Date | string | number) {
+  return new Date(date).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+  });
+}
+
+export function formatDateIST(date: Date | string | number) {
+  return new Date(date).toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata",
+  });
+}
