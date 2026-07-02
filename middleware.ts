@@ -15,16 +15,16 @@ export function middleware(request: NextRequest) {
 
   const session = request.cookies.get("skywin_session")?.value;
 
-  if (!session) {
-    if (pathname === "/login") {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
+  // Always allow access to /login so users can sign in or switch accounts
+  if (pathname === "/login") {
     return NextResponse.next();
+  }
+
+  // If no session exists, redirect any protected route to /login
+  if (!session) {
+    return NextResponse.redirect(new URL("/login", request.url));
   } else {
     const [, role] = session.split(":");
-    if (pathname === "/login") {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
 
     // Role-based route protection
     if (role !== "admin") {
