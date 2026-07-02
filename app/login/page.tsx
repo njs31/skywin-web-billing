@@ -196,13 +196,15 @@ export default function LoginPage() {
                     <span>
                       * Enter <span className="font-semibold text-slate-400">9999999999</span> for Admin test access.
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setUseDirectLogin(!useDirectLogin)}
-                      className="text-slate-400 hover:text-emerald-400 underline transition-colors"
-                    >
-                      {useDirectLogin ? "Use WhatsApp OTP" : "Direct Login Mode"}
-                    </button>
+                    {process.env.NODE_ENV === "development" && (
+                      <button
+                        type="button"
+                        onClick={() => setUseDirectLogin(!useDirectLogin)}
+                        className="text-slate-400 hover:text-emerald-400 underline transition-colors"
+                      >
+                        {useDirectLogin ? "Use WhatsApp OTP" : "Direct Login Mode"}
+                      </button>
+                    )}
                   </div>
                 </div>
 

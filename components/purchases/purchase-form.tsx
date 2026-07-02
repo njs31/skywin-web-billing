@@ -30,6 +30,7 @@ type LineItem = {
   rate: number;
   discountType: "percent" | "value";
   discountValue: number;
+  hsnCode?: string;
 };
 
 function parseExcelFile(file: File): Promise<{ code: string; qty: number; rate?: number }[]> {
@@ -104,7 +105,7 @@ export function PurchaseForm({
 }) {
   const router = useRouter();
   const [suppliers] = useState(initialSuppliers);
-  const [supplierId, setSupplierId] = useState<string>("");
+  const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
   const [invoiceNo, setInvoiceNo] = useState("");
   const [paymentType, setPaymentType] = useState<"credit" | "cash">("credit");
   const [query, setQuery] = useState("");
@@ -126,10 +127,16 @@ export function PurchaseForm({
   // Custom Item Form State
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customName, setCustomNameField] = useState("");
+  const [customHsn, setCustomHsn] = useState("");
   const [customQty, setCustomQty] = useState("1");
   const [customRate, setCustomRate] = useState("");
   const [customDiscType, setCustomDiscType] = useState<"percent" | "value">("percent");
   const [customDiscVal, setCustomDiscVal] = useState("0");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -198,6 +205,10 @@ export function PurchaseForm({
   }, [query]);
 
   const addItem = (product: Product, qty = 1) => {
+    if (!product.hsnCode || !product.hsnCode.trim()) {
+      alert(`HSN code is mandatory. Product "${product.name}" lacks an HSN code. Please update the product in Inventory first.`);
+      return;
+    }
     setItems((prev) => {
       const id = `p-${product.id}`;
       const existing = prev.find((i) => i.id === id);
@@ -224,7 +235,14 @@ export function PurchaseForm({
   };
 
   const addCustomItem = () => {
-    if (!customName.trim() || !customQty || !customRate) return;
+    if (!customName.trim() || !customQty || !customRate) {
+      alert("Product Name, Quantity, and Rate are required fields.");
+      return;
+    }
+    if (!customHsn.trim()) {
+      alert("HSN code is a mandatory field for manual entry.");
+      return;
+    }
     const qty = parseFloat(customQty) || 0;
     const rate = parseFloat(customRate) || 0;
     const discountValue = parseFloat(customDiscVal) || 0;
@@ -240,11 +258,13 @@ export function PurchaseForm({
         rate,
         discountType: customDiscType,
         discountValue,
+        hsnCode: customHsn.trim(),
       },
     ]);
 
     // Reset
     setCustomNameField("");
+    setCustomHsn("");
     setCustomQty("1");
     setCustomRate("");
     setCustomDiscVal("0");
@@ -297,6 +317,7 @@ export function PurchaseForm({
           items: items.map((i) => ({
             productId: i.product ? i.product.id : undefined,
             customName: i.product ? undefined : i.name,
+            hsnCode: i.product ? (i.product.hsnCode || null) : i.hsnCode,
             qty: i.qty,
             rate: i.rate,
             discountType: i.discountType,
@@ -309,6 +330,21 @@ export function PurchaseForm({
       }
     });
   };
+
+  if (!mounted) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6 p-6">
+        <div>
+          <h1 className="text-2xl font-bold">New Purchase</h1>
+          <p className="text-sm text-slate-500">Record stock inward from supplier</p>
+        </div>
+        <div className="space-y-4">
+          <div className="h-40 animate-pulse rounded-xl bg-slate-100" />
+          <div className="h-56 animate-pulse rounded-xl bg-slate-100" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -394,6 +430,7 @@ export function PurchaseForm({
         <CardContent className="space-y-4">
           <ProductScanBar
             askQty
+            autoFocus={false}
             onProductScanned={(product, qty) => addItem(product, qty)}
             placeholder="Scan QR / barcode to add stock items"
           />
@@ -409,13 +446,11 @@ export function PurchaseForm({
             <div className="space-y-2">
               <Label className="text-xs">Import via Excel (Marg report supported)</Label>
               <div className="flex gap-2">
-                <label className="flex-1">
-                  <Button type="button" variant="outline" className="w-full flex items-center justify-center gap-2 h-10" asChild disabled={isImporting}>
-                    <span>
-                      <Upload className="h-4 w-4 text-emerald-600" />
-                      {isImporting ? "Importing..." : "Choose Excel File"}
-                    </span>
-                  </Button>
+                <label className="flex flex-1 cursor-pointer">
+                  <span className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    <Upload className="h-4 w-4 text-emerald-600" />
+                    {isImporting ? "Importing..." : "Choose Excel File"}
+                  </span>
                   <input
                     type="file"
                     accept=".xlsx,.xls,.csv"
@@ -444,12 +479,21 @@ export function PurchaseForm({
             <Card className="border-dashed border-emerald-300 bg-emerald-50/30">
               <CardContent className="grid gap-3 pt-4 sm:grid-cols-2 md:grid-cols-4">
                 <div className="sm:col-span-2">
-                  <Label className="text-xs">Product Name</Label>
+                  <Label className="text-xs">Product Name *</Label>
                   <Input
                     className="h-9 bg-white"
                     placeholder="Enter manual product name..."
                     value={customName}
                     onChange={(e) => setCustomNameField(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">HSN Code *</Label>
+                  <Input
+                    className="h-9 bg-white"
+                    placeholder="Mandatory HSN..."
+                    value={customHsn}
+                    onChange={(e) => setCustomHsn(e.target.value)}
                   />
                 </div>
                 <div>
@@ -561,7 +605,7 @@ export function PurchaseForm({
                     {item.name}
                     {item.product === null && (
                       <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-700 uppercase">
-                        Manual
+                        Manual {item.hsnCode ? `(HSN: ${item.hsnCode})` : ""}
                       </span>
                     )}
                   </p>

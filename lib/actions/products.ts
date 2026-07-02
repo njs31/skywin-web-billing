@@ -24,6 +24,7 @@ export async function updateProduct(
     saleRate: number;
     gstRate: number;
     stockQty?: number;
+    hsnCode?: string;
   }
 ) {
   return updateProductQuery(id, data);

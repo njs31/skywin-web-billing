@@ -39,6 +39,10 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
   }, [query]);
 
   const addItem = (p: Product) => {
+    if (!p.hsnCode || !p.hsnCode.trim()) {
+      alert(`HSN code is mandatory. Product "${p.name}" lacks an HSN code. Please update the product in Inventory first.`);
+      return;
+    }
     if (items.some((i) => i.product.id === p.id)) return;
     setItems((prev) => [
       ...prev,

@@ -22,6 +22,14 @@ import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import { useState, useEffect } from "react";
 
+const PURCHASE_ROUTES = ["/purchases", "/suppliers"];
+
+function isPurchaseNavItem(href: string) {
+  return PURCHASE_ROUTES.some(
+    (path) => href === path || href.startsWith(`${path}/`)
+  );
+}
+
 type NavItem = {
   href: string;
   label: string;
@@ -131,33 +139,12 @@ export function Sidebar({
 
         if (role === "admin") return true;
 
-        if (role === "regional_manager") {
-          return (
-            item.href === "/" ||
-            item.href === "/invoices" ||
-            item.href === "/returns" ||
-            item.href === "/customers" ||
-            item.href === "/stock" ||
-            item.href === "/stock/expiry" ||
-            item.href === "/accounts/receipts" ||
-            item.href === "/accounts/outstanding" ||
-            item.href === "/reports"
-          );
-        }
-
-        if (role === "sales_officer") {
-          return (
-            item.href === "/" ||
-            item.href === "/pos" ||
-            item.href === "/invoices" ||
-            item.href === "/returns" ||
-            item.href === "/customers" ||
-            item.href === "/stock" ||
-            item.href === "/stock/expiry" ||
-            item.href === "/accounts/receipts" ||
-            item.href === "/accounts/outstanding" ||
-            item.href === "/reports"
-          );
+        if (role === "regional_manager" || role === "sales_officer") {
+          if (item.href === "/users" || item.href === "/settings") return false;
+          if (role === "sales_officer" && isPurchaseNavItem(item.href)) {
+            return false;
+          }
+          return true;
         }
 
         if (role === "dealer") {
@@ -223,7 +210,7 @@ export function Sidebar({
                   onClick={() =>
                     setCollapsed((p) => ({
                       ...p,
-                      [group.label]: isOpenGroup ? false : true,
+                      [group.label]: isOpenGroup ? true : false,
                     }))
                   }
                   className="flex w-full items-center justify-between px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-300"
@@ -282,7 +269,7 @@ export function Sidebar({
               onClick={async () => {
                 const { logout } = await import("@/lib/actions/auth");
                 await logout();
-                window.location.reload();
+                window.location.href = "/login";
               }}
               className="text-[10px] font-semibold text-rose-400 hover:text-rose-300 transition-colors uppercase tracking-wider cursor-pointer"
             >

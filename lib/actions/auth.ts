@@ -112,6 +112,10 @@ export async function verifyOtpAndLogin(phone: string, otpInput: string) {
 }
 
 export async function loginWithPhone(phone: string) {
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction) {
+    throw new Error("Direct login is disabled. Please use WhatsApp OTP verification.");
+  }
   const cleanPhone = phone.trim();
   if (!cleanPhone) throw new Error("Phone number is required");
 
@@ -154,24 +158,20 @@ export async function getCurrentUser() {
   try {
     const cookieStore = await cookies();
     const session = cookieStore.get("skywin_session")?.value;
-    if (!session) {
-      return { id: 1, name: "Administrator", phone: "9999999999", role: "admin" as const, customerId: null };
-    }
+    if (!session) return null;
 
     const [userIdStr] = session.split(":");
     const userId = parseInt(userIdStr, 10);
-    if (isNaN(userId)) {
-      return { id: 1, name: "Administrator", phone: "9999999999", role: "admin" as const, customerId: null };
-    }
+    if (isNaN(userId)) return null;
 
     const [user] = await db
       .select()
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
-    return user ?? { id: 1, name: "Administrator", phone: "9999999999", role: "admin" as const, customerId: null };
-  } catch (e) {
-    return { id: 1, name: "Administrator", phone: "9999999999", role: "admin" as const, customerId: null };
+    return user ?? null;
+  } catch {
+    return null;
   }
 }
 

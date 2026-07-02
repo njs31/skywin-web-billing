@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
 
-type LineItem = { id: string; product: Product | null; name: string; qty: number; rate: number };
+type LineItem = { id: string; product: Product | null; name: string; qty: number; rate: number; hsnCode?: string };
 
 export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
   const router = useRouter();
@@ -33,6 +33,7 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
   // Custom Item Form State
   const [showCustom, setShowCustom] = useState(false);
   const [customName, setCustomNameField] = useState("");
+  const [customHsn, setCustomHsn] = useState("");
   const [customQty, setCustomQty] = useState("1");
   const [customRate, setCustomRate] = useState("");
 
@@ -45,6 +46,10 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
   }, [query]);
 
   const addItem = (p: Product) => {
+    if (!p.hsnCode || !p.hsnCode.trim()) {
+      alert(`HSN code is mandatory. Product "${p.name}" lacks an HSN code. Please update the product in Inventory first.`);
+      return;
+    }
     const id = `p-${p.id}`;
     if (items.some((i) => i.id === id)) return;
     setItems((prev) => [
@@ -62,7 +67,14 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
   };
 
   const addCustomItem = () => {
-    if (!customName.trim() || !customQty || !customRate) return;
+    if (!customName.trim() || !customQty || !customRate) {
+      alert("Product Name, Quantity, and Rate are required fields.");
+      return;
+    }
+    if (!customHsn.trim()) {
+      alert("HSN code is a mandatory field for manual entry.");
+      return;
+    }
     const qty = parseFloat(customQty) || 0;
     const rate = parseFloat(customRate) || 0;
     if (qty <= 0 || rate < 0) return;
@@ -75,9 +87,11 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
         name: customName.trim(),
         qty,
         rate,
+        hsnCode: customHsn.trim(),
       },
     ]);
     setCustomNameField("");
+    setCustomHsn("");
     setCustomQty("1");
     setCustomRate("");
     setShowCustom(false);
@@ -94,6 +108,7 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
         items: items.map((i) => ({
           productId: i.product ? i.product.id : undefined,
           customName: i.product ? undefined : i.name,
+          hsnCode: i.product ? (i.product.hsnCode || null) : i.hsnCode,
           qty: i.qty,
           rate: i.rate,
         })),
@@ -172,12 +187,21 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
         <Card className="border border-dashed border-slate-300 bg-slate-50/50 p-4 space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="sm:col-span-2">
-              <Label className="text-xs">Product Name</Label>
+              <Label className="text-xs">Product Name *</Label>
               <Input
                 className="h-9 bg-white"
                 placeholder="Custom product name..."
                 value={customName}
                 onChange={(e) => setCustomNameField(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">HSN Code *</Label>
+              <Input
+                className="h-9 bg-white"
+                placeholder="Mandatory HSN..."
+                value={customHsn}
+                onChange={(e) => setCustomHsn(e.target.value)}
               />
             </div>
             <div>
@@ -221,7 +245,7 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
             {item.name}
             {item.product === null && (
               <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-700 uppercase">
-                Manual
+                Manual {item.hsnCode ? `(HSN: ${item.hsnCode})` : ""}
               </span>
             )}
           </span>

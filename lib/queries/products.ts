@@ -114,6 +114,9 @@ export async function updateProduct(
     expiryDate?: string | null;
   }
 ) {
+  if (data.hsnCode !== undefined && !data.hsnCode.trim()) {
+    throw new Error("HSN code is mandatory and cannot be empty.");
+  }
   const { revalidatePath, revalidateTag } = await import("next/cache");
   await db
     .update(products)

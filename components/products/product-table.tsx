@@ -21,15 +21,21 @@ export function ProductTable({ products }: { products: Product[] }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saleRate, setSaleRate] = useState("");
   const [gstRate, setGstRate] = useState("");
+  const [hsnCode, setHsnCode] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const startEdit = (product: Product) => {
     setEditingId(product.id);
     setSaleRate(String(toNumber(product.saleRate)));
     setGstRate(String(toNumber(product.gstRate)));
+    setHsnCode(product.hsnCode ?? "");
   };
 
   const save = (id: number) => {
+    if (!hsnCode.trim()) {
+      alert("HSN code is mandatory.");
+      return;
+    }
     startTransition(async () => {
       try {
         const pinRequired = await isInventoryPinRequired();
@@ -45,6 +51,7 @@ export function ProductTable({ products }: { products: Product[] }) {
         await updateProduct(id, {
           saleRate: parseFloat(saleRate),
           gstRate: parseFloat(gstRate),
+          hsnCode: hsnCode.trim(),
         });
         setEditingId(null);
       } catch (err) {
@@ -59,6 +66,7 @@ export function ProductTable({ products }: { products: Product[] }) {
         <TableRow>
           <TableHead>Product</TableHead>
           <TableHead>SKU</TableHead>
+          <TableHead>HSN Code</TableHead>
           <TableHead className="text-right">Stock</TableHead>
           <TableHead className="text-right">Purchase Rate</TableHead>
           <TableHead className="text-right">Sale Rate</TableHead>
@@ -79,6 +87,18 @@ export function ProductTable({ products }: { products: Product[] }) {
             </TableCell>
             <TableCell className="text-slate-500">
               {product.sku ?? "-"}
+            </TableCell>
+            <TableCell className="text-slate-700 font-mono text-sm">
+              {editingId === product.id ? (
+                <Input
+                  className="w-24 h-8"
+                  value={hsnCode}
+                  onChange={(e) => setHsnCode(e.target.value)}
+                  placeholder="HSN..."
+                />
+              ) : (
+                product.hsnCode || <span className="text-red-500 font-bold">Missing!</span>
+              )}
             </TableCell>
             <TableCell className="text-right">
               {toNumber(product.stockQty)}

@@ -88,6 +88,14 @@ export async function importStockFromRows(
       });
       continue;
     }
+    if (!product.hsnCode || !product.hsnCode.trim()) {
+      failed.push({
+        row: i + 1,
+        code: row.code,
+        reason: "Product lacks a mandatory HSN code. Update the product first.",
+      });
+      continue;
+    }
 
     await db.transaction(async (tx) => {
       await tx

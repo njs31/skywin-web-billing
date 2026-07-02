@@ -34,6 +34,10 @@ export default function NewProductPage() {
       setError("Product name is required");
       return;
     }
+    if (!hsnCode.trim()) {
+      setError("HSN code is mandatory");
+      return;
+    }
 
     startTransition(async () => {
       try {
@@ -115,6 +119,7 @@ export default function NewProductPage() {
                   value={hsnCode}
                   onChange={(e) => setHsnCode(e.target.value)}
                   placeholder="Mandatory GST HSN Code"
+                  required
                 />
               </div>
 

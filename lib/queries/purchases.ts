@@ -60,6 +60,7 @@ export async function getPurchaseById(id: number) {
       qty: purchaseItems.qty,
       rate: purchaseItems.rate,
       amount: purchaseItems.amount,
+      hsnCode: sql<string>`coalesce(${purchaseItems.hsnCode}, ${products.hsnCode})`,
     })
     .from(purchaseItems)
     .leftJoin(products, eq(purchaseItems.productId, products.id))
@@ -83,6 +84,7 @@ const purchaseItemSchema = z.object({
   rate: z.number().nonnegative(),
   discountType: z.enum(["percent", "value"]).default("percent"),
   discountValue: z.number().min(0).default(0),
+  hsnCode: z.string().optional().nullable(),
 });
 
 const createPurchaseSchema = z.object({
@@ -98,6 +100,21 @@ const createPurchaseSchema = z.object({
 export async function createPurchase(input: z.infer<typeof createPurchaseSchema>) {
   const { revalidatePath, revalidateTag } = await import("next/cache");
   const data = createPurchaseSchema.parse(input);
+
+  for (const item of data.items) {
+    let itemHsn = item.hsnCode;
+    if (item.productId) {
+      const [product] = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, item.productId))
+        .limit(1);
+      if (product && !itemHsn) itemHsn = product.hsnCode;
+    }
+    if (!itemHsn || !itemHsn.trim()) {
+      throw new Error(`HSN code is mandatory for all purchase items.`);
+    }
+  }
 
   let subtotal = 0;
   const lineItems = data.items.map((item) => {
@@ -144,6 +161,7 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
         discountType: item.discountType,
         discountValue: item.discountValue.toFixed(2),
         amount: item.amount.toFixed(2),
+        hsnCode: item.hsnCode || null,
       });
 
       if (item.productId) {

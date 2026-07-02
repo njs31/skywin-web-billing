@@ -78,6 +78,15 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
       .returning();
 
     for (const item of data.items) {
+      const [product] = await tx
+        .select()
+        .from(products)
+        .where(eq(products.id, item.productId))
+        .limit(1);
+      if (!product || !product.hsnCode || !product.hsnCode.trim()) {
+        throw new Error(`HSN code is mandatory for all credit note items.`);
+      }
+
       const amount = calculateLineAmount(item.qty, item.rate);
       await tx.insert(saleReturnItems).values({
         returnId: created.id,
@@ -86,6 +95,7 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
         rate: item.rate.toFixed(2),
         gstRate: item.gstRate.toFixed(2),
         amount: amount.toFixed(2),
+        hsnCode: product.hsnCode,
       });
 
       await tx
@@ -178,6 +188,7 @@ export async function getSaleReturnById(id: number) {
       qty: saleReturnItems.qty,
       rate: saleReturnItems.rate,
       amount: saleReturnItems.amount,
+      hsnCode: sql<string>`coalesce(${saleReturnItems.hsnCode}, ${products.hsnCode})`,
     })
     .from(saleReturnItems)
     .leftJoin(products, eq(saleReturnItems.productId, products.id))
@@ -191,6 +202,7 @@ const purchaseReturnItemSchema = z.object({
   customName: z.string().optional(),
   qty: z.number().positive(),
   rate: z.number().nonnegative(),
+  hsnCode: z.string().optional().nullable(),
 });
 
 const createPurchaseReturnSchema = z.object({
@@ -241,6 +253,19 @@ export async function createPurchaseReturn(input: z.infer<typeof createPurchaseR
       .returning();
 
     for (const item of data.items) {
+      let itemHsn = item.hsnCode;
+      if (item.productId) {
+        const [product] = await tx
+          .select()
+          .from(products)
+          .where(eq(products.id, item.productId))
+          .limit(1);
+        if (product && !itemHsn) itemHsn = product.hsnCode;
+      }
+      if (!itemHsn || !itemHsn.trim()) {
+        throw new Error(`HSN code is mandatory for all debit note items.`);
+      }
+
       const amount = item.qty * item.rate;
       await tx.insert(purchaseReturnItems).values({
         returnId: created.id,
@@ -249,6 +274,7 @@ export async function createPurchaseReturn(input: z.infer<typeof createPurchaseR
         qty: item.qty.toFixed(2),
         rate: item.rate.toFixed(2),
         amount: amount.toFixed(2),
+        hsnCode: itemHsn,
       });
 
       if (item.productId) {
@@ -324,6 +350,7 @@ export async function getPurchaseReturnById(id: number) {
       qty: purchaseReturnItems.qty,
       rate: purchaseReturnItems.rate,
       amount: purchaseReturnItems.amount,
+      hsnCode: sql<string>`coalesce(${purchaseReturnItems.hsnCode}, ${products.hsnCode})`,
     })
     .from(purchaseReturnItems)
     .leftJoin(products, eq(purchaseReturnItems.productId, products.id))

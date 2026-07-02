@@ -8,6 +8,7 @@ import {
   timestamp,
   boolean,
   date,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -61,18 +62,24 @@ export const suppliers = pgTable("suppliers", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const customers = pgTable("customers", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  phone: text("phone"),
-  gstin: text("gstin"),
-  address: text("address"),
-  type: customerTypeEnum("type").default("retail").notNull(),
-  creditLimit: numeric("credit_limit", { precision: 14, scale: 2 }).default(
-    "0"
-  ),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const customers = pgTable(
+  "customers",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    phone: text("phone"),
+    gstin: text("gstin"),
+    address: text("address"),
+    type: customerTypeEnum("type").default("retail").notNull(),
+    creditLimit: numeric("credit_limit", { precision: 14, scale: 2 }).default(
+      "0"
+    ),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    gstinUnique: uniqueIndex("customers_gstin_unique").on(table.gstin),
+  })
+);
 
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
@@ -128,6 +135,7 @@ export const purchaseItems = pgTable("purchase_items", {
   discountType: text("discount_type").default("percent").notNull(),
   discountValue: numeric("discount_value", { precision: 14, scale: 2 }).default("0").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  hsnCode: text("hsn_code"),
 });
 
 export const sales = pgTable("sales", {
@@ -198,6 +206,7 @@ export const saleReturnItems = pgTable("sale_return_items", {
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
   gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  hsnCode: text("hsn_code"),
 });
 
 export const purchaseReturns = pgTable("purchase_returns", {
@@ -223,6 +232,7 @@ export const purchaseReturnItems = pgTable("purchase_return_items", {
   qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  hsnCode: text("hsn_code"),
 });
 
 export const partyPayments = pgTable("party_payments", {

@@ -59,15 +59,17 @@ export async function createCustomer(input: z.infer<typeof customerSchema>) {
   const { revalidatePath, revalidateTag } = await import("next/cache");
   const data = customerSchema.parse(input);
 
-  if (data.gstin && data.gstin.trim()) {
-    const cleanGst = data.gstin.trim();
+  const cleanGst = data.gstin?.trim().toUpperCase() || null;
+  if (cleanGst) {
     const existing = await db
       .select()
       .from(customers)
-      .where(eq(customers.gstin, cleanGst))
+      .where(sql`upper(${customers.gstin}) = ${cleanGst}`)
       .limit(1);
     if (existing.length > 0) {
-      throw new Error(`GSTIN number "${cleanGst}" is already registered to customer "${existing[0].name}". Only one company is allowed per GST number.`);
+      throw new Error(
+        `GSTIN "${cleanGst}" is already registered to "${existing[0].name}". Only one company is allowed per GST number.`
+      );
     }
   }
 
@@ -76,7 +78,7 @@ export async function createCustomer(input: z.infer<typeof customerSchema>) {
     .values({
       name: data.name,
       phone: data.phone,
-      gstin: data.gstin,
+      gstin: cleanGst,
       address: data.address,
       type: data.type,
       creditLimit: (data.creditLimit ?? 0).toFixed(2),
@@ -95,15 +97,22 @@ export async function updateCustomer(
   const { ne } = await import("drizzle-orm");
   const data = customerSchema.parse(input);
 
-  if (data.gstin && data.gstin.trim()) {
-    const cleanGst = data.gstin.trim();
+  const cleanGst = data.gstin?.trim().toUpperCase() || null;
+  if (cleanGst) {
     const existing = await db
       .select()
       .from(customers)
-      .where(and(eq(customers.gstin, cleanGst), ne(customers.id, id)))
+      .where(
+        and(
+          sql`upper(${customers.gstin}) = ${cleanGst}`,
+          ne(customers.id, id)
+        )
+      )
       .limit(1);
     if (existing.length > 0) {
-      throw new Error(`GSTIN number "${cleanGst}" is already registered to customer "${existing[0].name}". Only one company is allowed per GST number.`);
+      throw new Error(
+        `GSTIN "${cleanGst}" is already registered to "${existing[0].name}". Only one company is allowed per GST number.`
+      );
     }
   }
 
@@ -112,7 +121,7 @@ export async function updateCustomer(
     .set({
       name: data.name,
       phone: data.phone,
-      gstin: data.gstin,
+      gstin: cleanGst,
       address: data.address,
       type: data.type,
       creditLimit: (data.creditLimit ?? 0).toFixed(2),
@@ -144,7 +153,12 @@ export async function getCustomerOutstanding(customerId: number) {
       total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
     })
     .from(partyPayments)
-    .where(eq(partyPayments.customerId, customerId));
+    .where(
+      and(
+        eq(partyPayments.customerId, customerId),
+        eq(partyPayments.type, "receipt")
+      )
+    );
 
   const outstanding =
     parseFloat(salesTotal?.total ?? "0") -

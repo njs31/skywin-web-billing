@@ -76,7 +76,38 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     throw new Error("Customer registration required for credit transactions.");
   }
 
+  const productQtyMap = new Map<number, number>();
   for (const item of data.items) {
+    if (item.productId) {
+      productQtyMap.set(
+        item.productId,
+        (productQtyMap.get(item.productId) ?? 0) + item.qty
+      );
+    }
+  }
+
+  for (const [productId, totalQty] of productQtyMap) {
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1);
+
+    if (!product) throw new Error(`Product ${productId} not found`);
+
+    const stock = parseFloat(product.stockQty);
+    if (stock <= 0) {
+      throw new Error(`${product.name} is out of stock and cannot be sold.`);
+    }
+    if (!allowNegative && stock < totalQty) {
+      throw new Error(
+        `Insufficient stock for ${product.name}. Available: ${stock}, requested: ${totalQty}`
+      );
+    }
+  }
+
+  for (const item of data.items) {
+    let effectiveHsn = item.hsnCode;
     if (item.productId) {
       const [product] = await db
         .select()
@@ -85,13 +116,10 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
         .limit(1);
 
       if (!product) throw new Error(`Product ${item.productId} not found`);
-
-      const stock = parseFloat(product.stockQty);
-      if (!allowNegative && stock < item.qty) {
-        throw new Error(
-          `Insufficient stock for ${product.name}. Available: ${stock}`
-        );
-      }
+      if (!effectiveHsn && product.hsnCode) effectiveHsn = product.hsnCode;
+    }
+    if (!effectiveHsn || !effectiveHsn.trim()) {
+      throw new Error(`HSN code is mandatory for all items on the invoice (${item.customName || "Product ID: " + item.productId}).`);
     }
   }
 

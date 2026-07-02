@@ -111,9 +111,30 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
 
   const addToCart = useCallback(
     (product: Product, qty = 1) => {
+      if (!product.hsnCode || !product.hsnCode.trim()) {
+        setError(
+          `HSN code is mandatory. "${product.name}" has no HSN — update it in Inventory first.`
+        );
+        return;
+      }
+      const stock = toNumber(product.stockQty);
+      if (stock <= 0) {
+        setError(`"${product.name}" is out of stock and cannot be sold.`);
+        return;
+      }
+
       setCart((prev) => {
         const id = `p-${product.id}`;
         const existing = prev.find((c) => c.id === id);
+        const nextQty = (existing?.qty ?? 0) + qty;
+        if (nextQty > stock) {
+          setError(
+            `Insufficient stock for "${product.name}". Available: ${stock}, in cart: ${existing?.qty ?? 0}`
+          );
+          return prev;
+        }
+
+        setError("");
         if (existing) {
           return prev.map((c) =>
             c.id === id ? { ...c, qty: c.qty + qty } : c
@@ -129,7 +150,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
             qty,
             rate,
             gstRate: toNumber(product.gstRate),
-            discountType: "percent",
+            discountType: "percent" as const,
             discountValue: 0,
           },
         ];
@@ -144,7 +165,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   const addCustomItem = () => {
     if (!customName.trim() || !customQty || !customRate) return;
     if (!customHsn.trim()) {
-      alert("HSN code is a mandatory field for manual entry.");
+      setError("HSN code is a mandatory field for manual entry.");
       return;
     }
     const qty = parseFloat(customQty) || 0;
@@ -184,13 +205,24 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   };
 
   const updateQty = (id: string, delta: number) => {
-    setCart((prev) =>
-      prev
-        .map((c) =>
-          c.id === id ? { ...c, qty: Math.max(0, c.qty + delta) } : c
-        )
-        .filter((c) => c.qty > 0)
-    );
+    setCart((prev) => {
+      const item = prev.find((c) => c.id === id);
+      if (!item) return prev;
+
+      const newQty = item.qty + delta;
+      if (item.product && newQty > toNumber(item.product.stockQty)) {
+        setError(
+          `Insufficient stock for "${item.name}". Available: ${toNumber(item.product.stockQty)}`
+        );
+        return prev;
+      }
+      if (newQty <= 0) {
+        setError("");
+        return prev.filter((c) => c.id !== id);
+      }
+      setError("");
+      return prev.map((c) => (c.id === id ? { ...c, qty: newQty } : c));
+    });
   };
 
   const updateLineDiscount = (id: string, discountValue: number, discountType: "percent" | "value") => {
@@ -215,6 +247,19 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
     })),
     { billDiscount: parseFloat(billDiscount) || 0 }
   );
+
+  const filteredCustomers = customers.filter(
+    (c) =>
+      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      (c.phone && c.phone.includes(customerSearch)) ||
+      (c.gstin && c.gstin.toLowerCase().includes(customerSearch.toLowerCase()))
+  );
+
+  const billCreditAmount = paymentMode === "credit" ? gst.grandTotal : 0;
+  const projectedDebt =
+    customerOutstanding !== null
+      ? customerOutstanding + billCreditAmount
+      : null;
 
   const completeSale = () => {
     if (cart.length === 0) return;
@@ -244,7 +289,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
             gstRate: c.gstRate,
             discountType: c.discountType,
             discountValue: c.discountValue,
-            hsnCode: c.product ? undefined : c.hsnCode,
+            hsnCode: c.product ? (c.product.hsnCode || null) : c.hsnCode,
           })),
         });
         setCart([]);
@@ -318,6 +363,11 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                     <p className="text-xs text-slate-500">
                       Stock: {toNumber(product.stockQty)} | GST:{" "}
                       {toNumber(product.gstRate)}%
+                      {toNumber(product.stockQty) <= 0 && (
+                        <span className="ml-1 font-semibold text-red-600">
+                          · Out of stock
+                        </span>
+                      )}
                       {product.barcode && ` | ${product.barcode}`}
                     </p>
                   </div>
@@ -577,75 +627,96 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
 
             <div className="grid gap-2">
               <div>
-                <Label className="text-xs text-slate-600 font-medium">Customer</Label>
-                <div className="relative">
+                <Label className="text-xs text-slate-600 font-medium">
+                  Customer
+                </Label>
+                <div className="relative mt-1">
+                  <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <Input
+                    className="h-9 pl-9 text-sm"
+                    placeholder="Search customer by name, phone, or GSTIN..."
+                    value={customerSearch}
+                    onChange={(e) => {
+                      setCustomerSearch(e.target.value);
+                      setIsCustomerDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsCustomerDropdownOpen(true)}
+                  />
+                </div>
+                <div className="relative mt-1.5">
                   <button
                     type="button"
-                    onClick={() => setIsCustomerDropdownOpen(!isCustomerDropdownOpen)}
+                    onClick={() =>
+                      setIsCustomerDropdownOpen(!isCustomerDropdownOpen)
+                    }
                     className="flex h-9 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-emerald-500 text-left cursor-pointer"
                   >
                     <span className="truncate">
                       {customerId === "none"
                         ? "Walk-in customer"
-                        : customers.find((c) => String(c.id) === customerId)?.name || "Walk-in customer"}
+                        : customers.find((c) => String(c.id) === customerId)
+                            ?.name || "Walk-in customer"}
                     </span>
                     <ChevronDown className="h-4 w-4 text-slate-500" />
                   </button>
 
                   {isCustomerDropdownOpen && (
-                    <div className="absolute right-0 top-10 z-50 max-h-60 w-full overflow-auto rounded-md border border-slate-200 bg-white p-2.5 shadow-lg space-y-2">
-                      <div className="relative">
-                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                        <Input
-                          className="h-8 pl-8 text-xs bg-slate-50"
-                          placeholder="Search customer by name or phone..."
-                          value={customerSearch}
-                          onChange={(e) => setCustomerSearch(e.target.value)}
-                          autoFocus
-                        />
-                      </div>
-                      <div className="max-h-40 overflow-y-auto space-y-0.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCustomerId("none");
-                            setIsCustomerDropdownOpen(false);
-                            setCustomerSearch("");
-                          }}
-                          className="flex w-full items-center rounded px-2 py-1.5 text-xs hover:bg-emerald-50 text-left font-medium text-slate-700 cursor-pointer"
-                        >
-                          Walk-in customer
-                        </button>
-                        {customers
-                          .filter(
-                            (c) =>
-                              c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-                              (c.phone && c.phone.includes(customerSearch))
-                          )
-                          .map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                setCustomerId(String(c.id));
-                                setIsCustomerDropdownOpen(false);
-                                setCustomerSearch("");
-                              }}
-                              className="flex w-full items-center justify-between rounded px-2 py-1.5 text-xs hover:bg-emerald-50 text-left font-medium text-slate-700 cursor-pointer"
-                            >
-                              <span className="truncate">{c.name}</span>
-                              {c.phone && <span className="text-[10px] text-slate-400 shrink-0">({c.phone})</span>}
-                            </button>
-                          ))}
-                      </div>
+                    <div className="absolute right-0 top-10 z-50 max-h-48 w-full overflow-auto rounded-md border border-slate-200 bg-white p-1.5 shadow-lg space-y-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerId("none");
+                          setIsCustomerDropdownOpen(false);
+                        }}
+                        className="flex w-full items-center rounded px-2 py-1.5 text-xs hover:bg-emerald-50 text-left font-medium text-slate-700 cursor-pointer"
+                      >
+                        Walk-in customer
+                      </button>
+                      {filteredCustomers.length === 0 ? (
+                        <p className="px-2 py-2 text-xs text-slate-400">
+                          No customers match your search
+                        </p>
+                      ) : (
+                        filteredCustomers.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setCustomerId(String(c.id));
+                              setIsCustomerDropdownOpen(false);
+                              setCustomerSearch(c.name);
+                            }}
+                            className="flex w-full items-center justify-between rounded px-2 py-1.5 text-xs hover:bg-emerald-50 text-left font-medium text-slate-700 cursor-pointer"
+                          >
+                            <span className="truncate">{c.name}</span>
+                            {c.phone && (
+                              <span className="text-[10px] text-slate-400 shrink-0 ml-2">
+                                {c.phone}
+                              </span>
+                            )}
+                          </button>
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
 
                 {customerOutstanding !== null && (
-                  <div className="mt-1.5 flex justify-between items-center bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 text-xs text-amber-800 font-medium">
-                    <span>Outstanding Debt</span>
-                    <span className="font-semibold">{formatCurrency(customerOutstanding)}</span>
+                  <div className="mt-2 space-y-1">
+                    <div className="flex justify-between items-center bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 text-xs text-amber-800 font-medium">
+                      <span>Outstanding Debt</span>
+                      <span className="font-semibold">
+                        {formatCurrency(customerOutstanding)}
+                      </span>
+                    </div>
+                    {paymentMode === "credit" && projectedDebt !== null && (
+                      <div className="flex justify-between items-center bg-orange-50 border border-orange-200 rounded px-2.5 py-1.5 text-xs text-orange-800 font-medium">
+                        <span>After This Bill (Credit)</span>
+                        <span className="font-semibold">
+                          {formatCurrency(projectedDebt)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
