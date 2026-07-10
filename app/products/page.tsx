@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getProducts, getProductCount } from "@/lib/queries/products";
 import { ProductTable } from "@/components/products/product-table";
 import { ProductSearch } from "@/components/products/product-search";
+import { ProductExportButtons } from "@/components/products/product-export-buttons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -33,9 +34,12 @@ export default async function ProductsPage({
             {!q && totalPages > 1 && ` (page ${page} of ${totalPages})`}
           </p>
         </div>
-        <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
-          <Link href="/products/new">Add Product</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ProductExportButtons />
+          <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Link href="/products/new">Add Product</Link>
+          </Button>
+        </div>
       </div>
 
       <Card>

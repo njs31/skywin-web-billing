@@ -216,3 +216,80 @@ export async function getOrCreateCategory(name: string) {
   const [created] = await db.insert(categories).values({ name }).returning();
   return created;
 }
+
+export type StockExportRow = {
+  sno: number;
+  id: number;
+  name: string;
+  sku: string;
+  barcode: string;
+  category: string;
+  unit: string;
+  stockQty: number;
+  reorderLevel: number;
+  purchaseRate: number;
+  saleRate: number;
+  wholesaleRate: number;
+  mrp: number;
+  hsnCode: string;
+  gstRate: number;
+  expiryDate: string;
+  purchaseValue: number;
+  saleValue: number;
+  status: string;
+};
+
+export async function getAllProductsForExport(): Promise<StockExportRow[]> {
+  const rows = await db
+    .select({
+      id: products.id,
+      name: products.name,
+      sku: products.sku,
+      barcode: products.barcode,
+      categoryName: categories.name,
+      unit: products.unit,
+      stockQty: products.stockQty,
+      reorderLevel: products.reorderLevel,
+      purchaseRate: products.purchaseRate,
+      saleRate: products.saleRate,
+      wholesaleRate: products.wholesaleRate,
+      mrp: products.mrp,
+      hsnCode: products.hsnCode,
+      gstRate: products.gstRate,
+      expiryDate: products.expiryDate,
+      isActive: products.isActive,
+    })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .orderBy(asc(products.name));
+
+  return rows.map((row, index) => {
+    const stockQty = Number(row.stockQty ?? 0);
+    const purchaseRate = Number(row.purchaseRate ?? 0);
+    const saleRate = Number(row.saleRate ?? 0);
+    const wholesaleRate = Number(row.wholesaleRate ?? saleRate);
+    const mrp = Number(row.mrp ?? 0);
+
+    return {
+      sno: index + 1,
+      id: row.id,
+      name: row.name,
+      sku: row.sku ?? "",
+      barcode: row.barcode ?? "",
+      category: row.categoryName ?? "General",
+      unit: row.unit ?? "pcs",
+      stockQty,
+      reorderLevel: Number(row.reorderLevel ?? 10),
+      purchaseRate,
+      saleRate,
+      wholesaleRate,
+      mrp,
+      hsnCode: row.hsnCode ?? "",
+      gstRate: Number(row.gstRate ?? 0),
+      expiryDate: row.expiryDate ?? "",
+      purchaseValue: Math.round(stockQty * purchaseRate * 100) / 100,
+      saleValue: Math.round(stockQty * saleRate * 100) / 100,
+      status: row.isActive ? "Active" : "Inactive",
+    };
+  });
+}
