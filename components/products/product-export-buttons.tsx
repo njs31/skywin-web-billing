@@ -10,28 +10,6 @@ import type { StockExportRow } from "@/lib/queries/products";
 import { BUSINESS } from "@/lib/business";
 import { Button } from "@/components/ui/button";
 
-function formatMoney(value: number) {
-  return value.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function buildSummary(rows: StockExportRow[]) {
-  const totalStockQty = rows.reduce((sum, row) => sum + row.stockQty, 0);
-  const totalPurchaseValue = rows.reduce((sum, row) => sum + row.purchaseValue, 0);
-  const totalSaleValue = rows.reduce((sum, row) => sum + row.saleValue, 0);
-  const inStockCount = rows.filter((row) => row.stockQty > 0).length;
-
-  return {
-    totalProducts: rows.length,
-    inStockCount,
-    totalStockQty,
-    totalPurchaseValue,
-    totalSaleValue,
-  };
-}
-
 function rowsToSheetData(rows: StockExportRow[]) {
   return rows.map((row) => ({
     "S.No.": row.sno,
@@ -57,31 +35,14 @@ function rowsToSheetData(rows: StockExportRow[]) {
 }
 
 function exportExcel(rows: StockExportRow[]) {
-  const summary = buildSummary(rows);
   const dateStamp = new Date().toISOString().split("T")[0];
   const wb = XLSX.utils.book_new();
-
-  const summarySheet = XLSX.utils.aoa_to_sheet([
-    ["SKYWIN BIOTECH - AGRI SUPER MARKET"],
-    ["Closing Stock Export"],
-    [`Generated on: ${dateStamp}`],
-    [],
-    ["Total Products", summary.totalProducts],
-    ["Products In Stock", summary.inStockCount],
-    ["Total Stock Qty", summary.totalStockQty],
-    ["Total Purchase Value", summary.totalPurchaseValue],
-    ["Total Sale Value", summary.totalSaleValue],
-  ]);
-  XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
-
   const stockSheet = XLSX.utils.json_to_sheet(rowsToSheetData(rows));
   XLSX.utils.book_append_sheet(wb, stockSheet, "Stock");
-
   XLSX.writeFile(wb, `Skywin-Stock-Export-${dateStamp}.xlsx`);
 }
 
 function exportPdf(rows: StockExportRow[]) {
-  const summary = buildSummary(rows);
   const dateStamp = new Date().toISOString().split("T")[0];
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
 
@@ -92,20 +53,10 @@ function exportPdf(rows: StockExportRow[]) {
   doc.setFontSize(9);
   doc.text(BUSINESS.address, 14, 26);
   doc.text(`Phone: ${BUSINESS.phone} | GSTIN: ${BUSINESS.gstin}`, 14, 31);
-  doc.text(`Closing Stock Report - ${dateStamp}`, 14, 37);
-  doc.text(
-    `Products: ${summary.totalProducts} | In Stock: ${summary.inStockCount} | Total Qty: ${summary.totalStockQty.toLocaleString("en-IN")}`,
-    14,
-    42
-  );
-  doc.text(
-    `Purchase Value: Rs. ${formatMoney(summary.totalPurchaseValue)} | Sale Value: Rs. ${formatMoney(summary.totalSaleValue)}`,
-    14,
-    47
-  );
+  doc.text(`Closing Stock - ${dateStamp}`, 14, 37);
 
   autoTable(doc, {
-    startY: 52,
+    startY: 42,
     head: [[
       "S.No",
       "Product",
