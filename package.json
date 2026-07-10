@@ -12,7 +12,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx --env-file=.env.local scripts/seed-from-excel.ts",
     "db:migrate-v2": "tsx --env-file=.env.local scripts/migrate-v2.ts",
-    "db:assign-barcodes": "tsx --env-file=.env.local scripts/assign-barcodes.ts"
+    "db:assign-barcodes": "tsx --env-file=.env.local scripts/assign-barcodes.ts",
+    "db:assign-hsn": "tsx --env-file=.env.local scripts/assign-hsn.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.17",
