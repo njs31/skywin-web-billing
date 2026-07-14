@@ -15,7 +15,7 @@ import {
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { format } from "date-fns";
-import { desc, eq, gte, sql, and } from "drizzle-orm";
+import { desc, eq, gte, lte, sql, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 const saleItemSchema = z.object({
@@ -515,4 +515,249 @@ export async function getProductByBarcode(barcode: string) {
     .where(eq(products.barcode, barcode))
     .limit(1);
   return product ?? null;
+}
+
+export type SalesReportInvoice = {
+  id: number;
+  invoiceNo: string;
+  date: Date;
+  billType: string;
+  customerName: string;
+  paymentMode: string;
+  operatorName: string;
+  subtotal: number;
+  discountAmount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  grandTotal: number;
+  paidAmount: number;
+};
+
+export type SalesReportLineItem = {
+  invoiceNo: string;
+  date: Date;
+  billType: string;
+  customerName: string;
+  paymentMode: string;
+  productName: string;
+  hsnCode: string;
+  qty: number;
+  rate: number;
+  discountType: string;
+  discountValue: number;
+  gstRate: number;
+  amount: number;
+};
+
+export type SalesReportData = {
+  fromDate: string;
+  toDate: string;
+  summary: {
+    billCount: number;
+    retailCount: number;
+    wholesaleCount: number;
+    subtotal: number;
+    discountAmount: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    grandTotal: number;
+    paidAmount: number;
+    byPaymentMode: Record<string, { count: number; amount: number }>;
+  };
+  invoices: SalesReportInvoice[];
+  lineItems: SalesReportLineItem[];
+};
+
+function toNum(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return 0;
+  const n = typeof value === "number" ? value : parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export async function getSalesReport(
+  fromDate: string,
+  toDate: string
+): Promise<SalesReportData> {
+  const { getCurrentUser, getVisibleCustomerIds } = await import(
+    "@/lib/actions/auth"
+  );
+  const user = await getCurrentUser();
+  let customerIds: number[] | null = null;
+  if (user) {
+    customerIds = await getVisibleCustomerIds(user);
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+    throw new Error("Invalid date format. Use YYYY-MM-DD.");
+  }
+  if (fromDate > toDate) {
+    throw new Error("From date cannot be after To date.");
+  }
+
+  const from = new Date(`${fromDate}T00:00:00+05:30`);
+  const to = new Date(`${toDate}T23:59:59.999+05:30`);
+
+  const conditions = [gte(sales.date, from), lte(sales.date, to)];
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) {
+      return {
+        fromDate,
+        toDate,
+        summary: {
+          billCount: 0,
+          retailCount: 0,
+          wholesaleCount: 0,
+          subtotal: 0,
+          discountAmount: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
+          grandTotal: 0,
+          paidAmount: 0,
+          byPaymentMode: {},
+        },
+        invoices: [],
+        lineItems: [],
+      };
+    }
+    conditions.push(inArray(sales.customerId, customerIds));
+  }
+
+  const invoiceRows = await db
+    .select({
+      id: sales.id,
+      invoiceNo: sales.invoiceNo,
+      date: sales.date,
+      billType: sales.billType,
+      customerName: sales.customerName,
+      customerRecordName: customers.name,
+      paymentMode: sales.paymentMode,
+      operatorName: sales.operatorName,
+      subtotal: sales.subtotal,
+      discountAmount: sales.discountAmount,
+      cgst: sales.cgst,
+      sgst: sales.sgst,
+      igst: sales.igst,
+      grandTotal: sales.grandTotal,
+      paidAmount: sales.paidAmount,
+    })
+    .from(sales)
+    .leftJoin(customers, eq(sales.customerId, customers.id))
+    .where(and(...conditions))
+    .orderBy(desc(sales.date));
+
+  const invoices: SalesReportInvoice[] = invoiceRows.map((row) => ({
+    id: row.id,
+    invoiceNo: row.invoiceNo,
+    date: row.date,
+    billType: row.billType,
+    customerName: row.customerRecordName || row.customerName || "Walk-in",
+    paymentMode: row.paymentMode,
+    operatorName: row.operatorName || "-",
+    subtotal: toNum(row.subtotal),
+    discountAmount: toNum(row.discountAmount),
+    cgst: toNum(row.cgst),
+    sgst: toNum(row.sgst),
+    igst: toNum(row.igst),
+    grandTotal: toNum(row.grandTotal),
+    paidAmount: toNum(row.paidAmount),
+  }));
+
+  const saleIds = invoices.map((inv) => inv.id);
+  let lineItems: SalesReportLineItem[] = [];
+
+  if (saleIds.length > 0) {
+    const itemRows = await db
+      .select({
+        invoiceNo: sales.invoiceNo,
+        date: sales.date,
+        billType: sales.billType,
+        customerName: sales.customerName,
+        customerRecordName: customers.name,
+        paymentMode: sales.paymentMode,
+        productName: products.name,
+        customName: saleItems.customName,
+        hsnCode: sql<string>`coalesce(${saleItems.hsnCode}, ${products.hsnCode})`,
+        qty: saleItems.qty,
+        rate: saleItems.rate,
+        discountType: saleItems.discountType,
+        discountValue: saleItems.discountValue,
+        gstRate: saleItems.gstRate,
+        amount: saleItems.amount,
+      })
+      .from(saleItems)
+      .innerJoin(sales, eq(saleItems.saleId, sales.id))
+      .leftJoin(products, eq(saleItems.productId, products.id))
+      .leftJoin(customers, eq(sales.customerId, customers.id))
+      .where(inArray(saleItems.saleId, saleIds))
+      .orderBy(desc(sales.date), saleItems.id);
+
+    lineItems = itemRows.map((row) => ({
+      invoiceNo: row.invoiceNo,
+      date: row.date,
+      billType: row.billType,
+      customerName: row.customerRecordName || row.customerName || "Walk-in",
+      paymentMode: row.paymentMode,
+      productName: row.productName || row.customName || "Item",
+      hsnCode: row.hsnCode || "",
+      qty: toNum(row.qty),
+      rate: toNum(row.rate),
+      discountType: row.discountType || "percent",
+      discountValue: toNum(row.discountValue),
+      gstRate: toNum(row.gstRate),
+      amount: toNum(row.amount),
+    }));
+  }
+
+  const byPaymentMode: Record<string, { count: number; amount: number }> = {};
+  let retailCount = 0;
+  let wholesaleCount = 0;
+  let subtotal = 0;
+  let discountAmount = 0;
+  let cgst = 0;
+  let sgst = 0;
+  let igst = 0;
+  let grandTotal = 0;
+  let paidAmount = 0;
+
+  for (const inv of invoices) {
+    if (inv.billType === "wholesale") wholesaleCount++;
+    else retailCount++;
+    subtotal += inv.subtotal;
+    discountAmount += inv.discountAmount;
+    cgst += inv.cgst;
+    sgst += inv.sgst;
+    igst += inv.igst;
+    grandTotal += inv.grandTotal;
+    paidAmount += inv.paidAmount;
+    const mode = inv.paymentMode || "cash";
+    if (!byPaymentMode[mode]) byPaymentMode[mode] = { count: 0, amount: 0 };
+    byPaymentMode[mode].count++;
+    byPaymentMode[mode].amount += inv.grandTotal;
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  return {
+    fromDate,
+    toDate,
+    summary: {
+      billCount: invoices.length,
+      retailCount,
+      wholesaleCount,
+      subtotal: round2(subtotal),
+      discountAmount: round2(discountAmount),
+      cgst: round2(cgst),
+      sgst: round2(sgst),
+      igst: round2(igst),
+      grandTotal: round2(grandTotal),
+      paidAmount: round2(paidAmount),
+      byPaymentMode,
+    },
+    invoices,
+    lineItems,
+  };
 }

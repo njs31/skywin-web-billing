@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { getSales } from "@/lib/queries/sales";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
+import { SalesReport } from "@/components/invoices/sales-report";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -20,14 +21,21 @@ export default async function InvoicesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Invoices</h1>
-          <p className="text-sm text-slate-500">Sales history and GST invoices</p>
+          <p className="text-sm text-slate-500">
+            Sales history, GST invoices, and date-range sales report
+          </p>
         </div>
         <Button asChild>
           <Link href="/pos">New Sale</Link>
         </Button>
       </div>
 
+      <SalesReport />
+
       <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Recent Invoices</CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           {sales.length === 0 ? (
             <p className="p-6 text-sm text-slate-400">
@@ -49,9 +57,7 @@ export default async function InvoicesPage() {
                 {sales.map((sale) => (
                   <TableRow key={sale.id}>
                     <TableCell className="font-medium">{sale.invoiceNo}</TableCell>
-                    <TableCell>
-                      {formatDateTimeIST(sale.date)}
-                    </TableCell>
+                    <TableCell>{formatDateTimeIST(sale.date)}</TableCell>
                     <TableCell>{sale.customerName ?? "-"}</TableCell>
                     <TableCell className="capitalize">{sale.paymentMode}</TableCell>
                     <TableCell className="text-right font-semibold">
