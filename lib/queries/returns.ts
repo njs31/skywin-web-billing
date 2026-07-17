@@ -9,6 +9,7 @@ import {
   purchaseReturnItems,
   purchases,
   suppliers,
+  customers,
 } from "@/db/schema";
 import {
   calculateGstBreakdown,
@@ -28,9 +29,20 @@ const returnItemSchema = z.object({
 const createReturnSchema = z.object({
   saleId: z.number().optional(),
   customerId: z.number().optional(),
+  customerGstin: z.string().optional().nullable(),
   reason: z.string().optional(),
   items: z.array(returnItemSchema).min(1),
 });
+
+function normalizeGstin(value?: string | null) {
+  const cleaned = value?.trim().toUpperCase() || "";
+  return cleaned || null;
+}
+
+function isValidGstin(gstin: string) {
+  // Standard 15-char Indian GSTIN format
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstin);
+}
 
 async function generateReturnNo() {
   const today = format(new Date(), "yyyyMMdd");
@@ -52,6 +64,44 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
   const { revalidatePath, revalidateTag } = await import("next/cache");
   const data = createReturnSchema.parse(input);
 
+  let customerGstin = normalizeGstin(data.customerGstin);
+
+  if (data.customerId) {
+    const { customers } = await import("@/db/schema");
+    const [customer] = await db
+      .select()
+      .from(customers)
+      .where(eq(customers.id, data.customerId))
+      .limit(1);
+
+    if (!customer) {
+      throw new Error("Selected customer was not found.");
+    }
+
+    if (!customerGstin) {
+      customerGstin = normalizeGstin(customer.gstin);
+    }
+
+    if (customer.type === "wholesale") {
+      if (!customerGstin) {
+        throw new Error(
+          "GSTIN is required for wholesale customer returns. Enter their GST number to continue."
+        );
+      }
+      if (!isValidGstin(customerGstin)) {
+        throw new Error(
+          "Invalid GSTIN format. Enter a valid 15-character GST number (e.g. 33AAAAA0000A1Z5)."
+        );
+      }
+    }
+  }
+
+  if (customerGstin && !isValidGstin(customerGstin)) {
+    throw new Error(
+      "Invalid GSTIN format. Enter a valid 15-character GST number (e.g. 33AAAAA0000A1Z5)."
+    );
+  }
+
   const gst = calculateGstBreakdown(
     data.items.map((i) => ({
       qty: i.qty,
@@ -63,12 +113,34 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
   const returnNo = await generateReturnNo();
 
   const saleReturn = await db.transaction(async (tx) => {
+    if (data.customerId && customerGstin) {
+      const { customers } = await import("@/db/schema");
+      const [existingGst] = await tx
+        .select()
+        .from(customers)
+        .where(
+          sql`upper(${customers.gstin}) = ${customerGstin} AND ${customers.id} <> ${data.customerId}`
+        )
+        .limit(1);
+      if (existingGst) {
+        throw new Error(
+          `GSTIN "${customerGstin}" is already registered to "${existingGst.name}".`
+        );
+      }
+
+      await tx
+        .update(customers)
+        .set({ gstin: customerGstin })
+        .where(eq(customers.id, data.customerId));
+    }
+
     const [created] = await tx
       .insert(saleReturns)
       .values({
         returnNo,
         saleId: data.saleId,
         customerId: data.customerId,
+        customerGstin,
         subtotal: gst.subtotal.toFixed(2),
         cgst: gst.cgst.toFixed(2),
         sgst: gst.sgst.toFixed(2),
@@ -98,15 +170,21 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
         hsnCode: product.hsnCode,
       });
 
-      await tx
-        .update(products)
-        .set({
-          stockQty: sql`${products.stockQty}::numeric + ${item.qty}`,
-        })
-        .where(eq(products.id, item.productId));
+      const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
+      const batch = await addStockToBatch(tx, {
+        productId: item.productId,
+        batchNumber: defaultBatchNumber("RET"),
+        qty: item.qty,
+        purchaseRate: parseFloat(product.purchaseRate),
+        saleRate: parseFloat(product.saleRate),
+        expiryDate: product.expiryDate,
+        notes: data.reason || "Sales return",
+      });
 
       await tx.insert(stockMovements).values({
         productId: item.productId,
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
         type: "return",
         qtyDelta: item.qty.toFixed(2),
         referenceId: created.id,
@@ -123,6 +201,7 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
   revalidatePath("/returns");
   revalidatePath("/products");
   revalidatePath("/stock");
+  revalidatePath("/customers");
 
   return saleReturn;
 }
@@ -143,10 +222,13 @@ export async function getSaleReturns() {
       date: saleReturns.date,
       grandTotal: saleReturns.grandTotal,
       reason: saleReturns.reason,
+      customerGstin: saleReturns.customerGstin,
+      customerName: customers.name,
       saleInvoiceNo: sales.invoiceNo,
     })
     .from(saleReturns)
-    .leftJoin(sales, eq(saleReturns.saleId, sales.id));
+    .leftJoin(sales, eq(saleReturns.saleId, sales.id))
+    .leftJoin(customers, eq(saleReturns.customerId, customers.id));
 
   if (customerIds !== null) {
     if (customerIds.length === 0) return [];
@@ -278,20 +360,20 @@ export async function createPurchaseReturn(input: z.infer<typeof createPurchaseR
       });
 
       if (item.productId) {
-        await tx
-          .update(products)
-          .set({
-            stockQty: sql`${products.stockQty}::numeric - ${item.qty}`,
-          })
-          .where(eq(products.id, item.productId));
+        const { deductStockFefo } = await import("@/lib/batches");
+        const deductions = await deductStockFefo(tx, item.productId, item.qty);
 
-        await tx.insert(stockMovements).values({
-          productId: item.productId,
-          type: "return",
-          qtyDelta: (-item.qty).toFixed(2),
-          referenceId: created.id,
-          notes: `Debit Note: ${data.reason || "Supplier Return"}`,
-        });
+        for (const d of deductions) {
+          await tx.insert(stockMovements).values({
+            productId: item.productId,
+            batchId: d.batchId,
+            batchNumber: d.batchNumber,
+            type: "return",
+            qtyDelta: (-d.qty).toFixed(2),
+            referenceId: created.id,
+            notes: `Debit Note: ${data.reason || "Supplier Return"}`,
+          });
+        }
       }
     }
 

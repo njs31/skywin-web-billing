@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import {
   products,
+  productBatches,
   stockMovements,
   sales,
   saleItems,
@@ -14,24 +15,51 @@ import { eq, sql, desc, asc, gte, lte, and, isNotNull } from "drizzle-orm";
 export async function adjustStock(
   productId: number,
   qtyDelta: number,
-  notes: string
+  notes: string,
+  options?: {
+    batchNumber?: string;
+    expiryDate?: string | null;
+    purchaseRate?: number;
+  }
 ) {
   const { revalidatePath, revalidateTag } = await import("next/cache");
+  const {
+    addStockToBatch,
+    deductStockFefo,
+    defaultBatchNumber,
+  } = await import("@/lib/batches");
 
   await db.transaction(async (tx) => {
-    await tx
-      .update(products)
-      .set({
-        stockQty: sql`${products.stockQty}::numeric + ${qtyDelta}`,
-      })
-      .where(eq(products.id, productId));
-
-    await tx.insert(stockMovements).values({
-      productId,
-      type: "adjustment",
-      qtyDelta: qtyDelta.toFixed(2),
-      notes,
-    });
+    if (qtyDelta > 0) {
+      const batch = await addStockToBatch(tx, {
+        productId,
+        batchNumber: options?.batchNumber || defaultBatchNumber("ADJ"),
+        qty: qtyDelta,
+        purchaseRate: options?.purchaseRate,
+        expiryDate: options?.expiryDate ?? null,
+        notes: notes || "Stock adjustment",
+      });
+      await tx.insert(stockMovements).values({
+        productId,
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        type: "adjustment",
+        qtyDelta: qtyDelta.toFixed(2),
+        notes,
+      });
+    } else if (qtyDelta < 0) {
+      const deductions = await deductStockFefo(tx, productId, Math.abs(qtyDelta));
+      for (const d of deductions) {
+        await tx.insert(stockMovements).values({
+          productId,
+          batchId: d.batchId,
+          batchNumber: d.batchNumber,
+          type: "adjustment",
+          qtyDelta: (-d.qty).toFixed(2),
+          notes,
+        });
+      }
+    }
   });
 
   revalidateTag("products", "max");
@@ -71,20 +99,26 @@ export async function getNearExpiryProducts(days = 90) {
     .select({
       id: products.id,
       name: products.name,
-      stockQty: products.stockQty,
-      expiryDate: products.expiryDate,
+      stockQty: productBatches.qty,
+      expiryDate: productBatches.expiryDate,
       categoryName: categories.name,
+      batchNumber: productBatches.batchNumber,
+      batchId: productBatches.id,
     })
-    .from(products)
+    .from(productBatches)
+    .innerJoin(products, eq(productBatches.productId, products.id))
     .leftJoin(categories, eq(products.categoryId, categories.id))
     .where(
       and(
-        isNotNull(products.expiryDate),
-        gte(products.expiryDate, today),
-        lte(products.expiryDate, futureStr)
+        eq(products.isActive, true),
+        sql`${productBatches.qty}::numeric > 0`,
+        isNotNull(productBatches.expiryDate),
+        gte(productBatches.expiryDate, today),
+        lte(productBatches.expiryDate, futureStr)
       )
     )
-    .orderBy(asc(products.expiryDate));
+    .orderBy(asc(productBatches.expiryDate))
+    .limit(100);
 }
 
 export async function getStockValuation() {

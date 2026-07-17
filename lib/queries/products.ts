@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
-import { products, categories } from "@/db/schema";
-import { ilike, or, sql, asc, eq, and } from "drizzle-orm";
+import { products, categories, productBatches } from "@/db/schema";
+import { ilike, or, sql, asc, eq, and, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { inferGstRate, parseSkuFromName } from "@/lib/gst";
 
@@ -32,6 +32,116 @@ export async function searchProducts(query: string, limit = 20) {
     )
     .orderBy(asc(products.name))
     .limit(limit);
+}
+
+export type ProductBatchSearchResult = {
+  productId: number;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  hsnCode: string | null;
+  gstRate: string;
+  saleRate: string;
+  wholesaleRate: string | null;
+  purchaseRate: string;
+  productStockQty: string;
+  batchId: number | null;
+  batchNumber: string | null;
+  batchQty: string;
+  batchPurchaseRate: string | null;
+  batchSaleRate: string | null;
+  batchExpiry: string | null;
+};
+
+/** Search products and return one row per batch (with stock). */
+export async function searchProductBatches(
+  query: string,
+  limit = 30,
+  options?: { onlyInStock?: boolean }
+): Promise<ProductBatchSearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const onlyInStock = options?.onlyInStock ?? true;
+
+  // Batch-number matches resolve to product ids via an indexed subquery so
+  // the planner can use the trigram indexes instead of scanning the join.
+  const batchNumberMatch = db
+    .select({ productId: productBatches.productId })
+    .from(productBatches)
+    .where(ilike(productBatches.batchNumber, `%${q}%`));
+
+  const productMatch = and(
+    eq(products.isActive, true),
+    or(
+      ilike(products.name, `%${q}%`),
+      ilike(products.sku, `%${q}%`),
+      ilike(products.barcode, `%${q}%`),
+      eq(products.barcode, q),
+      inArray(products.id, batchNumberMatch)
+    )
+  );
+
+  const rows = await db
+    .select({
+      productId: products.id,
+      name: products.name,
+      sku: products.sku,
+      barcode: products.barcode,
+      hsnCode: products.hsnCode,
+      gstRate: products.gstRate,
+      saleRate: products.saleRate,
+      wholesaleRate: products.wholesaleRate,
+      purchaseRate: products.purchaseRate,
+      productStockQty: products.stockQty,
+      batchId: productBatches.id,
+      batchNumber: productBatches.batchNumber,
+      batchQty: productBatches.qty,
+      batchPurchaseRate: productBatches.purchaseRate,
+      batchSaleRate: productBatches.saleRate,
+      batchExpiry: productBatches.expiryDate,
+    })
+    .from(products)
+    .leftJoin(productBatches, eq(productBatches.productId, products.id))
+    .where(
+      onlyInStock
+        ? and(
+            productMatch,
+            or(
+              gt(productBatches.qty, "0"),
+              and(
+                sql`${productBatches.id} is null`,
+                gt(products.stockQty, "0")
+              )
+            )
+          )
+        : productMatch
+    )
+    .orderBy(
+      asc(products.name),
+      sql`case when ${productBatches.expiryDate} is null then 1 else 0 end`,
+      asc(productBatches.expiryDate),
+      asc(productBatches.batchNumber)
+    )
+    .limit(limit);
+
+  return rows.map((row) => ({
+    productId: row.productId,
+    name: row.name,
+    sku: row.sku,
+    barcode: row.barcode,
+    hsnCode: row.hsnCode,
+    gstRate: row.gstRate,
+    saleRate: row.saleRate,
+    wholesaleRate: row.wholesaleRate,
+    purchaseRate: row.purchaseRate,
+    productStockQty: row.productStockQty,
+    batchId: row.batchId,
+    batchNumber: row.batchNumber,
+    batchQty: row.batchQty ?? "0",
+    batchPurchaseRate: row.batchPurchaseRate,
+    batchSaleRate: row.batchSaleRate,
+    batchExpiry: row.batchExpiry,
+  }));
 }
 
 export const getProducts = unstable_cache(
@@ -187,13 +297,28 @@ export async function createProduct(input: z.infer<typeof productSchema>) {
       saleRate: data.saleRate.toFixed(2),
       wholesaleRate: (data.wholesaleRate ?? data.saleRate).toFixed(2),
       mrp: data.mrp?.toFixed(2),
-      stockQty: data.stockQty.toFixed(2),
+      stockQty: "0.00",
       reorderLevel: data.reorderLevel.toFixed(2),
       hsnCode: data.hsnCode,
       gstRate: data.gstRate.toFixed(2),
       expiryDate: data.expiryDate ?? null,
     })
     .returning();
+
+  if (product && data.stockQty > 0) {
+    const { addStockToBatch } = await import("@/lib/batches");
+    await addStockToBatch(db, {
+      productId: product.id,
+      batchNumber: "OPENING",
+      qty: data.stockQty,
+      purchaseRate: data.purchaseRate,
+      saleRate: data.saleRate,
+      expiryDate: data.expiryDate ?? null,
+      notes: "Opening stock",
+    });
+  } else if (product) {
+    // ensure stock is 0
+  }
 
   revalidateTag("products", "max");
   revalidatePath("/products");

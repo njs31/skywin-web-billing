@@ -1,55 +1,120 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { Plus, Trash2 } from "lucide-react";
-import { searchProducts } from "@/lib/actions/products";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { Search, Trash2, X } from "lucide-react";
+import { searchProductBatches } from "@/lib/actions/products";
 import { createSaleReturn } from "@/lib/actions/billing";
 import { calculateLineAmount } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Customer, Product } from "@/db/schema";
+import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
 
 type LineItem = { product: Product; qty: number; rate: number };
 
+function isValidGstin(gstin: string) {
+  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(
+    gstin.trim().toUpperCase()
+  );
+}
+
 export function ReturnForm({ customers }: { customers: Customer[] }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Product[]>([]);
+  const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
   const [items, setItems] = useState<LineItem[]>([]);
   const [customerId, setCustomerId] = useState("none");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [customerGstin, setCustomerGstin] = useState("");
   const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+
+  const selectedCustomer = useMemo(
+    () =>
+      customerId === "none"
+        ? null
+        : customers.find((c) => String(c.id) === customerId) ?? null,
+    [customerId, customers]
+  );
+
+  const isWholesale = selectedCustomer?.type === "wholesale";
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return customers.slice(0, 50);
+    return customers
+      .filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          (c.phone && c.phone.includes(q)) ||
+          (c.gstin && c.gstin.toLowerCase().includes(q))
+      )
+      .slice(0, 50);
+  }, [customers, customerSearch]);
+
+  const clearCustomer = () => {
+    setCustomerId("none");
+    setCustomerSearch("");
+    setIsCustomerDropdownOpen(false);
+  };
 
   useEffect(() => {
     const t = setTimeout(async () => {
-      if (query.trim()) setResults(await searchProducts(query, 10));
+      if (query.trim())
+        setResults(await searchProductBatches(query, 15, { onlyInStock: false }));
       else setResults([]);
     }, 200);
     return () => clearTimeout(t);
   }, [query]);
 
+  useEffect(() => {
+    if (selectedCustomer) {
+      setCustomerGstin(selectedCustomer.gstin?.trim().toUpperCase() ?? "");
+    } else {
+      setCustomerGstin("");
+    }
+    setError("");
+  }, [selectedCustomer]);
+
   const addItem = (p: Product) => {
     if (!p.hsnCode || !p.hsnCode.trim()) {
-      alert(`HSN code is mandatory. Product "${p.name}" lacks an HSN code. Please update the product in Inventory first.`);
+      alert(
+        `HSN code is mandatory. Product "${p.name}" lacks an HSN code. Please update the product in Inventory first.`
+      );
       return;
     }
     if (items.some((i) => i.product.id === p.id)) return;
     setItems((prev) => [
       ...prev,
-      { product: p, qty: 1, rate: toNumber(p.saleRate) },
+      {
+        product: p,
+        qty: 1,
+        rate: toNumber(isWholesale ? p.wholesaleRate ?? p.saleRate : p.saleRate),
+      },
     ]);
     setQuery("");
     setResults([]);
+  };
+
+  const addBatchRow = (row: ProductBatchSearchResult) => {
+    addItem({
+      id: row.productId,
+      name: row.name,
+      sku: row.sku,
+      barcode: row.barcode,
+      hsnCode: row.hsnCode,
+      gstRate: row.gstRate,
+      saleRate: row.saleRate,
+      wholesaleRate: row.wholesaleRate,
+      purchaseRate: row.purchaseRate,
+      stockQty: row.productStockQty,
+    } as Product);
   };
 
   const total = items.reduce(
@@ -59,21 +124,47 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
 
   const submit = () => {
     if (items.length === 0) return;
+    setError("");
+
+    if (isWholesale) {
+      const gstin = customerGstin.trim().toUpperCase();
+      if (!gstin) {
+        setError("GSTIN is required for wholesale customer returns.");
+        return;
+      }
+      if (!isValidGstin(gstin)) {
+        setError(
+          "Enter a valid 15-character GSTIN (e.g. 33AAAAA0000A1Z5)."
+        );
+        return;
+      }
+    }
+
     startTransition(async () => {
-      await createSaleReturn({
-        customerId:
-          customerId !== "none" ? parseInt(customerId, 10) : undefined,
-        reason: reason || undefined,
-        items: items.map((i) => ({
-          productId: i.product.id,
-          qty: i.qty,
-          rate: i.rate,
-          gstRate: toNumber(i.product.gstRate),
-        })),
-      });
-      setItems([]);
-      setReason("");
-      router.refresh();
+      try {
+        await createSaleReturn({
+          customerId:
+            customerId !== "none" ? parseInt(customerId, 10) : undefined,
+          customerGstin: customerGstin.trim()
+            ? customerGstin.trim().toUpperCase()
+            : undefined,
+          reason: reason || undefined,
+          items: items.map((i) => ({
+            productId: i.product.id,
+            qty: i.qty,
+            rate: i.rate,
+            gstRate: toNumber(i.product.gstRate),
+          })),
+        });
+        setItems([]);
+        setReason("");
+        setCustomerId("none");
+        setCustomerSearch("");
+        setCustomerGstin("");
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save return.");
+      }
     });
   };
 
@@ -82,23 +173,97 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label>Customer</Label>
-          <Select value={customerId} onValueChange={setCustomerId}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Walk-in</SelectItem>
-              {customers.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="relative mt-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Input
+              className="pl-9 pr-9"
+              placeholder="Search by name, phone, or GSTIN..."
+              value={
+                selectedCustomer && !isCustomerDropdownOpen
+                  ? `${selectedCustomer.name}${
+                      selectedCustomer.type === "wholesale"
+                        ? " (Wholesale)"
+                        : ""
+                    }`
+                  : customerSearch
+              }
+              onChange={(e) => {
+                setCustomerSearch(e.target.value);
+                setCustomerId("none");
+                setIsCustomerDropdownOpen(true);
+              }}
+              onFocus={() => {
+                setIsCustomerDropdownOpen(true);
+                if (selectedCustomer) {
+                  setCustomerSearch(selectedCustomer.name);
+                }
+              }}
+            />
+            {(selectedCustomer || customerSearch) && (
+              <button
+                type="button"
+                className="absolute right-2 top-2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                onClick={clearCustomer}
+                title="Clear customer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+            {isCustomerDropdownOpen && (
+              <div className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white p-1.5 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearCustomer();
+                  }}
+                  className="flex w-full items-center rounded px-2 py-2 text-left text-sm font-medium text-slate-700 hover:bg-emerald-50"
+                >
+                  Walk-in customer
+                </button>
+                {filteredCustomers.length === 0 ? (
+                  <p className="px-2 py-2 text-xs text-slate-400">
+                    No customers match your search
+                  </p>
+                ) : (
+                  filteredCustomers.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setCustomerId(String(c.id));
+                        setCustomerSearch(c.name);
+                        setIsCustomerDropdownOpen(false);
+                      }}
+                      className="flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left text-sm hover:bg-emerald-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-slate-800">
+                          {c.name}
+                          {c.type === "wholesale" ? (
+                            <span className="ml-1 text-[10px] font-semibold uppercase text-emerald-700">
+                              Wholesale
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="block truncate text-[11px] text-slate-500">
+                          {[c.phone, c.gstin].filter(Boolean).join(" · ") ||
+                            "No phone / GSTIN"}
+                        </span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Type to search, or leave as Walk-in
+          </p>
         </div>
         <div>
           <Label>Reason</Label>
           <Input
+            className="mt-1"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Defective, wrong item, etc."
@@ -106,25 +271,55 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
         </div>
       </div>
 
+      {selectedCustomer ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label>
+                Customer GSTIN
+                {isWholesale ? " *" : " (optional)"}
+              </Label>
+              <Input
+                value={customerGstin}
+                onChange={(e) =>
+                  setCustomerGstin(e.target.value.toUpperCase())
+                }
+                placeholder="33AAAAA0000A1Z5"
+                maxLength={15}
+                className="mt-1 font-mono uppercase"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                {isWholesale
+                  ? "Wholesale returns require GSTIN for the credit note."
+                  : "Optional — saved on the credit note if provided."}
+              </p>
+            </div>
+            <div className="text-sm text-slate-600 sm:pt-7">
+              <p>
+                Type:{" "}
+                <span className="font-medium capitalize">
+                  {selectedCustomer.type}
+                </span>
+              </p>
+              {selectedCustomer.phone ? (
+                <p>Phone: {selectedCustomer.phone}</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <Input
         placeholder="Search product to return..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
       {results.length > 0 && (
-        <div className="rounded-lg border">
-          {results.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className="flex w-full items-center justify-between border-b px-4 py-2 hover:bg-slate-50"
-              onClick={() => addItem(p)}
-            >
-              <span className="text-sm">{p.name}</span>
-              <Plus className="h-4 w-4 text-emerald-600" />
-            </button>
-          ))}
-        </div>
+        <ProductBatchSearchResults
+          results={results}
+          rateMode={isWholesale ? "wholesale" : "sale"}
+          onSelect={addBatchRow}
+        />
       )}
 
       {items.map((item) => (
@@ -179,6 +374,12 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
           </Button>
         </div>
       ))}
+
+      {error ? (
+        <div className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-600">
+          {error}
+        </div>
+      ) : null}
 
       {items.length > 0 && (
         <div className="flex items-center justify-between border-t pt-3">

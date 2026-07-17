@@ -80,11 +80,13 @@ export async function getPurchasesBySupplier(supplierId: number) {
 const purchaseItemSchema = z.object({
   productId: z.number().optional().nullable(),
   customName: z.string().optional(),
-  qty: z.number().positive(),
+  qty: z.number().int().positive("Quantity must be a whole number"),
   rate: z.number().nonnegative(),
   discountType: z.enum(["percent", "value"]).default("percent"),
   discountValue: z.number().min(0).default(0),
   hsnCode: z.string().optional().nullable(),
+  batchNumber: z.string().optional().nullable(),
+  expiryDate: z.string().optional().nullable(),
 });
 
 const createPurchaseSchema = z.object({
@@ -162,6 +164,8 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
         discountValue: item.discountValue.toFixed(2),
         amount: item.amount.toFixed(2),
         hsnCode: item.hsnCode || null,
+        batchNumber: item.batchNumber?.trim().toUpperCase() || null,
+        expiryDate: item.expiryDate || null,
       });
 
       if (item.productId) {
@@ -170,32 +174,26 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
           ? effectiveRate * (1 + handling / subtotal)
           : effectiveRate;
 
-        const [product] = await tx
-          .select({ stockQty: products.stockQty, purchaseRate: products.purchaseRate })
-          .from(products)
-          .where(eq(products.id, item.productId))
-          .limit(1);
+        const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
+        const batchNumber =
+          item.batchNumber?.trim().toUpperCase() ||
+          defaultBatchNumber("PUR");
 
-        let newPurchaseRate = landedRate;
-        if (product) {
-          const currentStock = parseFloat(product.stockQty);
-          const currentRate = parseFloat(product.purchaseRate);
-          const totalStock = currentStock + item.qty;
-          if (totalStock > 0) {
-            newPurchaseRate = ((currentStock * currentRate) + (item.qty * landedRate)) / totalStock;
-          }
-        }
-
-        await tx
-          .update(products)
-          .set({
-            stockQty: sql`${products.stockQty}::numeric + ${item.qty}`,
-            purchaseRate: newPurchaseRate.toFixed(2),
-          })
-          .where(eq(products.id, item.productId));
+        const batch = await addStockToBatch(tx, {
+          productId: item.productId,
+          batchNumber,
+          qty: item.qty,
+          purchaseRate: landedRate,
+          expiryDate: item.expiryDate || null,
+          notes: data.invoiceNo
+            ? `Purchase ${data.invoiceNo}`
+            : `Purchase #${created.id}`,
+        });
 
         await tx.insert(stockMovements).values({
           productId: item.productId,
+          batchId: batch.id,
+          batchNumber: batch.batchNumber,
           type: "purchase",
           qtyDelta: item.qty.toFixed(2),
           referenceId: created.id,

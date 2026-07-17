@@ -13,6 +13,8 @@ type ProductScanBarProps = {
   onProductScanned: (product: Product, qty: number) => void;
   /** If true, prompt for quantity after each scan (purchase/stock). */
   askQty?: boolean;
+  /** Restrict quantity to whole numbers (purchase entry). */
+  integerQty?: boolean;
   defaultQty?: number;
   placeholder?: string;
   autoFocus?: boolean;
@@ -21,6 +23,7 @@ type ProductScanBarProps = {
 export function ProductScanBar({
   onProductScanned,
   askQty = false,
+  integerQty = false,
   defaultQty = 1,
   placeholder = "Scan barcode or type code + Enter",
   autoFocus = true,
@@ -70,7 +73,8 @@ export function ProductScanBar({
 
   const confirmQty = () => {
     if (!pendingProduct) return;
-    const q = parseFloat(qty);
+    const raw = parseFloat(qty);
+    const q = integerQty ? Math.max(1, Math.round(raw) || 1) : raw;
     if (!q || q <= 0) {
       setError("Enter a valid quantity");
       return;
@@ -123,10 +127,17 @@ export function ProductScanBar({
             <Label className="text-xs">Qty</Label>
             <Input
               type="number"
-              min={0.01}
-              step={0.01}
+              min={integerQty ? 1 : 0.01}
+              step={integerQty ? 1 : 0.01}
+              inputMode={integerQty ? "numeric" : undefined}
               value={qty}
-              onChange={(e) => setQty(e.target.value)}
+              onChange={(e) =>
+                setQty(
+                  integerQty
+                    ? String(Math.max(1, parseInt(e.target.value, 10) || 1))
+                    : e.target.value
+                )
+              }
               onKeyDown={(e) => e.key === "Enter" && confirmQty()}
               autoFocus
             />

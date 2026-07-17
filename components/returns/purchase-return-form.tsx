@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { searchProducts } from "@/lib/actions/products";
+import { searchProductBatches } from "@/lib/actions/products";
 import { createPurchaseReturn } from "@/lib/actions/billing";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Supplier, Product } from "@/db/schema";
+import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
 
 type LineItem = { id: string; product: Product | null; name: string; qty: number; rate: number; hsnCode?: string };
@@ -26,7 +28,7 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
   const [supplierId, setSupplierId] = useState("");
   const [reason, setReason] = useState("");
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Product[]>([]);
+  const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
   const [items, setItems] = useState<LineItem[]>([]);
   const [isPending, startTransition] = useTransition();
 
@@ -39,7 +41,8 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
 
   useEffect(() => {
     const t = setTimeout(async () => {
-      if (query.trim()) setResults(await searchProducts(query, 10));
+      if (query.trim())
+        setResults(await searchProductBatches(query, 15, { onlyInStock: false }));
       else setResults([]);
     }, 200);
     return () => clearTimeout(t);
@@ -64,6 +67,21 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
     ]);
     setQuery("");
     setResults([]);
+  };
+
+  const addBatchRow = (row: ProductBatchSearchResult) => {
+    addItem({
+      id: row.productId,
+      name: row.name,
+      sku: row.sku,
+      barcode: row.barcode,
+      hsnCode: row.hsnCode,
+      gstRate: row.gstRate,
+      saleRate: row.saleRate,
+      wholesaleRate: row.wholesaleRate,
+      purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
+      stockQty: row.productStockQty,
+    } as Product);
   };
 
   const addCustomItem = () => {
@@ -155,18 +173,12 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
           onChange={(e) => setQuery(e.target.value)}
         />
         {results.length > 0 && (
-          <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-            {results.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className="flex w-full items-center justify-between border-b px-4 py-2 hover:bg-slate-50 text-left text-sm"
-                onClick={() => addItem(p)}
-              >
-                <span>{p.name}</span>
-                <Plus className="h-4 w-4 text-emerald-600" />
-              </button>
-            ))}
+          <div className="absolute z-10 mt-1 w-full">
+            <ProductBatchSearchResults
+              results={results}
+              rateMode="purchase"
+              onSelect={addBatchRow}
+            />
           </div>
         )}
       </div>

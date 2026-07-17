@@ -8,6 +8,7 @@ import {
   timestamp,
   boolean,
   date,
+  index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -78,32 +79,79 @@ export const customers = pgTable(
   },
   (table) => ({
     gstinUnique: uniqueIndex("customers_gstin_unique").on(table.gstin),
+    phoneIdx: index("customers_phone_idx").on(table.phone),
+    nameIdx: index("customers_name_idx").on(table.name),
   })
 );
 
-export const products = pgTable("products", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  sku: text("sku"),
-  barcode: text("barcode"),
-  categoryId: integer("category_id").references(() => categories.id),
-  unit: text("unit").default("pcs").notNull(),
-  purchaseRate: numeric("purchase_rate", { precision: 14, scale: 2 }).notNull(),
-  saleRate: numeric("sale_rate", { precision: 14, scale: 2 }).notNull(),
-  wholesaleRate: numeric("wholesale_rate", { precision: 14, scale: 2 }),
-  mrp: numeric("mrp", { precision: 14, scale: 2 }),
-  stockQty: numeric("stock_qty", { precision: 14, scale: 2 })
-    .default("0")
-    .notNull(),
-  reorderLevel: numeric("reorder_level", { precision: 14, scale: 2 }).default(
-    "10"
-  ),
-  hsnCode: text("hsn_code"),
-  gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).default("18").notNull(),
-  expiryDate: date("expiry_date"),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const products = pgTable(
+  "products",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    sku: text("sku"),
+    barcode: text("barcode"),
+    categoryId: integer("category_id").references(() => categories.id),
+    unit: text("unit").default("pcs").notNull(),
+    purchaseRate: numeric("purchase_rate", { precision: 14, scale: 2 }).notNull(),
+    saleRate: numeric("sale_rate", { precision: 14, scale: 2 }).notNull(),
+    wholesaleRate: numeric("wholesale_rate", { precision: 14, scale: 2 }),
+    mrp: numeric("mrp", { precision: 14, scale: 2 }),
+    stockQty: numeric("stock_qty", { precision: 14, scale: 2 })
+      .default("0")
+      .notNull(),
+    reorderLevel: numeric("reorder_level", { precision: 14, scale: 2 }).default(
+      "10"
+    ),
+    hsnCode: text("hsn_code"),
+    gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).default("18").notNull(),
+    expiryDate: date("expiry_date"),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    // Trigram indexes accelerate the %query% ILIKE searches used by POS.
+    nameTrgmIdx: index("products_name_trgm_idx").using(
+      "gin",
+      table.name.op("gin_trgm_ops")
+    ),
+    skuTrgmIdx: index("products_sku_trgm_idx").using(
+      "gin",
+      table.sku.op("gin_trgm_ops")
+    ),
+    barcodeIdx: index("products_barcode_idx").on(table.barcode),
+    skuIdx: index("products_sku_idx").on(table.sku),
+  })
+);
+
+export const productBatches = pgTable(
+  "product_batches",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .references(() => products.id, { onDelete: "cascade" })
+      .notNull(),
+    batchNumber: text("batch_number").notNull(),
+    qty: numeric("qty", { precision: 14, scale: 2 }).default("0").notNull(),
+    purchaseRate: numeric("purchase_rate", { precision: 14, scale: 2 }),
+    saleRate: numeric("sale_rate", { precision: 14, scale: 2 }),
+    expiryDate: date("expiry_date"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    productBatchUnique: uniqueIndex("product_batches_product_batch_unique").on(
+      table.productId,
+      table.batchNumber
+    ),
+    productIdIdx: index("product_batches_product_id_idx").on(table.productId),
+    batchNumberTrgmIdx: index("product_batches_batch_number_trgm_idx").using(
+      "gin",
+      table.batchNumber.op("gin_trgm_ops")
+    ),
+  })
+);
 
 export const purchases = pgTable("purchases", {
   id: serial("id").primaryKey(),
@@ -136,63 +184,93 @@ export const purchaseItems = pgTable("purchase_items", {
   discountValue: numeric("discount_value", { precision: 14, scale: 2 }).default("0").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
   hsnCode: text("hsn_code"),
+  batchNumber: text("batch_number"),
+  expiryDate: date("expiry_date"),
 });
 
-export const sales = pgTable("sales", {
-  id: serial("id").primaryKey(),
-  invoiceNo: text("invoice_no").notNull().unique(),
-  date: timestamp("date").defaultNow().notNull(),
-  billType: billTypeEnum("bill_type").default("retail").notNull(),
-  customerId: integer("customer_id").references(() => customers.id),
-  customerName: text("customer_name"),
-  paymentMode: paymentModeEnum("payment_mode").default("cash").notNull(),
-  operatorName: text("operator_name"),
-  subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
-  discountAmount: numeric("discount_amount", { precision: 14, scale: 2 })
-    .default("0")
-    .notNull(),
-  cgst: numeric("cgst", { precision: 14, scale: 2 }).default("0").notNull(),
-  sgst: numeric("sgst", { precision: 14, scale: 2 }).default("0").notNull(),
-  igst: numeric("igst", { precision: 14, scale: 2 }).default("0").notNull(),
-  grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
-  paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).default("0"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const sales = pgTable(
+  "sales",
+  {
+    id: serial("id").primaryKey(),
+    invoiceNo: text("invoice_no").notNull().unique(),
+    date: timestamp("date").defaultNow().notNull(),
+    billType: billTypeEnum("bill_type").default("retail").notNull(),
+    customerId: integer("customer_id").references(() => customers.id),
+    customerName: text("customer_name"),
+    paymentMode: paymentModeEnum("payment_mode").default("cash").notNull(),
+    operatorName: text("operator_name"),
+    subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
+    discountAmount: numeric("discount_amount", { precision: 14, scale: 2 })
+      .default("0")
+      .notNull(),
+    cgst: numeric("cgst", { precision: 14, scale: 2 }).default("0").notNull(),
+    sgst: numeric("sgst", { precision: 14, scale: 2 }).default("0").notNull(),
+    igst: numeric("igst", { precision: 14, scale: 2 }).default("0").notNull(),
+    grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
+    paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).default("0"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    customerIdIdx: index("sales_customer_id_idx").on(table.customerId),
+    dateIdx: index("sales_date_idx").on(table.date),
+    // Supports the prefix LIKE scan used to compute the next invoice number.
+    invoiceNoPatternIdx: index("sales_invoice_no_pattern_idx").using(
+      "btree",
+      table.invoiceNo.op("text_pattern_ops")
+    ),
+  })
+);
 
-export const saleItems = pgTable("sale_items", {
-  id: serial("id").primaryKey(),
-  saleId: integer("sale_id")
-    .references(() => sales.id, { onDelete: "cascade" })
-    .notNull(),
-  productId: integer("product_id")
-    .references(() => products.id),
-  customName: text("custom_name"),
-  qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
-  rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
-  discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
-    .default("0")
-    .notNull(),
-  discountType: text("discount_type").default("percent").notNull(),
-  discountValue: numeric("discount_value", { precision: 14, scale: 2 }).default("0").notNull(),
-  gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull(),
-  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
-  hsnCode: text("hsn_code"),
-});
+export const saleItems = pgTable(
+  "sale_items",
+  {
+    id: serial("id").primaryKey(),
+    saleId: integer("sale_id")
+      .references(() => sales.id, { onDelete: "cascade" })
+      .notNull(),
+    productId: integer("product_id")
+      .references(() => products.id),
+    customName: text("custom_name"),
+    qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
+    rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
+    discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
+      .default("0")
+      .notNull(),
+    discountType: text("discount_type").default("percent").notNull(),
+    discountValue: numeric("discount_value", { precision: 14, scale: 2 }).default("0").notNull(),
+    gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull(),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    hsnCode: text("hsn_code"),
+    batchId: integer("batch_id").references(() => productBatches.id),
+    batchNumber: text("batch_number"),
+  },
+  (table) => ({
+    saleIdIdx: index("sale_items_sale_id_idx").on(table.saleId),
+    productIdIdx: index("sale_items_product_id_idx").on(table.productId),
+  })
+);
 
-export const saleReturns = pgTable("sale_returns", {
-  id: serial("id").primaryKey(),
-  returnNo: text("return_no").notNull().unique(),
-  saleId: integer("sale_id").references(() => sales.id),
-  customerId: integer("customer_id").references(() => customers.id),
-  date: timestamp("date").defaultNow().notNull(),
-  subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
-  cgst: numeric("cgst", { precision: 14, scale: 2 }).default("0").notNull(),
-  sgst: numeric("sgst", { precision: 14, scale: 2 }).default("0").notNull(),
-  grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
-  reason: text("reason"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const saleReturns = pgTable(
+  "sale_returns",
+  {
+    id: serial("id").primaryKey(),
+    returnNo: text("return_no").notNull().unique(),
+    saleId: integer("sale_id").references(() => sales.id),
+    customerId: integer("customer_id").references(() => customers.id),
+    customerGstin: text("customer_gstin"),
+    date: timestamp("date").defaultNow().notNull(),
+    subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
+    cgst: numeric("cgst", { precision: 14, scale: 2 }).default("0").notNull(),
+    sgst: numeric("sgst", { precision: 14, scale: 2 }).default("0").notNull(),
+    grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    customerIdIdx: index("sale_returns_customer_id_idx").on(table.customerId),
+  })
+);
 
 export const saleReturnItems = pgTable("sale_return_items", {
   id: serial("id").primaryKey(),
@@ -235,30 +313,44 @@ export const purchaseReturnItems = pgTable("purchase_return_items", {
   hsnCode: text("hsn_code"),
 });
 
-export const partyPayments = pgTable("party_payments", {
-  id: serial("id").primaryKey(),
-  type: partyPaymentTypeEnum("type").notNull(),
-  customerId: integer("customer_id").references(() => customers.id),
-  supplierId: integer("supplier_id").references(() => suppliers.id),
-  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
-  paymentMode: paymentModeEnum("payment_mode").default("cash").notNull(),
-  referenceNo: text("reference_no"),
-  notes: text("notes"),
-  date: timestamp("date").defaultNow().notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const partyPayments = pgTable(
+  "party_payments",
+  {
+    id: serial("id").primaryKey(),
+    type: partyPaymentTypeEnum("type").notNull(),
+    customerId: integer("customer_id").references(() => customers.id),
+    supplierId: integer("supplier_id").references(() => suppliers.id),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    paymentMode: paymentModeEnum("payment_mode").default("cash").notNull(),
+    referenceNo: text("reference_no"),
+    notes: text("notes"),
+    date: timestamp("date").defaultNow().notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    customerIdIdx: index("party_payments_customer_id_idx").on(table.customerId),
+  })
+);
 
-export const stockMovements = pgTable("stock_movements", {
-  id: serial("id").primaryKey(),
-  productId: integer("product_id")
-    .references(() => products.id)
-    .notNull(),
-  type: stockMovementTypeEnum("type").notNull(),
-  qtyDelta: numeric("qty_delta", { precision: 14, scale: 2 }).notNull(),
-  referenceId: integer("reference_id"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const stockMovements = pgTable(
+  "stock_movements",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .references(() => products.id)
+      .notNull(),
+    batchId: integer("batch_id").references(() => productBatches.id),
+    batchNumber: text("batch_number"),
+    type: stockMovementTypeEnum("type").notNull(),
+    qtyDelta: numeric("qty_delta", { precision: 14, scale: 2 }).notNull(),
+    referenceId: integer("reference_id"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    productIdIdx: index("stock_movements_product_id_idx").on(table.productId),
+  })
+);
 
 export const settings = pgTable("settings", {
   key: text("key").primaryKey(),
@@ -285,9 +377,17 @@ export const productsRelations = relations(products, ({ one, many }) => ({
     fields: [products.categoryId],
     references: [categories.id],
   }),
+  batches: many(productBatches),
   purchaseItems: many(purchaseItems),
   saleItems: many(saleItems),
   stockMovements: many(stockMovements),
+}));
+
+export const productBatchesRelations = relations(productBatches, ({ one }) => ({
+  product: one(products, {
+    fields: [productBatches.productId],
+    references: [products.id],
+  }),
 }));
 
 export const purchasesRelations = relations(purchases, ({ one, many }) => ({
@@ -398,6 +498,7 @@ export type Category = typeof categories.$inferSelect;
 export type Supplier = typeof suppliers.$inferSelect;
 export type Customer = typeof customers.$inferSelect;
 export type Product = typeof products.$inferSelect;
+export type ProductBatch = typeof productBatches.$inferSelect;
 export type Purchase = typeof purchases.$inferSelect;
 export type Sale = typeof sales.$inferSelect;
 export type SaleReturn = typeof saleReturns.$inferSelect;

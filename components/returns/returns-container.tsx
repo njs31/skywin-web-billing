@@ -99,6 +99,8 @@ export function ReturnsContainer({
                     <TableRow>
                       <TableHead>Return No</TableHead>
                       <TableHead>Date</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>GSTIN</TableHead>
                       <TableHead>Original Invoice</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
@@ -110,6 +112,10 @@ export function ReturnsContainer({
                         <TableCell className="font-semibold text-slate-900">{r.returnNo}</TableCell>
                         <TableCell>
                           {new Date(r.date).toLocaleDateString("en-IN")}
+                        </TableCell>
+                        <TableCell>{r.customerName ?? "-"}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {r.customerGstin ?? "-"}
                         </TableCell>
                         <TableCell>{r.saleInvoiceNo ?? "-"}</TableCell>
                         <TableCell>{r.reason ?? "-"}</TableCell>

@@ -21,7 +21,7 @@ export default async function ExpiryPage() {
         <div>
           <h1 className="text-2xl font-bold">Near Expiry Stock</h1>
           <p className="text-sm text-slate-500">
-            Products expiring within 90 days
+            Batches expiring within 90 days
           </p>
         </div>
         <Button asChild variant="outline">
@@ -33,14 +33,14 @@ export default async function ExpiryPage() {
         <CardContent className="p-0">
           {products.length === 0 ? (
             <p className="p-6 text-sm text-slate-400">
-              No products with expiry dates set. Add expiry dates when editing
-              products.
+              No batches with expiry dates in the next 90 days.
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
+                  <TableHead>Batch No.</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead className="text-right">Stock</TableHead>
                   <TableHead>Expiry Date</TableHead>
@@ -48,8 +48,11 @@ export default async function ExpiryPage() {
               </TableHeader>
               <TableBody>
                 {products.map((p) => (
-                  <TableRow key={p.id}>
+                  <TableRow key={p.batchId ?? `${p.id}-${p.batchNumber}`}>
                     <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {p.batchNumber}
+                    </TableCell>
                     <TableCell>{p.categoryName ?? "-"}</TableCell>
                     <TableCell className="text-right">
                       {toNumber(p.stockQty)}

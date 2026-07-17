@@ -44,9 +44,14 @@ export async function createPartyPayment(
 export async function adjustStock(
   productId: number,
   qtyDelta: number,
-  notes: string
+  notes: string,
+  options?: {
+    batchNumber?: string;
+    expiryDate?: string | null;
+    purchaseRate?: number;
+  }
 ) {
-  return adjustStockMutation(productId, qtyDelta, notes);
+  return adjustStockMutation(productId, qtyDelta, notes, options);
 }
 
 export async function createProduct(

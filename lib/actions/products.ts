@@ -2,6 +2,7 @@
 
 import {
   searchProducts as searchProductsQuery,
+  searchProductBatches as searchProductBatchesQuery,
   updateProduct as updateProductQuery,
   getAllProductsForExport,
 } from "@/lib/queries/products";
@@ -19,6 +20,14 @@ export async function searchProducts(query: string, limit = 20) {
   return searchProductsQuery(query, limit);
 }
 
+export async function searchProductBatches(
+  query: string,
+  limit = 30,
+  options?: { onlyInStock?: boolean }
+) {
+  return searchProductBatchesQuery(query, limit, options);
+}
+
 export async function getProductByScanCode(code: string) {
   return getProductByScanCodeQuery(code);
 }
@@ -30,6 +39,7 @@ export async function updateProduct(
     gstRate: number;
     stockQty?: number;
     hsnCode?: string;
+    expiryDate?: string | null;
   }
 ) {
   return updateProductQuery(id, data);

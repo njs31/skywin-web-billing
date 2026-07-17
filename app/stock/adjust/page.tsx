@@ -1,39 +1,74 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { searchProducts } from "@/lib/actions/products";
+import { searchProductBatches } from "@/lib/actions/products";
 import { adjustStock, isInventoryPinRequired, verifyInventoryAdminPin } from "@/lib/actions/billing";
 import type { Product } from "@/db/schema";
+import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
+import { toNumber } from "@/lib/utils";
 
 export default function StockAdjustPage() {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Product[]>([]);
+  const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
   const [selected, setSelected] = useState<Product | null>(null);
+  const [selectedBatch, setSelectedBatch] =
+    useState<ProductBatchSearchResult | null>(null);
   const [qtyDelta, setQtyDelta] = useState("");
+  const [batchNumber, setBatchNumber] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
   const [notes, setNotes] = useState("");
   const [isPending, startTransition] = useTransition();
 
+  const qty = parseFloat(qtyDelta) || 0;
+  const isAdd = qty > 0;
+
   useEffect(() => {
     const t = setTimeout(async () => {
-      if (query.trim()) setResults(await searchProducts(query, 8));
-      else setResults([]);
+      if (query.trim()) {
+        setResults(
+          await searchProductBatches(query, 12, { onlyInStock: false })
+        );
+      } else {
+        setResults([]);
+      }
     }, 200);
     return () => clearTimeout(t);
   }, [query]);
 
+  const pickRow = (row: ProductBatchSearchResult) => {
+    setSelected({
+      id: row.productId,
+      name: row.name,
+      stockQty: row.productStockQty,
+      expiryDate: row.batchExpiry,
+    } as Product);
+    setSelectedBatch(row);
+    setQuery(row.name);
+    setResults([]);
+    setBatchNumber(row.batchNumber ?? "");
+    setExpiryDate(row.batchExpiry ?? "");
+  };
+
   const submit = () => {
     if (!selected || !qtyDelta) return;
+    if (isAdd && !batchNumber.trim()) {
+      alert("Batch number is required when adding stock.");
+      return;
+    }
     startTransition(async () => {
       try {
         const pinRequired = await isInventoryPinRequired();
         if (pinRequired) {
-          const pin = window.prompt("Enter Supervisor/Admin PIN to adjust stock quantity:");
+          const pin = window.prompt(
+            "Enter Supervisor/Admin PIN to adjust stock quantity:"
+          );
           if (pin === null) return;
           const valid = await verifyInventoryAdminPin(pin);
           if (!valid) {
@@ -41,7 +76,10 @@ export default function StockAdjustPage() {
             return;
           }
         }
-        await adjustStock(selected.id, parseFloat(qtyDelta), notes || "Manual adjustment");
+        await adjustStock(selected.id, qty, notes || "Manual adjustment", {
+          batchNumber: batchNumber.trim() || undefined,
+          expiryDate: expiryDate || null,
+        });
         router.push("/stock");
       } catch (err) {
         alert(err instanceof Error ? err.message : "Failed to adjust stock");
@@ -54,7 +92,8 @@ export default function StockAdjustPage() {
       <div>
         <h1 className="text-2xl font-bold">Stock Adjustment</h1>
         <p className="text-sm text-slate-500">
-          Add or remove stock without purchase/sale
+          Search shows each batch separately. Add stock to a batch, or remove
+          via FEFO.
         </p>
       </div>
       <Card>
@@ -63,32 +102,31 @@ export default function StockAdjustPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Input
-            placeholder="Search product..."
+            placeholder="Search product or batch..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSelected(null);
+              setSelectedBatch(null);
+            }}
           />
           {results.length > 0 && !selected && (
-            <div className="rounded-lg border">
-              {results.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="block w-full border-b px-4 py-2 text-left text-sm hover:bg-slate-50"
-                  onClick={() => {
-                    setSelected(p);
-                    setQuery(p.name);
-                    setResults([]);
-                  }}
-                >
-                  {p.name} — Stock: {p.stockQty}
-                </button>
-              ))}
-            </div>
+            <ProductBatchSearchResults
+              results={results}
+              rateMode="purchase"
+              onSelect={pickRow}
+            />
           )}
           {selected && (
-            <p className="text-sm font-medium text-emerald-700">
-              Selected: {selected.name} (Current: {selected.stockQty})
-            </p>
+            <div className="rounded-md bg-emerald-50 p-2 text-sm text-emerald-800">
+              <p className="font-medium">{selected.name}</p>
+              <p className="text-xs">
+                Total stock: {toNumber(selected.stockQty)}
+                {selectedBatch?.batchNumber
+                  ? ` · Batch ${selectedBatch.batchNumber} (${toNumber(selectedBatch.batchQty)} pcs)`
+                  : ""}
+              </p>
+            </div>
           )}
           <div>
             <Label>Qty Change (+ add, − remove)</Label>
@@ -100,6 +138,31 @@ export default function StockAdjustPage() {
               placeholder="e.g. 10 or -5"
             />
           </div>
+          {isAdd ? (
+            <>
+              <div>
+                <Label>Batch Number *</Label>
+                <Input
+                  className="font-mono uppercase"
+                  value={batchNumber}
+                  onChange={(e) => setBatchNumber(e.target.value.toUpperCase())}
+                  placeholder="e.g. LOT-JUL-01"
+                />
+              </div>
+              <div>
+                <Label>Batch Expiry (optional)</Label>
+                <Input
+                  type="date"
+                  value={expiryDate}
+                  onChange={(e) => setExpiryDate(e.target.value)}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800">
+              Removing stock uses FEFO (oldest expiry batch first).
+            </p>
+          )}
           <div>
             <Label>Reason</Label>
             <Input

@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import { settings } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -24,11 +25,17 @@ export const DEFAULT_SETTINGS = {
 
 export type AppSettings = Record<keyof typeof DEFAULT_SETTINGS, string>;
 
-export async function getSettings(): Promise<AppSettings> {
-  const rows = await db.select().from(settings);
-  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  return { ...DEFAULT_SETTINGS, ...map } as AppSettings;
-}
+// Cached under the "settings" tag; updateSettings revalidates it. Avoids a
+// DB round-trip on every POS checkout and page render.
+export const getSettings = unstable_cache(
+  async (): Promise<AppSettings> => {
+    const rows = await db.select().from(settings);
+    const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    return { ...DEFAULT_SETTINGS, ...map } as AppSettings;
+  },
+  ["app-settings"],
+  { tags: ["settings"] }
+);
 
 export async function getSetting(key: keyof AppSettings): Promise<string> {
   const [row] = await db

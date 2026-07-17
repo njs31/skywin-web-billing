@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Plus, Trash2, Upload, FileSpreadsheet, AlertCircle, CheckCircle } from "lucide-react";
-import { searchProducts, resolveProductsForImport } from "@/lib/actions/products";
+import { searchProductBatches, resolveProductsForImport } from "@/lib/actions/products";
 import * as XLSX from "xlsx";
 import { createPurchase } from "@/lib/actions/purchases";
 import { calculateLineAmount } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Product, Supplier } from "@/db/schema";
+import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ProductScanBar } from "@/components/scanner/product-scan-bar";
+import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
 
 type LineItem = {
@@ -31,6 +33,8 @@ type LineItem = {
   discountType: "percent" | "value";
   discountValue: number;
   hsnCode?: string;
+  batchNumber?: string;
+  expiryDate?: string;
 };
 
 function parseExcelFile(file: File): Promise<{ code: string; qty: number; rate?: number }[]> {
@@ -76,7 +80,8 @@ function parseExcelFile(file: File): Promise<{ code: string; qty: number; rate?:
           if (!row || !Array.isArray(row)) continue;
           
           const code = codeIdx !== -1 ? String(row[codeIdx] ?? "").trim() : "";
-          const qty = qtyIdx !== -1 ? parseFloat(String(row[qtyIdx] ?? "0")) : 0;
+          const qtyRaw = qtyIdx !== -1 ? parseFloat(String(row[qtyIdx] ?? "0")) : 0;
+          const qty = Math.round(qtyRaw);
           const rate = rateIdx !== -1 && row[rateIdx] !== "" && row[rateIdx] !== undefined ? parseFloat(String(row[rateIdx])) : undefined;
           
           if (code && !isNaN(qty) && qty > 0) {
@@ -109,7 +114,7 @@ export function PurchaseForm({
   const [invoiceNo, setInvoiceNo] = useState("");
   const [paymentType, setPaymentType] = useState<"credit" | "cash">("credit");
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Product[]>([]);
+  const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
   const [items, setItems] = useState<LineItem[]>([]);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -196,7 +201,9 @@ export function PurchaseForm({
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (query.trim()) {
-        setResults(await searchProducts(query, 10));
+        setResults(
+          await searchProductBatches(query, 15, { onlyInStock: false })
+        );
       } else {
         setResults([]);
       }
@@ -204,34 +211,53 @@ export function PurchaseForm({
     return () => clearTimeout(timer);
   }, [query]);
 
-  const addItem = (product: Product, qty = 1) => {
+  const addItem = (product: Product, qty = 1, batch?: {
+    batchNumber?: string;
+    expiryDate?: string;
+    rate?: number;
+  }) => {
     if (!product.hsnCode || !product.hsnCode.trim()) {
       alert(`HSN code is mandatory. Product "${product.name}" lacks an HSN code. Please update the product in Inventory first.`);
       return;
     }
-    setItems((prev) => {
-      const id = `p-${product.id}`;
-      const existing = prev.find((i) => i.id === id);
-      if (existing) {
-        return prev.map((i) =>
-          i.id === id ? { ...i, qty: i.qty + qty } : i
-        );
-      }
-      return [
-        ...prev,
-        {
-          id,
-          product,
-          name: product.name,
-          qty,
-          rate: toNumber(product.purchaseRate),
-          discountType: "percent",
-          discountValue: 0,
-        },
-      ];
-    });
+    const wholeQty = Math.max(1, Math.round(qty) || 1);
+    setItems((prev) => [
+      ...prev,
+      {
+        id: `p-${product.id}-${Date.now()}`,
+        product,
+        name: product.name,
+        qty: wholeQty,
+        rate: batch?.rate ?? toNumber(product.purchaseRate),
+        discountType: "percent",
+        discountValue: 0,
+        batchNumber: batch?.batchNumber ?? "",
+        expiryDate: batch?.expiryDate ?? product.expiryDate ?? "",
+      },
+    ]);
     setQuery("");
     setResults([]);
+  };
+
+  const addBatchRow = (row: ProductBatchSearchResult) => {
+    const product = {
+      id: row.productId,
+      name: row.name,
+      sku: row.sku,
+      barcode: row.barcode,
+      hsnCode: row.hsnCode,
+      gstRate: row.gstRate,
+      saleRate: row.saleRate,
+      wholesaleRate: row.wholesaleRate,
+      purchaseRate: row.purchaseRate,
+      stockQty: row.productStockQty,
+      expiryDate: row.batchExpiry,
+    } as Product;
+    addItem(product, 1, {
+      batchNumber: row.batchNumber ?? "",
+      expiryDate: row.batchExpiry ?? "",
+      rate: toNumber(row.batchPurchaseRate ?? row.purchaseRate),
+    });
   };
 
   const addCustomItem = () => {
@@ -243,7 +269,7 @@ export function PurchaseForm({
       alert("HSN code is a mandatory field for manual entry.");
       return;
     }
-    const qty = parseFloat(customQty) || 0;
+    const qty = Math.max(1, Math.round(parseFloat(customQty) || 0));
     const rate = parseFloat(customRate) || 0;
     const discountValue = parseFloat(customDiscVal) || 0;
     if (qty <= 0 || rate < 0) return;
@@ -279,14 +305,15 @@ export function PurchaseForm({
   ) => {
     setItems((prev) =>
       prev.map((i) => {
-        if (i.id === id) {
-          const updated = { ...i, [field]: value };
-          if (discountType !== undefined) {
-            updated.discountType = discountType;
-          }
-          return updated;
+        if (i.id !== id) return i;
+        if (field === "qty") {
+          return { ...i, qty: Math.max(1, Math.round(value) || 1) };
         }
-        return i;
+        const updated = { ...i, [field]: value };
+        if (discountType !== undefined) {
+          updated.discountType = discountType;
+        }
+        return updated;
       })
     );
   };
@@ -303,6 +330,15 @@ export function PurchaseForm({
   const submit = () => {
     if (!supplierId || items.length === 0) {
       setError("Select a supplier and add at least one item");
+      return;
+    }
+    const missingBatch = items.find(
+      (i) => i.product && !i.batchNumber?.trim()
+    );
+    if (missingBatch) {
+      setError(
+        `Batch number is required for "${missingBatch.name}". Same product can have multiple batches.`
+      );
       return;
     }
     setError("");
@@ -322,6 +358,8 @@ export function PurchaseForm({
             rate: i.rate,
             discountType: i.discountType,
             discountValue: i.discountValue,
+            batchNumber: i.batchNumber?.trim() || undefined,
+            expiryDate: i.expiryDate?.trim() || undefined,
           })),
         });
         router.push("/purchases");
@@ -430,8 +468,11 @@ export function PurchaseForm({
         <CardContent className="space-y-4">
           <ProductScanBar
             askQty
+            integerQty
             autoFocus={false}
-            onProductScanned={(product, qty) => addItem(product, qty)}
+            onProductScanned={(product, qty) =>
+              addItem(product, Math.max(1, Math.round(qty) || 1))
+            }
             placeholder="Scan QR / barcode to add stock items"
           />
           <div className="grid gap-4 md:grid-cols-2">
@@ -500,11 +541,14 @@ export function PurchaseForm({
                   <Label className="text-xs">Quantity</Label>
                   <Input
                     type="number"
-                    min="0.01"
-                    step="0.01"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
                     className="h-9 bg-white"
                     value={customQty}
-                    onChange={(e) => setCustomQty(e.target.value)}
+                    onChange={(e) =>
+                      setCustomQty(String(Math.max(1, parseInt(e.target.value, 10) || 1)))
+                    }
                   />
                 </div>
                 <div>
@@ -579,19 +623,11 @@ export function PurchaseForm({
             </div>
           )}
           {results.length > 0 && (
-            <div className="rounded-lg border border-slate-200">
-              {results.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="flex w-full items-center justify-between border-b px-4 py-2 text-left hover:bg-slate-50"
-                  onClick={() => addItem(p)}
-                >
-                  <span className="text-sm">{p.name}</span>
-                  <Plus className="h-4 w-4 text-emerald-600" />
-                </button>
-              ))}
-            </div>
+            <ProductBatchSearchResults
+              results={results}
+              rateMode="purchase"
+              onSelect={addBatchRow}
+            />
           )}
 
           {items.length > 0 && (
@@ -599,95 +635,150 @@ export function PurchaseForm({
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex flex-wrap items-center gap-3 rounded-lg border p-3 bg-white shadow-sm"
+                  className="space-y-2 rounded-lg border bg-white p-3 shadow-sm"
                 >
-                  <p className="min-w-0 flex-1 text-sm font-medium text-slate-800">
-                    {item.name}
-                    {item.product === null && (
-                      <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-700 uppercase">
-                        Manual {item.hsnCode ? `(HSN: ${item.hsnCode})` : ""}
-                      </span>
-                    )}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-[10px] text-slate-400">Qty</Label>
-                    <Input
-                      type="number"
-                      className="w-20 h-8 text-xs"
-                      value={item.qty}
-                      min={0.01}
-                      step={0.01}
-                      onChange={(e) =>
-                        updateItem(
-                          item.id,
-                          "qty",
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-[10px] text-slate-400">Rate</Label>
-                    <Input
-                      type="number"
-                      className="w-24 h-8 text-xs"
-                      value={item.rate}
-                      min={0}
-                      step={0.01}
-                      onChange={(e) =>
-                        updateItem(
-                          item.id,
-                          "rate",
-                          parseFloat(e.target.value) || 0
-                        )
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-[10px] text-slate-400">Discount</Label>
-                    <div className="flex h-8 items-center rounded border border-slate-200 bg-white">
-                      <select
-                        value={item.discountType}
-                        onChange={(e) =>
-                          updateItem(
-                            item.id,
-                            "discountValue",
-                            item.discountValue,
-                            e.target.value as "percent" | "value"
-                          )
-                        }
-                        className="h-full border-r border-slate-200 bg-slate-50 px-1 text-[10px] font-semibold text-slate-600 focus:outline-none"
-                      >
-                        <option value="percent">%</option>
-                        <option value="value">₹</option>
-                      </select>
-                      <input
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="min-w-0 flex-1 text-sm font-medium text-slate-800">
+                      {item.name}
+                      {item.product === null && (
+                        <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-700">
+                          Manual {item.hsnCode ? `(HSN: ${item.hsnCode})` : ""}
+                        </span>
+                      )}
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-[10px] text-slate-400">Qty</Label>
+                      <Input
                         type="number"
-                        value={item.discountValue || ""}
-                        min={0}
+                        className="h-8 w-20 text-xs"
+                        value={item.qty}
+                        min={1}
+                        step={1}
+                        inputMode="numeric"
                         onChange={(e) =>
                           updateItem(
                             item.id,
-                            "discountValue",
-                            parseFloat(e.target.value) || 0,
-                            item.discountType
+                            "qty",
+                            parseInt(e.target.value, 10) || 1
                           )
                         }
-                        className="h-full w-14 px-1 text-center text-xs focus:outline-none"
-                        placeholder="Disc"
                       />
                     </div>
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-[10px] text-slate-400">Rate</Label>
+                      <Input
+                        type="number"
+                        className="h-8 w-24 text-xs"
+                        value={item.rate}
+                        min={0}
+                        step={0.01}
+                        onChange={(e) =>
+                          updateItem(
+                            item.id,
+                            "rate",
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-[10px] text-slate-400">Discount</Label>
+                      <div className="flex h-8 items-center rounded border border-slate-200 bg-white">
+                        <select
+                          value={item.discountType}
+                          onChange={(e) =>
+                            updateItem(
+                              item.id,
+                              "discountValue",
+                              item.discountValue,
+                              e.target.value as "percent" | "value"
+                            )
+                          }
+                          className="h-full border-r border-slate-200 bg-slate-50 px-1 text-[10px] font-semibold text-slate-600 focus:outline-none"
+                        >
+                          <option value="percent">%</option>
+                          <option value="value">₹</option>
+                        </select>
+                        <input
+                          type="number"
+                          value={item.discountValue || ""}
+                          min={0}
+                          onChange={(e) =>
+                            updateItem(
+                              item.id,
+                              "discountValue",
+                              parseFloat(e.target.value) || 0,
+                              item.discountType
+                            )
+                          }
+                          className="h-full w-14 px-1 text-center text-xs focus:outline-none"
+                          placeholder="Disc"
+                        />
+                      </div>
+                    </div>
+                    <span className="w-24 text-right text-sm font-semibold text-slate-950">
+                      {formatCurrency(
+                        calculateLineAmount(
+                          item.qty,
+                          item.rate,
+                          item.discountValue,
+                          item.discountType
+                        )
+                      )}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => removeItem(item.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
                   </div>
-                  <span className="w-24 text-right text-sm font-semibold text-slate-950">
-                    {formatCurrency(calculateLineAmount(item.qty, item.rate, item.discountValue, item.discountType))}
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => removeItem(item.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
+                  {item.product ? (
+                    <div className="grid gap-2 border-t border-slate-100 pt-2 sm:grid-cols-2">
+                      <div>
+                        <Label className="text-[10px] text-slate-400">
+                          Batch No. *
+                        </Label>
+                        <Input
+                          className="mt-0.5 h-8 font-mono text-xs uppercase"
+                          value={item.batchNumber ?? ""}
+                          placeholder="e.g. LOT-JUL-01"
+                          onChange={(e) =>
+                            setItems((prev) =>
+                              prev.map((i) =>
+                                i.id === item.id
+                                  ? {
+                                      ...i,
+                                      batchNumber: e.target.value.toUpperCase(),
+                                    }
+                                  : i
+                              )
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-[10px] text-slate-400">
+                          Batch Expiry
+                        </Label>
+                        <Input
+                          type="date"
+                          className="mt-0.5 h-8 text-xs"
+                          value={item.expiryDate ?? ""}
+                          onChange={(e) =>
+                            setItems((prev) =>
+                              prev.map((i) =>
+                                i.id === item.id
+                                  ? { ...i, expiryDate: e.target.value }
+                                  : i
+                              )
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               <div className="flex justify-between border-t pt-3 font-bold text-sm text-slate-800">

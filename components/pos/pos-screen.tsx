@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   Minus,
   Plus,
@@ -10,7 +17,7 @@ import {
   Scan,
   ChevronDown,
 } from "lucide-react";
-import { searchProducts } from "@/lib/actions/products";
+import { searchProductBatches } from "@/lib/actions/products";
 import { createSale } from "@/lib/actions/sales";
 import {
   calculateGstBreakdown,
@@ -19,6 +26,7 @@ import {
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Customer, Product } from "@/db/schema";
+import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,11 +39,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ProductScanBar } from "@/components/scanner/product-scan-bar";
+import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
 
 type CartItem = {
   id: string;
   product?: Product | null;
+  batchId?: number | null;
+  batchNumber?: string | null;
+  batchExpiry?: string | null;
   name: string;
   qty: number;
   rate: number;
@@ -43,6 +55,7 @@ type CartItem = {
   discountType: "percent" | "value";
   discountValue: number;
   hsnCode?: string;
+  availableQty: number;
 };
 
 type PosScreenProps = {
@@ -54,7 +67,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Product[]>([]);
+  const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [billType, setBillType] = useState<"retail" | "wholesale">("retail");
   const [customerId, setCustomerId] = useState<string>("none");
@@ -83,10 +96,17 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [customerOutstanding, setCustomerOutstanding] = useState<number | null>(null);
 
+  const searchSeq = useRef(0);
   useEffect(() => {
+    const seq = ++searchSeq.current;
     const timer = setTimeout(async () => {
       if (query.trim().length >= 1) {
-        setResults(await searchProducts(query, 15));
+        const rows = await searchProductBatches(query, 20, {
+          onlyInStock: false,
+        });
+        // Drop out-of-order responses so slow queries can't overwrite
+        // results for what the cashier is currently typing.
+        if (seq === searchSeq.current) setResults(rows);
       } else {
         setResults([]);
       }
@@ -110,26 +130,36 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   }, [customerId]);
 
   const addToCart = useCallback(
-    (product: Product, qty = 1) => {
+    (product: Product, qty = 1, batch?: {
+      batchId: number | null;
+      batchNumber: string | null;
+      batchExpiry: string | null;
+      availableQty: number;
+    }) => {
       if (!product.hsnCode || !product.hsnCode.trim()) {
         setError(
           `HSN code is mandatory. "${product.name}" has no HSN — update it in Inventory first.`
         );
         return;
       }
-      const stock = toNumber(product.stockQty);
+      const stock = batch?.availableQty ?? toNumber(product.stockQty);
       if (stock <= 0) {
         setError(`"${product.name}" is out of stock and cannot be sold.`);
         return;
       }
 
+      const cartId = batch?.batchId
+        ? `p-${product.id}-b-${batch.batchId}`
+        : `p-${product.id}`;
+
       setCart((prev) => {
-        const id = `p-${product.id}`;
-        const existing = prev.find((c) => c.id === id);
+        const existing = prev.find((c) => c.id === cartId);
         const nextQty = (existing?.qty ?? 0) + qty;
         if (nextQty > stock) {
           setError(
-            `Insufficient stock for "${product.name}". Available: ${stock}, in cart: ${existing?.qty ?? 0}`
+            `Insufficient stock for "${product.name}"${
+              batch?.batchNumber ? ` (batch ${batch.batchNumber})` : ""
+            }. Available: ${stock}, in cart: ${existing?.qty ?? 0}`
           );
           return prev;
         }
@@ -137,21 +167,25 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
         setError("");
         if (existing) {
           return prev.map((c) =>
-            c.id === id ? { ...c, qty: c.qty + qty } : c
+            c.id === cartId ? { ...c, qty: c.qty + qty } : c
           );
         }
         const rate = getProductRate(product, billType);
         return [
           ...prev,
           {
-            id,
+            id: cartId,
             product,
+            batchId: batch?.batchId ?? null,
+            batchNumber: batch?.batchNumber ?? null,
+            batchExpiry: batch?.batchExpiry ?? null,
             name: product.name,
             qty,
             rate,
             gstRate: toNumber(product.gstRate),
             discountType: "percent" as const,
             discountValue: 0,
+            availableQty: stock,
           },
         ];
       });
@@ -160,6 +194,31 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
       searchRef.current?.focus();
     },
     [billType]
+  );
+
+  const addBatchToCart = useCallback(
+    (row: ProductBatchSearchResult, qty = 1) => {
+      const product = {
+        id: row.productId,
+        name: row.name,
+        sku: row.sku,
+        barcode: row.barcode,
+        hsnCode: row.hsnCode,
+        gstRate: row.gstRate,
+        saleRate: row.batchSaleRate ?? row.saleRate,
+        wholesaleRate: row.wholesaleRate,
+        purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
+        stockQty: row.batchQty || row.productStockQty,
+      } as Product;
+
+      addToCart(product, qty, {
+        batchId: row.batchId,
+        batchNumber: row.batchNumber,
+        batchExpiry: row.batchExpiry,
+        availableQty: toNumber(row.batchQty || row.productStockQty),
+      });
+    },
+    [addToCart]
   );
 
   const addCustomItem = () => {
@@ -186,6 +245,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
         discountType: customDiscType,
         discountValue,
         hsnCode: customHsn.trim(),
+        availableQty: 999999,
       },
     ]);
 
@@ -200,7 +260,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && results.length > 0) {
-      addToCart(results[0]);
+      addBatchToCart(results[0]);
     }
   };
 
@@ -208,20 +268,18 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
     setCart((prev) => {
       const item = prev.find((c) => c.id === id);
       if (!item) return prev;
-
-      const newQty = item.qty + delta;
-      if (item.product && newQty > toNumber(item.product.stockQty)) {
+      const next = item.qty + delta;
+      if (next <= 0) return prev.filter((c) => c.id !== id);
+      if (item.product && next > item.availableQty) {
         setError(
-          `Insufficient stock for "${item.name}". Available: ${toNumber(item.product.stockQty)}`
+          `Insufficient stock for "${item.name}"${
+            item.batchNumber ? ` (batch ${item.batchNumber})` : ""
+          }. Available: ${item.availableQty}`
         );
         return prev;
       }
-      if (newQty <= 0) {
-        setError("");
-        return prev.filter((c) => c.id !== id);
-      }
       setError("");
-      return prev.map((c) => (c.id === id ? { ...c, qty: newQty } : c));
+      return prev.map((c) => (c.id === id ? { ...c, qty: next } : c));
     });
   };
 
@@ -248,12 +306,18 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
     { billDiscount: parseFloat(billDiscount) || 0 }
   );
 
-  const filteredCustomers = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-      (c.phone && c.phone.includes(customerSearch)) ||
-      (c.gstin && c.gstin.toLowerCase().includes(customerSearch.toLowerCase()))
-  );
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return customers.slice(0, 50);
+    return customers
+      .filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          (c.phone && c.phone.includes(q)) ||
+          (c.gstin && c.gstin.toLowerCase().includes(q))
+      )
+      .slice(0, 50);
+  }, [customers, customerSearch]);
 
   const billCreditAmount = paymentMode === "credit" ? gst.grandTotal : 0;
   const projectedDebt =
@@ -290,6 +354,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
             discountType: c.discountType,
             discountValue: c.discountValue,
             hsnCode: c.product ? (c.product.hsnCode || null) : c.hsnCode,
+            batchId: c.batchId ?? undefined,
           })),
         });
         setCart([]);
@@ -348,34 +413,12 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
             autoFocus
           />
           {results.length > 0 && (
-            <div className="absolute z-10 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-              {results.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-3 text-left hover:bg-emerald-50"
-                  onClick={() => addToCart(product)}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-slate-900">
-                      {product.name}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Stock: {toNumber(product.stockQty)} | GST:{" "}
-                      {toNumber(product.gstRate)}%
-                      {toNumber(product.stockQty) <= 0 && (
-                        <span className="ml-1 font-semibold text-red-600">
-                          · Out of stock
-                        </span>
-                      )}
-                      {product.barcode && ` | ${product.barcode}`}
-                    </p>
-                  </div>
-                  <span className="ml-2 font-semibold text-emerald-700">
-                    {formatCurrency(getProductRate(product, billType))}
-                  </span>
-                </button>
-              ))}
+            <div className="absolute z-10 mt-1 w-full">
+              <ProductBatchSearchResults
+                results={results}
+                rateMode={billType === "wholesale" ? "wholesale" : "sale"}
+                onSelect={(row) => addBatchToCart(row)}
+              />
             </div>
           )}
         </div>
@@ -516,11 +559,17 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                       <p className="line-clamp-2 text-sm font-medium text-slate-800">
                         {item.name}
                         {item.product === null && (
-                          <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-700 uppercase">
+                          <span className="ml-1.5 rounded bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-700">
                             Manual
                           </span>
                         )}
                       </p>
+                      {item.batchNumber ? (
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          Batch {item.batchNumber}
+                          {item.batchExpiry ? ` · Exp ${item.batchExpiry}` : ""}
+                        </p>
+                      ) : null}
                       <p className="text-sm font-semibold text-slate-900">
                         {formatCurrency(
                           calculateLineAmount(

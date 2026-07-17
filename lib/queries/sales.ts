@@ -1,4 +1,3 @@
-import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import {
   sales,
@@ -6,8 +5,6 @@ import {
   products,
   stockMovements,
   customers,
-  partyPayments,
-  saleReturns,
 } from "@/db/schema";
 import {
   calculateGstBreakdown,
@@ -28,6 +25,7 @@ const saleItemSchema = z.object({
   discountType: z.enum(["percent", "value"]).default("percent"),
   discountValue: z.number().min(0).default(0),
   hsnCode: z.string().optional().nullable(),
+  batchId: z.number().optional().nullable(),
 });
 
 const createSaleSchema = z.object({
@@ -43,37 +41,81 @@ const createSaleSchema = z.object({
   items: z.array(saleItemSchema).min(1),
 });
 
-async function generateInvoiceNo(billType: "retail" | "wholesale") {
-  const settings = await getSettings();
-  const today = format(new Date(), "yyyyMMdd");
-  const typePrefix = billType === "wholesale" ? "WHL" : settings.invoicePrefix;
-  const prefix = `${typePrefix}-${today}-`;
-
-  const [last] = await db
-    .select({ invoiceNo: sales.invoiceNo })
-    .from(sales)
-    .where(sql`${sales.invoiceNo} like ${prefix + "%"}`)
-    .orderBy(desc(sales.invoiceNo))
-    .limit(1);
-
-  let seq = 1;
-  if (last?.invoiceNo) {
-    const parts = last.invoiceNo.split("-");
-    seq = parseInt(parts[parts.length - 1] ?? "0", 10) + 1;
-  }
-
-  return `${prefix}${String(seq).padStart(4, "0")}`;
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
 }
 
+function toDateString(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return format(value, "yyyy-MM-dd");
+  return String(value);
+}
+
+/** Map a raw (snake_case) sales row from a CTE insert back to the drizzle shape. */
+function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
+  return {
+    id: Number(row.id),
+    invoiceNo: String(row.invoice_no),
+    date: row.date instanceof Date ? row.date : new Date(String(row.date)),
+    billType: row.bill_type as "retail" | "wholesale",
+    customerId: row.customer_id == null ? null : Number(row.customer_id),
+    customerName: (row.customer_name as string | null) ?? null,
+    paymentMode: row.payment_mode as "cash" | "upi" | "credit" | "card" | "cheque",
+    operatorName: (row.operator_name as string | null) ?? null,
+    subtotal: String(row.subtotal),
+    discountAmount: String(row.discount_amount),
+    cgst: String(row.cgst),
+    sgst: String(row.sgst),
+    igst: String(row.igst),
+    grandTotal: String(row.grand_total),
+    paidAmount: row.paid_amount == null ? null : String(row.paid_amount),
+    notes: (row.notes as string | null) ?? null,
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at
+        : new Date(String(row.created_at)),
+  };
+}
+
+function isInvoiceNoConflict(err: unknown): boolean {
+  const candidates = [err, (err as { cause?: unknown })?.cause];
+  return candidates.some((e) => {
+    const pg = e as { code?: string; constraint_name?: string; message?: string };
+    return (
+      pg?.code === "23505" &&
+      (pg.constraint_name?.includes("invoice_no") ||
+        pg.message?.includes("invoice_no"))
+    );
+  });
+}
+
+/**
+ * Creates a sale with minimal DB round-trips so checkout stays fast even on a
+ * remote database:
+ *  1. one locked read of products + in-stock batches (FOR UPDATE serializes
+ *     concurrent sales of the same products),
+ *  2. one CTE statement inserting the sale (invoice number computed atomically
+ *     in SQL), all sale items, and all stock movements,
+ *  3. one CTE statement applying batch deductions and product stock updates.
+ * FEFO allocation is computed in memory from the locked snapshot.
+ */
 export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const { revalidatePath, revalidateTag } = await import("next/cache");
   const data = createSaleSchema.parse(input);
   const settings = await getSettings();
-  // Enforce validation: Do not allow sales if product is not in inventory (force allowNegative = false)
-  const allowNegative = false;
 
-  if (data.paymentMode === "credit" && (!data.customerId || data.customerId === undefined)) {
+  if (data.paymentMode === "credit" && !data.customerId) {
     throw new Error("Customer registration required for credit transactions.");
+  }
+
+  // Custom (non-inventory) items must carry their own HSN. Product items may
+  // fall back to the product's HSN, validated after the product read below.
+  for (const item of data.items) {
+    if (!item.productId && (!item.hsnCode || !item.hsnCode.trim())) {
+      throw new Error(
+        `HSN code is mandatory for all items on the invoice (${item.customName || "item"}).`
+      );
+    }
   }
 
   const productQtyMap = new Map<number, number>();
@@ -85,43 +127,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       );
     }
   }
-
-  for (const [productId, totalQty] of productQtyMap) {
-    const [product] = await db
-      .select()
-      .from(products)
-      .where(eq(products.id, productId))
-      .limit(1);
-
-    if (!product) throw new Error(`Product ${productId} not found`);
-
-    const stock = parseFloat(product.stockQty);
-    if (stock <= 0) {
-      throw new Error(`${product.name} is out of stock and cannot be sold.`);
-    }
-    if (!allowNegative && stock < totalQty) {
-      throw new Error(
-        `Insufficient stock for ${product.name}. Available: ${stock}, requested: ${totalQty}`
-      );
-    }
-  }
-
-  for (const item of data.items) {
-    let effectiveHsn = item.hsnCode;
-    if (item.productId) {
-      const [product] = await db
-        .select()
-        .from(products)
-        .where(eq(products.id, item.productId))
-        .limit(1);
-
-      if (!product) throw new Error(`Product ${item.productId} not found`);
-      if (!effectiveHsn && product.hsnCode) effectiveHsn = product.hsnCode;
-    }
-    if (!effectiveHsn || !effectiveHsn.trim()) {
-      throw new Error(`HSN code is mandatory for all items on the invoice (${item.customName || "Product ID: " + item.productId}).`);
-    }
-  }
+  const productIds = [...productQtyMap.keys()];
 
   const gst = calculateGstBreakdown(
     data.items.map((i) => ({
@@ -140,84 +146,228 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       ? (data.paidAmount ?? 0)
       : (data.paidAmount ?? gst.grandTotal);
 
-  const invoiceNo = await generateInvoiceNo(data.billType);
+  const typePrefix =
+    data.billType === "wholesale" ? "WHL" : settings.invoicePrefix;
+  const prefix = `${typePrefix}-${format(new Date(), "yyyyMMdd")}-`;
 
-  const sale = await db.transaction(async (tx) => {
-    let finalCustomerId = data.customerId;
-    let finalCustomerName = data.customerName;
+  const executeSale = () =>
+    db.transaction(async (tx) => {
+      type BatchRow = {
+        batchId: number;
+        batchNumber: string;
+        qty: number;
+        expiryDate: string | null;
+      };
+      const productInfo = new Map<
+        number,
+        { name: string; hsnCode: string | null; batches: BatchRow[] }
+      >();
 
-    if (!finalCustomerId && (data.customerName?.trim() || data.customerPhone?.trim())) {
-      let existingCustomer = null;
-      if (data.customerPhone?.trim()) {
-        [existingCustomer] = await tx
-          .select()
-          .from(customers)
-          .where(eq(customers.phone, data.customerPhone.trim()))
-          .limit(1);
-      }
+      if (productIds.length > 0) {
+        const idList = sql.join(
+          productIds.map((id) => sql`${id}`),
+          sql`, `
+        );
+        // Single locked read: FOR UPDATE OF p serializes concurrent sales of
+        // the same products, so the joined batch snapshot is authoritative.
+        const rows = (await tx.execute(sql`
+          select
+            p.id as product_id,
+            p.name as product_name,
+            p.hsn_code as hsn_code,
+            b.id as batch_id,
+            b.batch_number as batch_number,
+            b.qty as batch_qty,
+            b.expiry_date as expiry_date
+          from products p
+          left join product_batches b
+            on b.product_id = p.id and b.qty::numeric > 0
+          where p.id in (${idList})
+          order by
+            p.id asc,
+            (b.expiry_date is null) asc,
+            b.expiry_date asc,
+            b.id asc
+          for update of p
+        `)) as unknown as Array<Record<string, unknown>>;
 
-      if (!existingCustomer && data.customerName?.trim()) {
-        [existingCustomer] = await tx
-          .select()
-          .from(customers)
-          .where(eq(customers.name, data.customerName.trim()))
-          .limit(1);
-      }
-
-      if (existingCustomer) {
-        finalCustomerId = existingCustomer.id;
-        finalCustomerName = existingCustomer.name;
-
-        if (data.customerPhone?.trim() && !existingCustomer.phone) {
-          await tx
-            .update(customers)
-            .set({ phone: data.customerPhone.trim() })
-            .where(eq(customers.id, existingCustomer.id));
+        for (const row of rows) {
+          const pid = Number(row.product_id);
+          if (!productInfo.has(pid)) {
+            productInfo.set(pid, {
+              name: String(row.product_name),
+              hsnCode: (row.hsn_code as string | null) ?? null,
+              batches: [],
+            });
+          }
+          if (row.batch_id != null) {
+            productInfo.get(pid)!.batches.push({
+              batchId: Number(row.batch_id),
+              batchNumber: String(row.batch_number),
+              qty: parseFloat(String(row.batch_qty)),
+              expiryDate: toDateString(row.expiry_date),
+            });
+          }
         }
-      } else {
-        const [newCustomer] = await tx
-          .insert(customers)
-          .values({
-            name: data.customerName?.trim() || `Customer-${data.customerPhone?.trim()}`,
-            phone: data.customerPhone?.trim() || null,
-            type: "retail",
-            creditLimit: "0.00",
-          })
-          .returning();
-        finalCustomerId = newCustomer.id;
-        finalCustomerName = newCustomer.name;
+
+        for (const [productId, totalQty] of productQtyMap) {
+          const info = productInfo.get(productId);
+          if (!info) throw new Error(`Product ${productId} not found`);
+          const available = info.batches.reduce((s, b) => s + b.qty, 0);
+          if (available <= 0) {
+            throw new Error(`${info.name} is out of stock and cannot be sold.`);
+          }
+          if (available < totalQty) {
+            throw new Error(
+              `Insufficient stock for ${info.name}. Available: ${available}, requested: ${totalQty}`
+            );
+          }
+        }
+
+        for (const item of data.items) {
+          if (!item.productId) continue;
+          const effectiveHsn =
+            item.hsnCode || productInfo.get(item.productId)!.hsnCode;
+          if (!effectiveHsn || !effectiveHsn.trim()) {
+            throw new Error(
+              `HSN code is mandatory for all items on the invoice (${item.customName || "Product ID: " + item.productId}).`
+            );
+          }
+        }
       }
-    }
 
-    if (data.paymentMode === "credit" && finalCustomerId) {
-      const [customerRecord] = await tx
-        .select()
-        .from(customers)
-        .where(eq(customers.id, finalCustomerId))
-        .limit(1);
+      // Allocate deductions in memory (pinned batch or FEFO) from the locked snapshot.
+      const remaining = new Map<number, number>();
+      for (const info of productInfo.values()) {
+        for (const b of info.batches) remaining.set(b.batchId, b.qty);
+      }
 
-      if (customerRecord && customerRecord.creditLimit) {
-        const limit = parseFloat(customerRecord.creditLimit);
+      type Deduction = { batchId: number; batchNumber: string; qty: number };
+      const itemDeductions: Deduction[][] = data.items.map(() => []);
+
+      data.items.forEach((item, idx) => {
+        if (!item.productId) return;
+        const info = productInfo.get(item.productId)!;
+
+        if (item.batchId) {
+          const batch = info.batches.find((b) => b.batchId === item.batchId);
+          if (!batch) {
+            throw new Error(
+              "Selected batch is out of stock or does not belong to this product."
+            );
+          }
+          const avail = remaining.get(batch.batchId) ?? 0;
+          if (avail < item.qty) {
+            throw new Error(
+              `Insufficient qty in batch ${batch.batchNumber}. Available: ${avail}, requested: ${item.qty}`
+            );
+          }
+          remaining.set(batch.batchId, round2(avail - item.qty));
+          itemDeductions[idx].push({
+            batchId: batch.batchId,
+            batchNumber: batch.batchNumber,
+            qty: item.qty,
+          });
+        } else {
+          let need = item.qty;
+          for (const b of info.batches) {
+            if (need <= 0) break;
+            const avail = remaining.get(b.batchId) ?? 0;
+            if (avail <= 0) continue;
+            const take = Math.min(avail, need);
+            remaining.set(b.batchId, round2(avail - take));
+            itemDeductions[idx].push({
+              batchId: b.batchId,
+              batchNumber: b.batchNumber,
+              qty: take,
+            });
+            need = round2(need - take);
+          }
+          if (need > 0) {
+            throw new Error(
+              `Insufficient stock for ${info.name}. Requested quantity exceeds available batches.`
+            );
+          }
+        }
+      });
+
+      let finalCustomerId = data.customerId;
+      let finalCustomerName = data.customerName;
+
+      if (
+        !finalCustomerId &&
+        (data.customerName?.trim() || data.customerPhone?.trim())
+      ) {
+        let existingCustomer = null;
+        if (data.customerPhone?.trim()) {
+          [existingCustomer] = await tx
+            .select()
+            .from(customers)
+            .where(eq(customers.phone, data.customerPhone.trim()))
+            .limit(1);
+        }
+
+        if (!existingCustomer && data.customerName?.trim()) {
+          [existingCustomer] = await tx
+            .select()
+            .from(customers)
+            .where(eq(customers.name, data.customerName.trim()))
+            .limit(1);
+        }
+
+        if (existingCustomer) {
+          finalCustomerId = existingCustomer.id;
+          finalCustomerName = existingCustomer.name;
+
+          if (data.customerPhone?.trim() && !existingCustomer.phone) {
+            await tx
+              .update(customers)
+              .set({ phone: data.customerPhone.trim() })
+              .where(eq(customers.id, existingCustomer.id));
+          }
+        } else {
+          const [newCustomer] = await tx
+            .insert(customers)
+            .values({
+              name:
+                data.customerName?.trim() ||
+                `Customer-${data.customerPhone?.trim()}`,
+              phone: data.customerPhone?.trim() || null,
+              type: "retail",
+              creditLimit: "0.00",
+            })
+            .returning();
+          finalCustomerId = newCustomer.id;
+          finalCustomerName = newCustomer.name;
+        }
+      }
+
+      if (data.paymentMode === "credit" && finalCustomerId) {
+        const [creditRow] = (await tx.execute(sql`
+          select
+            c.credit_limit as credit_limit,
+            coalesce((
+              select sum(grand_total::numeric - coalesce(paid_amount::numeric, 0))
+              from sales where customer_id = c.id
+            ), 0) as sales_total,
+            coalesce((
+              select sum(grand_total::numeric)
+              from sale_returns where customer_id = c.id
+            ), 0) as returns_total,
+            coalesce((
+              select sum(amount::numeric)
+              from party_payments where customer_id = c.id and type = 'receipt'
+            ), 0) as payments_total
+          from customers c
+          where c.id = ${finalCustomerId}
+        `)) as unknown as Array<Record<string, unknown>>;
+
+        const limit = parseFloat(String(creditRow?.credit_limit ?? "0"));
         if (limit > 0) {
-          const [salesTotal] = await tx
-            .select({ total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)), 0)` })
-            .from(sales)
-            .where(eq(sales.customerId, finalCustomerId));
-
-          const [returnsTotal] = await tx
-            .select({ total: sql<string>`coalesce(sum(${saleReturns.grandTotal}::numeric), 0)` })
-            .from(saleReturns)
-            .where(eq(saleReturns.customerId, finalCustomerId));
-
-          const [paymentsTotal] = await tx
-            .select({ total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)` })
-            .from(partyPayments)
-            .where(and(eq(partyPayments.customerId, finalCustomerId), eq(partyPayments.type, "receipt")));
-
           const currentOutstanding =
-            parseFloat(salesTotal?.total ?? "0") -
-            parseFloat(returnsTotal?.total ?? "0") -
-            parseFloat(paymentsTotal?.total ?? "0");
+            parseFloat(String(creditRow?.sales_total ?? "0")) -
+            parseFloat(String(creditRow?.returns_total ?? "0")) -
+            parseFloat(String(creditRow?.payments_total ?? "0"));
 
           if (currentOutstanding + gst.grandTotal > limit) {
             throw new Error(
@@ -226,75 +376,163 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
           }
         }
       }
-    }
 
-    const [created] = await tx
-      .insert(sales)
-      .values({
-        invoiceNo,
-        billType: data.billType,
-        customerId: finalCustomerId,
-        customerName: finalCustomerName,
-        paymentMode: data.paymentMode,
-        operatorName: data.operatorName ?? settings.defaultOperator,
-        subtotal: gst.subtotal.toFixed(2),
-        discountAmount: gst.discountAmount.toFixed(2),
-        cgst: gst.cgst.toFixed(2),
-        sgst: gst.sgst.toFixed(2),
-        igst: gst.igst.toFixed(2),
-        grandTotal: gst.grandTotal.toFixed(2),
-        paidAmount: paidAmount.toFixed(2),
-        notes: data.notes,
-      })
-      .returning();
+      const itemValues = data.items.map((item, idx) => {
+        const amount = calculateLineAmount(
+          item.qty,
+          item.rate,
+          item.discountValue,
+          item.discountType
+        );
+        const deductions = itemDeductions[idx];
+        const batchLabel = deductions.length
+          ? deductions.map((d) => `${d.batchNumber}(${d.qty})`).join(", ")
+          : null;
+        const discountPercent =
+          item.discountType === "percent" ? item.discountValue : 0;
 
-    for (const item of data.items) {
-      const amount = calculateLineAmount(
-        item.qty,
-        item.rate,
-        item.discountValue,
-        item.discountType
-      );
-
-      await tx.insert(saleItems).values({
-        saleId: created.id,
-        productId: item.productId || null,
-        customName: item.customName || null,
-        qty: item.qty.toFixed(2),
-        rate: item.rate.toFixed(2),
-        discountPercent: item.discountType === "percent" ? item.discountValue.toFixed(2) : "0.00",
-        discountType: item.discountType,
-        discountValue: item.discountValue.toFixed(2),
-        gstRate: item.gstRate.toFixed(2),
-        amount: amount.toFixed(2),
-        hsnCode: item.hsnCode || null,
+        return sql`(${item.productId ?? null}::int, ${item.customName || null}::text, ${item.qty.toFixed(2)}::numeric, ${item.rate.toFixed(2)}::numeric, ${discountPercent.toFixed(2)}::numeric, ${item.discountType}::text, ${item.discountValue.toFixed(2)}::numeric, ${item.gstRate.toFixed(2)}::numeric, ${amount.toFixed(2)}::numeric, ${item.hsnCode || null}::text, ${deductions[0]?.batchId ?? null}::int, ${batchLabel}::text)`;
       });
 
-      if (item.productId) {
-        await tx
-          .update(products)
-          .set({
-            stockQty: sql`${products.stockQty}::numeric - ${item.qty}`,
-          })
-          .where(eq(products.id, item.productId));
+      const movementValues: ReturnType<typeof sql>[] = [];
+      data.items.forEach((item, idx) => {
+        const deductions = itemDeductions[idx];
+        if (!item.productId || deductions.length === 0) return;
+        const batchLabel = deductions
+          .map((d) => `${d.batchNumber}(${d.qty})`)
+          .join(", ");
+        const note = item.batchId ? `Batch ${batchLabel}` : `FEFO ${batchLabel}`;
+        for (const d of deductions) {
+          movementValues.push(
+            sql`(${item.productId}::int, ${d.batchId}::int, ${d.batchNumber}::text, ${(-d.qty).toFixed(2)}::numeric, ${note}::text)`
+          );
+        }
+      });
 
-        await tx.insert(stockMovements).values({
-          productId: item.productId,
-          type: "sale",
-          qtyDelta: (-item.qty).toFixed(2),
-          referenceId: created.id,
-        });
+      const movementsCte = movementValues.length
+        ? sql`, ins_movements as (
+            insert into stock_movements (product_id, batch_id, batch_number, type, qty_delta, reference_id, notes)
+            select v.product_id, v.batch_id, v.batch_number, 'sale'::stock_movement_type, v.qty_delta, ns.id, v.notes
+            from new_sale ns
+            cross join (values ${sql.join(movementValues, sql`, `)})
+              as v(product_id, batch_id, batch_number, qty_delta, notes)
+          )`
+        : sql``;
+
+      // Invoice number is computed inside the INSERT so numbering stays atomic;
+      // the unique constraint on invoice_no plus a retry covers rare races.
+      const createdRows = (await tx.execute(sql`
+        with new_sale as (
+          insert into sales (
+            invoice_no, bill_type, customer_id, customer_name, payment_mode,
+            operator_name, subtotal, discount_amount, cgst, sgst, igst,
+            grand_total, paid_amount, notes
+          )
+          select
+            ${prefix} || lpad((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text, greatest(4, length((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text)), '0'),
+            ${data.billType}::bill_type,
+            ${finalCustomerId ?? null}::int,
+            ${finalCustomerName ?? null}::text,
+            ${data.paymentMode}::payment_mode,
+            ${data.operatorName ?? settings.defaultOperator}::text,
+            ${gst.subtotal.toFixed(2)}::numeric,
+            ${gst.discountAmount.toFixed(2)}::numeric,
+            ${gst.cgst.toFixed(2)}::numeric,
+            ${gst.sgst.toFixed(2)}::numeric,
+            ${gst.igst.toFixed(2)}::numeric,
+            ${gst.grandTotal.toFixed(2)}::numeric,
+            ${paidAmount.toFixed(2)}::numeric,
+            ${data.notes ?? null}::text
+          from sales s
+          where s.invoice_no like ${prefix + "%"}
+          returning *
+        ),
+        ins_items as (
+          insert into sale_items (
+            sale_id, product_id, custom_name, qty, rate, discount_percent,
+            discount_type, discount_value, gst_rate, amount, hsn_code,
+            batch_id, batch_number
+          )
+          select
+            ns.id, v.product_id, v.custom_name, v.qty, v.rate, v.discount_percent,
+            v.discount_type, v.discount_value, v.gst_rate, v.amount, v.hsn_code,
+            v.batch_id, v.batch_number
+          from new_sale ns
+          cross join (values ${sql.join(itemValues, sql`, `)})
+            as v(product_id, custom_name, qty, rate, discount_percent, discount_type, discount_value, gst_rate, amount, hsn_code, batch_id, batch_number)
+        )
+        ${movementsCte}
+        select * from new_sale
+      `)) as unknown as Array<Record<string, unknown>>;
+
+      const created = mapSaleRow(createdRows[0]);
+
+      // Apply all batch deductions and product stock/expiry updates in one statement.
+      const batchTakes = new Map<number, number>();
+      for (const deductions of itemDeductions) {
+        for (const d of deductions) {
+          batchTakes.set(d.batchId, round2((batchTakes.get(d.batchId) ?? 0) + d.qty));
+        }
       }
-    }
 
-    return created;
-  });
+      if (batchTakes.size > 0) {
+        const batchVals = [...batchTakes].map(
+          ([batchId, take]) => sql`(${batchId}::int, ${take.toFixed(2)}::numeric)`
+        );
+        const idList = sql.join(
+          productIds.map((id) => sql`${id}`),
+          sql`, `
+        );
+
+        // One statement: deduct batches and refresh product stock + nearest
+        // expiry (same semantics as syncProductStockQty). The aggregate reads
+        // the statement snapshot, so takes are subtracted explicitly.
+        await tx.execute(sql`
+          with takes as (
+            select * from (values ${sql.join(batchVals, sql`, `)}) as t(batch_id, take)
+          ),
+          batch_upd as (
+            update product_batches pb
+            set qty = pb.qty - t.take, updated_at = now()
+            from takes t
+            where pb.id = t.batch_id
+          )
+          update products p
+          set stock_qty = agg.total,
+              expiry_date = coalesce(agg.nearest, p.expiry_date)
+          from (
+            select
+              b.product_id,
+              coalesce(sum(b.qty::numeric - coalesce(t.take, 0)), 0) as total,
+              min(b.expiry_date) filter (where b.qty::numeric - coalesce(t.take, 0) > 0) as nearest
+            from product_batches b
+            left join takes t on t.batch_id = b.id
+            where b.product_id in (${idList})
+            group by b.product_id
+          ) agg
+          where p.id = agg.product_id
+        `);
+      }
+
+      return created;
+    });
+
+  let sale: typeof sales.$inferSelect;
+  try {
+    sale = await executeSale();
+  } catch (err) {
+    // Two concurrent bills can compute the same invoice number; retry once.
+    if (isInvoiceNoConflict(err)) {
+      sale = await executeSale();
+    } else {
+      throw err;
+    }
+  }
 
   revalidateTag("sales", "max");
   revalidateTag("products", "max");
   revalidateTag("customers", "max");
   revalidatePath("/invoices");
-  revalidatePath("/pos");
   revalidatePath("/products");
   revalidatePath("/");
   revalidatePath("/reports");

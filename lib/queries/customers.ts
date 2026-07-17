@@ -134,36 +134,27 @@ export async function updateCustomer(
 }
 
 export async function getCustomerOutstanding(customerId: number) {
-  const [salesTotal] = await db
-    .select({
-      total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)), 0)`,
-    })
-    .from(sales)
-    .where(eq(sales.customerId, customerId));
-
-  const [returnsTotal] = await db
-    .select({
-      total: sql<string>`coalesce(sum(${saleReturns.grandTotal}::numeric), 0)`,
-    })
-    .from(saleReturns)
-    .where(eq(saleReturns.customerId, customerId));
-
-  const [paymentsTotal] = await db
-    .select({
-      total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
-    })
-    .from(partyPayments)
-    .where(
-      and(
-        eq(partyPayments.customerId, customerId),
-        eq(partyPayments.type, "receipt")
-      )
-    );
+  // One round-trip: sales minus returns minus receipts.
+  const [row] = (await db.execute(sql`
+    select
+      coalesce((
+        select sum(grand_total::numeric - coalesce(paid_amount::numeric, 0))
+        from sales where customer_id = ${customerId}
+      ), 0) as sales_total,
+      coalesce((
+        select sum(grand_total::numeric)
+        from sale_returns where customer_id = ${customerId}
+      ), 0) as returns_total,
+      coalesce((
+        select sum(amount::numeric)
+        from party_payments where customer_id = ${customerId} and type = 'receipt'
+      ), 0) as payments_total
+  `)) as unknown as Array<Record<string, unknown>>;
 
   const outstanding =
-    parseFloat(salesTotal?.total ?? "0") -
-    parseFloat(returnsTotal?.total ?? "0") -
-    parseFloat(paymentsTotal?.total ?? "0");
+    parseFloat(String(row?.sales_total ?? "0")) -
+    parseFloat(String(row?.returns_total ?? "0")) -
+    parseFloat(String(row?.payments_total ?? "0"));
 
   return Math.round(outstanding * 100) / 100;
 }

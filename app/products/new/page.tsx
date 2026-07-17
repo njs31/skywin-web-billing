@@ -25,6 +25,7 @@ export default function NewProductPage() {
   const [gstRate, setGstRate] = useState("18");
   const [stockQty, setStockQty] = useState("0");
   const [reorderLevel, setReorderLevel] = useState("10");
+  const [expiryDate, setExpiryDate] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +53,7 @@ export default function NewProductPage() {
           gstRate: parseFloat(gstRate) || 18,
           stockQty: parseFloat(stockQty) || 0,
           reorderLevel: parseFloat(reorderLevel) || 10,
+          expiryDate: expiryDate.trim() || undefined,
           unit: "pcs",
         });
         router.push("/products");
@@ -201,6 +203,28 @@ export default function NewProductPage() {
                   step="0.01"
                   value={stockQty}
                   onChange={(e) => setStockQty(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reorderLevel">Reorder Level</Label>
+                <Input
+                  id="reorderLevel"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={reorderLevel}
+                  onChange={(e) => setReorderLevel(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="expiryDate">Expiry Date (optional)</Label>
+                <Input
+                  id="expiryDate"
+                  type="date"
+                  value={expiryDate}
+                  onChange={(e) => setExpiryDate(e.target.value)}
                 />
               </div>
             </div>
