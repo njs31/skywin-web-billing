@@ -15,6 +15,7 @@
     "db:assign-barcodes": "tsx --env-file=.env.local scripts/assign-barcodes.ts",
     "db:assign-hsn": "tsx --env-file=.env.local scripts/assign-hsn.ts",
     "db:import-inventory": "tsx --env-file=.env.local scripts/import-inventory-report.ts",
+    "db:import-master": "tsx --env-file=.env.local scripts/import-master-file.ts",
     "db:assign-skus": "tsx --env-file=.env.local scripts/assign-skus.ts",
     "db:assign-expiry": "tsx --env-file=.env.local scripts/assign-expiry.ts",
     "db:migrate-batches": "tsx --env-file=.env.local scripts/migrate-batches.ts",
