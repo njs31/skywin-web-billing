@@ -98,3 +98,17 @@ export async function getCustomerOutstanding(customerId: number): Promise<number
   return query(customerId);
 }
 
+export async function getOutstandingSalesForCustomer(customerId: number) {
+  const { getOutstandingSalesForCustomer: query } = await import(
+    "@/lib/queries/payments"
+  );
+  return query(customerId);
+}
+
+export async function getOutstandingPurchasesForSupplier(supplierId: number) {
+  const { getOutstandingPurchasesForSupplier: query } = await import(
+    "@/lib/queries/payments"
+  );
+  return query(supplierId);
+}
+

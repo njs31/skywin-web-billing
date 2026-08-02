@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import {
   partyPayments,
+  partyPaymentAllocations,
   customers,
   suppliers,
   purchases,
@@ -8,6 +9,12 @@ import {
 } from "@/db/schema";
 import { desc, eq, sql, asc, and, isNotNull } from "drizzle-orm";
 import { z } from "zod";
+
+const allocationSchema = z.object({
+  saleId: z.number().optional(),
+  purchaseId: z.number().optional(),
+  amount: z.number().positive(),
+});
 
 const paymentSchema = z.object({
   type: z.enum(["receipt", "payment"]),
@@ -17,10 +24,15 @@ const paymentSchema = z.object({
   paymentMode: z.enum(["cash", "upi", "credit", "card", "cheque"]),
   referenceNo: z.string().optional(),
   notes: z.string().optional(),
+  allocations: z.array(allocationSchema).optional(),
 });
 
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 export async function createPartyPayment(input: z.infer<typeof paymentSchema>) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = paymentSchema.parse(input);
 
   if (data.type === "receipt" && !data.customerId) {
@@ -30,26 +42,127 @@ export async function createPartyPayment(input: z.infer<typeof paymentSchema>) {
     throw new Error("Supplier required for payment");
   }
 
-  const [payment] = await db
-    .insert(partyPayments)
-    .values({
-      type: data.type,
-      customerId: data.customerId,
-      supplierId: data.supplierId,
-      amount: data.amount.toFixed(2),
-      paymentMode: data.paymentMode,
-      referenceNo: data.referenceNo,
-      notes: data.notes,
-    })
-    .returning();
+  const allocations = data.allocations ?? [];
+  const allocatedTotal = round2(
+    allocations.reduce((sum, row) => sum + row.amount, 0)
+  );
+
+  if (allocations.length > 0 && Math.abs(allocatedTotal - data.amount) > 0.01) {
+    throw new Error("Allocation total must equal the receipt/payment amount.");
+  }
+
+  if (data.type === "receipt") {
+    for (const row of allocations) {
+      if (!row.saleId) throw new Error("Each receipt allocation needs an invoice.");
+    }
+  } else {
+    for (const row of allocations) {
+      if (!row.purchaseId) {
+        throw new Error("Each payment allocation needs a purchase bill.");
+      }
+    }
+  }
+
+  const payment = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(partyPayments)
+      .values({
+        type: data.type,
+        customerId: data.customerId,
+        supplierId: data.supplierId,
+        amount: data.amount.toFixed(2),
+        paymentMode: data.paymentMode,
+        referenceNo: data.referenceNo,
+        notes: data.notes,
+      })
+      .returning();
+
+    for (const row of allocations) {
+      await tx.insert(partyPaymentAllocations).values({
+        paymentId: created.id,
+        saleId: row.saleId ?? null,
+        purchaseId: row.purchaseId ?? null,
+        amount: row.amount.toFixed(2),
+      });
+
+      if (row.saleId) {
+        await tx
+          .update(sales)
+          .set({
+            paidAmount: sql`least(
+              ${sales.grandTotal}::numeric,
+              coalesce(${sales.paidAmount}::numeric, 0) + ${row.amount}
+            )`,
+          })
+          .where(eq(sales.id, row.saleId));
+      }
+
+      if (row.purchaseId) {
+        await tx
+          .update(purchases)
+          .set({
+            paidAmount: sql`least(
+              ${purchases.grandTotal}::numeric,
+              coalesce(${purchases.paidAmount}::numeric, 0) + ${row.amount}
+            )`,
+          })
+          .where(eq(purchases.id, row.purchaseId));
+      }
+    }
+
+    return created;
+  });
 
   revalidateTag("customers", "max");
   revalidateTag("suppliers", "max");
+  revalidateTag("purchases", "max");
   revalidatePath("/accounts/receipts");
   revalidatePath("/accounts/payments");
   revalidatePath("/accounts/outstanding");
+  revalidatePath("/invoices");
+  revalidatePath("/purchases");
 
   return payment;
+}
+
+export async function getOutstandingSalesForCustomer(customerId: number) {
+  return db
+    .select({
+      id: sales.id,
+      invoiceNo: sales.invoiceNo,
+      date: sales.date,
+      grandTotal: sales.grandTotal,
+      paidAmount: sales.paidAmount,
+      balance: sql<string>`(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0))`,
+    })
+    .from(sales)
+    .where(
+      and(
+        eq(sales.customerId, customerId),
+        sql`(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)) > 0`
+      )
+    )
+    .orderBy(asc(sales.date));
+}
+
+export async function getOutstandingPurchasesForSupplier(supplierId: number) {
+  return db
+    .select({
+      id: purchases.id,
+      invoiceNo: purchases.invoiceNo,
+      date: purchases.date,
+      grandTotal: purchases.grandTotal,
+      paidAmount: purchases.paidAmount,
+      balance: sql<string>`(${purchases.grandTotal}::numeric - coalesce(${purchases.paidAmount}::numeric, 0))`,
+    })
+    .from(purchases)
+    .where(
+      and(
+        eq(purchases.supplierId, supplierId),
+        sql`(${purchases.grandTotal}::numeric - coalesce(${purchases.paidAmount}::numeric, 0)) > 0`
+      )
+    )
+    .orderBy(asc(purchases.date));
 }
 
 export async function getReceipts() {
@@ -68,7 +181,14 @@ export async function getReceipts() {
       amount: partyPayments.amount,
       paymentMode: partyPayments.paymentMode,
       referenceNo: partyPayments.referenceNo,
+      notes: partyPayments.notes,
       customerName: customers.name,
+      allocatedInvoices: sql<string>`coalesce((
+        select string_agg(s.invoice_no, ', ' order by s.invoice_no)
+        from party_payment_allocations a
+        join sales s on s.id = a.sale_id
+        where a.payment_id = ${partyPayments.id}
+      ), '')`,
     })
     .from(partyPayments)
     .innerJoin(customers, eq(partyPayments.customerId, customers.id));
@@ -97,7 +217,14 @@ export async function getSupplierPayments() {
       amount: partyPayments.amount,
       paymentMode: partyPayments.paymentMode,
       referenceNo: partyPayments.referenceNo,
+      notes: partyPayments.notes,
       supplierName: suppliers.name,
+      allocatedInvoices: sql<string>`coalesce((
+        select string_agg(coalesce(p.invoice_no, '#' || p.id::text), ', ' order by p.id)
+        from party_payment_allocations a
+        join purchases p on p.id = a.purchase_id
+        where a.payment_id = ${partyPayments.id}
+      ), '')`,
     })
     .from(partyPayments)
     .innerJoin(suppliers, eq(partyPayments.supplierId, suppliers.id))
@@ -114,17 +241,21 @@ export async function getSupplierOutstanding(supplierId: number) {
     .from(purchases)
     .where(eq(purchases.supplierId, supplierId));
 
-  const [paymentsTotal] = await db
-    .select({
-      total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
-    })
-    .from(partyPayments)
-    .where(eq(partyPayments.supplierId, supplierId));
+  const unallocRows = (await db.execute(sql`
+    select coalesce(sum(pp.amount::numeric - coalesce(a.allocated, 0)), 0) as total
+    from party_payments pp
+    left join (
+      select payment_id, sum(amount::numeric) as allocated
+      from party_payment_allocations
+      group by payment_id
+    ) a on a.payment_id = pp.id
+    where pp.supplier_id = ${supplierId} and pp.type = 'payment'
+  `)) as unknown as Array<{ total: string }>;
 
   return (
     Math.round(
       (parseFloat(purchaseTotal?.total ?? "0") -
-        parseFloat(paymentsTotal?.total ?? "0")) *
+        parseFloat(String(unallocRows[0]?.total ?? "0"))) *
         100
     ) / 100
   );
@@ -136,28 +267,37 @@ export const getSuppliersWithOutstanding = async () => {
   const purchaseSums = await db
     .select({
       supplierId: purchases.supplierId,
-      total: sql<string>`sum(${purchases.grandTotal}::numeric - coalesce(${purchases.paidAmount}::numeric, 0))`
+      total: sql<string>`sum(${purchases.grandTotal}::numeric - coalesce(${purchases.paidAmount}::numeric, 0))`,
     })
     .from(purchases)
     .where(isNotNull(purchases.supplierId))
     .groupBy(purchases.supplierId);
 
-  const paymentSums = await db
-    .select({
-      supplierId: partyPayments.supplierId,
-      total: sql<string>`sum(${partyPayments.amount}::numeric)`
-    })
-    .from(partyPayments)
-    .where(and(isNotNull(partyPayments.supplierId), eq(partyPayments.type, "payment")))
-    .groupBy(partyPayments.supplierId);
+  const unallocatedSums = await db.execute(sql`
+    select
+      pp.supplier_id as supplier_id,
+      sum(pp.amount::numeric - coalesce(a.allocated, 0)) as total
+    from party_payments pp
+    left join (
+      select payment_id, sum(amount::numeric) as allocated
+      from party_payment_allocations
+      group by payment_id
+    ) a on a.payment_id = pp.id
+    where pp.supplier_id is not null and pp.type = 'payment'
+    group by pp.supplier_id
+  `) as unknown as Array<{ supplier_id: number; total: string }>;
 
-  const purchaseMap = new Map(purchaseSums.map(p => [p.supplierId, parseFloat(p.total)]));
-  const paymentMap = new Map(paymentSums.map(p => [p.supplierId, parseFloat(p.total)]));
+  const purchaseMap = new Map(
+    purchaseSums.map((p) => [p.supplierId, parseFloat(p.total)])
+  );
+  const unallocMap = new Map(
+    unallocatedSums.map((p) => [p.supplier_id, parseFloat(String(p.total))])
+  );
 
   const result = [];
   for (const s of allSuppliers) {
     const pVal = purchaseMap.get(s.id) ?? 0;
-    const payVal = paymentMap.get(s.id) ?? 0;
+    const payVal = unallocMap.get(s.id) ?? 0;
     const outstanding = Math.round((pVal - payVal) * 100) / 100;
     if (outstanding > 0) result.push({ ...s, outstanding });
   }
@@ -180,33 +320,44 @@ export async function getOutstandingSummary() {
     .from(sales)
     .innerJoin(customers, eq(sales.customerId, customers.id));
 
-  const paymentsQuery = db
-    .select({
-      total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
-    })
-    .from(partyPayments)
-    .innerJoin(customers, eq(partyPayments.customerId, customers.id));
-
-  const receiptsCondition = eq(partyPayments.type, "receipt");
-
-  let salesTotal, paymentsTotal;
-
+  let salesTotal;
   if (customerIds !== null) {
     if (customerIds.length === 0) {
       salesTotal = [{ total: "0" }];
-      paymentsTotal = [{ total: "0" }];
     } else {
       salesTotal = await salesQuery.where(inArray(sales.customerId, customerIds));
-      paymentsTotal = await paymentsQuery.where(
-        and(receiptsCondition, inArray(partyPayments.customerId, customerIds))
-      );
     }
   } else {
     salesTotal = await salesQuery;
-    paymentsTotal = await paymentsQuery.where(receiptsCondition);
   }
 
-  const receivables = parseFloat(salesTotal[0]?.total ?? "0") - parseFloat(paymentsTotal[0]?.total ?? "0");
+  // Unallocated receipts only (allocated ones already reduced paid_amount).
+  let unallocReceipts = 0;
+  if (customerIds === null || customerIds.length > 0) {
+    const rows = (await db.execute(sql`
+      select coalesce(sum(pp.amount::numeric - coalesce(a.allocated, 0)), 0) as total
+      from party_payments pp
+      left join (
+        select payment_id, sum(amount::numeric) as allocated
+        from party_payment_allocations
+        group by payment_id
+      ) a on a.payment_id = pp.id
+      where pp.type = 'receipt'
+        and pp.customer_id is not null
+        ${
+          customerIds !== null
+            ? sql`and pp.customer_id in (${sql.join(
+                customerIds.map((id) => sql`${id}`),
+                sql`, `
+              )})`
+            : sql``
+        }
+    `)) as unknown as Array<{ total: string }>;
+    unallocReceipts = parseFloat(String(rows[0]?.total ?? "0"));
+  }
+
+  const receivables =
+    parseFloat(salesTotal[0]?.total ?? "0") - unallocReceipts;
 
   const [purchaseTotal] = await db
     .select({
@@ -215,15 +366,20 @@ export async function getOutstandingSummary() {
     .from(purchases)
     .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id));
 
-  const [supplierPaymentsTotal] = await db
-    .select({
-      total: sql<string>`coalesce(sum(${partyPayments.amount}::numeric), 0)`,
-    })
-    .from(partyPayments)
-    .innerJoin(suppliers, eq(partyPayments.supplierId, suppliers.id))
-    .where(eq(partyPayments.type, "payment"));
+  const unallocPayRows = (await db.execute(sql`
+    select coalesce(sum(pp.amount::numeric - coalesce(a.allocated, 0)), 0) as total
+    from party_payments pp
+    left join (
+      select payment_id, sum(amount::numeric) as allocated
+      from party_payment_allocations
+      group by payment_id
+    ) a on a.payment_id = pp.id
+    where pp.type = 'payment' and pp.supplier_id is not null
+  `)) as unknown as Array<{ total: string }>;
 
-  const payables = parseFloat(purchaseTotal?.total ?? "0") - parseFloat(supplierPaymentsTotal?.total ?? "0");
+  const payables =
+    parseFloat(purchaseTotal?.total ?? "0") -
+    parseFloat(String(unallocPayRows[0]?.total ?? "0"));
 
   return {
     receivables: Math.round(receivables * 100) / 100,

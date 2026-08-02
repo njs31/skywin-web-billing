@@ -87,6 +87,8 @@ const purchaseItemSchema = z.object({
   hsnCode: z.string().optional().nullable(),
   batchNumber: z.string().optional().nullable(),
   expiryDate: z.string().optional().nullable(),
+  gstRate: z.number().nonnegative().optional().default(0),
+  saleRate: z.number().nonnegative().optional(),
 });
 
 const createPurchaseSchema = z.object({
@@ -100,7 +102,7 @@ const createPurchaseSchema = z.object({
 });
 
 export async function createPurchase(input: z.infer<typeof createPurchaseSchema>) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = createPurchaseSchema.parse(input);
 
   for (const item of data.items) {
@@ -154,9 +156,40 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
       .returning();
 
     for (const item of lineItems) {
+      let productId = item.productId || null;
+
+      // Manual purchase lines become real inventory products so they can be billed.
+      if (!productId && item.customName?.trim()) {
+        const saleRate = item.saleRate ?? item.rate;
+        const gstRate = item.gstRate ?? 0;
+        const [createdProduct] = await tx
+          .insert(products)
+          .values({
+            name: item.customName.trim(),
+            unit: "pcs",
+            purchaseRate: item.rate.toFixed(2),
+            saleRate: saleRate.toFixed(2),
+            wholesaleRate: saleRate.toFixed(2),
+            stockQty: "0.00",
+            hsnCode: item.hsnCode!.trim(),
+            gstRate: gstRate.toFixed(2),
+            expiryDate: item.expiryDate || null,
+            isActive: true,
+          })
+          .returning();
+
+        const barcode = `SW${String(createdProduct.id).padStart(6, "0")}`;
+        await tx
+          .update(products)
+          .set({ barcode, sku: barcode })
+          .where(eq(products.id, createdProduct.id));
+
+        productId = createdProduct.id;
+      }
+
       await tx.insert(purchaseItems).values({
         purchaseId: created.id,
-        productId: item.productId || null,
+        productId,
         customName: item.customName || null,
         qty: item.qty.toFixed(2),
         rate: item.rate.toFixed(2),
@@ -168,7 +201,7 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
         expiryDate: item.expiryDate || null,
       });
 
-      if (item.productId) {
+      if (productId) {
         const effectiveRate = item.amount / item.qty; // after line discount
         const landedRate = subtotal > 0
           ? effectiveRate * (1 + handling / subtotal)
@@ -180,10 +213,11 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
           defaultBatchNumber("PUR");
 
         const batch = await addStockToBatch(tx, {
-          productId: item.productId,
+          productId,
           batchNumber,
           qty: item.qty,
           purchaseRate: landedRate,
+          saleRate: item.saleRate ?? item.rate,
           expiryDate: item.expiryDate || null,
           notes: data.invoiceNo
             ? `Purchase ${data.invoiceNo}`
@@ -191,7 +225,7 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
         });
 
         await tx.insert(stockMovements).values({
-          productId: item.productId,
+          productId,
           batchId: batch.id,
           batchNumber: batch.batchNumber,
           type: "purchase",

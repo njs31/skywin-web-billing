@@ -50,7 +50,7 @@ export default function NewProductPage() {
           wholesaleRate: wholesaleRate ? parseFloat(wholesaleRate) : undefined,
           mrp: mrp ? parseFloat(mrp) : undefined,
           hsnCode: hsnCode.trim(), // Send as-is, zod will validate if empty!
-          gstRate: parseFloat(gstRate) || 18,
+          gstRate: parseFloat(gstRate) || 0,
           stockQty: parseFloat(stockQty) || 0,
           reorderLevel: parseFloat(reorderLevel) || 10,
           expiryDate: expiryDate.trim() || undefined,
@@ -187,7 +187,7 @@ export default function NewProductPage() {
                   onChange={(e) => setGstRate(e.target.value)}
                   className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value="0">0%</option>
+                  <option value="0">0% (Exempt)</option>
                   <option value="5">5%</option>
                   <option value="12">12%</option>
                   <option value="18">18%</option>

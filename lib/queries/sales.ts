@@ -37,6 +37,8 @@ const createSaleSchema = z.object({
   operatorName: z.string().optional(),
   discountAmount: z.number().min(0).optional(),
   paidAmount: z.number().min(0).optional(),
+  cashAmount: z.number().min(0).optional(),
+  upiAmount: z.number().min(0).optional(),
   notes: z.string().optional(),
   items: z.array(saleItemSchema).min(1),
 });
@@ -69,6 +71,8 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     igst: String(row.igst),
     grandTotal: String(row.grand_total),
     paidAmount: row.paid_amount == null ? null : String(row.paid_amount),
+    cashAmount: String(row.cash_amount ?? "0"),
+    upiAmount: String(row.upi_amount ?? "0"),
     notes: (row.notes as string | null) ?? null,
     createdAt:
       row.created_at instanceof Date
@@ -100,7 +104,7 @@ function isInvoiceNoConflict(err: unknown): boolean {
  * FEFO allocation is computed in memory from the locked snapshot.
  */
 export async function createSale(input: z.infer<typeof createSaleSchema>) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = createSaleSchema.parse(input);
   const settings = await getSettings();
 
@@ -141,10 +145,23 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     { billDiscount: data.discountAmount ?? 0 }
   );
 
+  const cashAmount = round2(data.cashAmount ?? 0);
+  const upiAmount = round2(data.upiAmount ?? 0);
   const paidAmount =
     data.paymentMode === "credit"
       ? (data.paidAmount ?? 0)
-      : (data.paidAmount ?? gst.grandTotal);
+      : cashAmount + upiAmount > 0
+        ? round2(cashAmount + upiAmount)
+        : (data.paidAmount ?? gst.grandTotal);
+
+  if (
+    data.billType === "retail" &&
+    (data.paymentMode === "cash" || data.paymentMode === "upi") &&
+    cashAmount + upiAmount > 0 &&
+    Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01
+  ) {
+    throw new Error("Cash + UPI amounts must equal the bill grand total.");
+  }
 
   const typePrefix =
     data.billType === "wholesale" ? "WHL" : settings.invoicePrefix;
@@ -426,7 +443,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
           insert into sales (
             invoice_no, bill_type, customer_id, customer_name, payment_mode,
             operator_name, subtotal, discount_amount, cgst, sgst, igst,
-            grand_total, paid_amount, notes
+            grand_total, paid_amount, cash_amount, upi_amount, notes
           )
           select
             ${prefix} || lpad((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text, greatest(4, length((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text)), '0'),
@@ -442,6 +459,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${gst.igst.toFixed(2)}::numeric,
             ${gst.grandTotal.toFixed(2)}::numeric,
             ${paidAmount.toFixed(2)}::numeric,
+            ${cashAmount.toFixed(2)}::numeric,
+            ${upiAmount.toFixed(2)}::numeric,
             ${data.notes ?? null}::text
           from sales s
           where s.invoice_no like ${prefix + "%"}
@@ -607,6 +626,9 @@ export async function getSaleById(id: number) {
       customerRecordName: customers.name,
       customerPhone: customers.phone,
       customerGstin: customers.gstin,
+      customerAddress: customers.address,
+      cashAmount: sales.cashAmount,
+      upiAmount: sales.upiAmount,
     })
     .from(sales)
     .leftJoin(customers, eq(sales.customerId, customers.id))
@@ -786,6 +808,7 @@ export type SalesReportLineItem = {
   discountValue: number;
   gstRate: number;
   amount: number;
+  grandTotal: number;
 };
 
 export type SalesReportData = {
@@ -925,6 +948,7 @@ export async function getSalesReport(
         discountValue: saleItems.discountValue,
         gstRate: saleItems.gstRate,
         amount: saleItems.amount,
+        grandTotal: sales.grandTotal,
       })
       .from(saleItems)
       .innerJoin(sales, eq(saleItems.saleId, sales.id))
@@ -947,6 +971,7 @@ export async function getSalesReport(
       discountValue: toNum(row.discountValue),
       gstRate: toNum(row.gstRate),
       amount: toNum(row.amount),
+      grandTotal: toNum(row.grandTotal),
     }));
   }
 

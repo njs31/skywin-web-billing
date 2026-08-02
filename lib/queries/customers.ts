@@ -51,12 +51,13 @@ const customerSchema = z.object({
   phone: z.string().optional(),
   gstin: z.string().optional(),
   address: z.string().optional(),
+  membershipNo: z.string().optional(),
   type: z.enum(["retail", "wholesale", "farmer"]).default("retail"),
   creditLimit: z.number().min(0).optional(),
 });
 
 export async function createCustomer(input: z.infer<typeof customerSchema>) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = customerSchema.parse(input);
 
   const cleanGst = data.gstin?.trim().toUpperCase() || null;
@@ -80,6 +81,7 @@ export async function createCustomer(input: z.infer<typeof customerSchema>) {
       phone: data.phone,
       gstin: cleanGst,
       address: data.address,
+      membershipNo: data.membershipNo?.trim() || null,
       type: data.type,
       creditLimit: (data.creditLimit ?? 0).toFixed(2),
     })
@@ -93,7 +95,7 @@ export async function updateCustomer(
   id: number,
   input: z.infer<typeof customerSchema>
 ) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const { ne } = await import("drizzle-orm");
   const data = customerSchema.parse(input);
 
@@ -123,6 +125,7 @@ export async function updateCustomer(
       phone: data.phone,
       gstin: cleanGst,
       address: data.address,
+      membershipNo: data.membershipNo?.trim() || null,
       type: data.type,
       creditLimit: (data.creditLimit ?? 0).toFixed(2),
     })
@@ -130,11 +133,13 @@ export async function updateCustomer(
     .returning();
   revalidateTag("customers", "max");
   revalidatePath("/customers");
+  revalidatePath(`/customers/${id}`);
   return customer;
 }
 
 export async function getCustomerOutstanding(customerId: number) {
-  // One round-trip: sales minus returns minus receipts.
+  // Unpaid sales minus returns minus unallocated receipts (allocated receipts
+  // already increase sales.paid_amount and must not be counted twice).
   const [row] = (await db.execute(sql`
     select
       coalesce((
@@ -146,15 +151,21 @@ export async function getCustomerOutstanding(customerId: number) {
         from sale_returns where customer_id = ${customerId}
       ), 0) as returns_total,
       coalesce((
-        select sum(amount::numeric)
-        from party_payments where customer_id = ${customerId} and type = 'receipt'
-      ), 0) as payments_total
+        select sum(pp.amount::numeric - coalesce(a.allocated, 0))
+        from party_payments pp
+        left join (
+          select payment_id, sum(amount::numeric) as allocated
+          from party_payment_allocations
+          group by payment_id
+        ) a on a.payment_id = pp.id
+        where pp.customer_id = ${customerId} and pp.type = 'receipt'
+      ), 0) as unallocated_receipts
   `)) as unknown as Array<Record<string, unknown>>;
 
   const outstanding =
     parseFloat(String(row?.sales_total ?? "0")) -
     parseFloat(String(row?.returns_total ?? "0")) -
-    parseFloat(String(row?.payments_total ?? "0"));
+    parseFloat(String(row?.unallocated_receipts ?? "0"));
 
   return Math.round(outstanding * 100) / 100;
 }
@@ -190,18 +201,25 @@ export async function getCustomersWithOutstanding() {
     .where(isNotNull(saleReturns.customerId))
     .groupBy(saleReturns.customerId);
 
-  const paymentsSums = await db
-    .select({
-      customerId: partyPayments.customerId,
-      total: sql<string>`sum(${partyPayments.amount}::numeric)`
-    })
-    .from(partyPayments)
-    .where(and(isNotNull(partyPayments.customerId), eq(partyPayments.type, "receipt")))
-    .groupBy(partyPayments.customerId);
+  const paymentsSums = (await db.execute(sql`
+    select
+      pp.customer_id as customer_id,
+      sum(pp.amount::numeric - coalesce(a.allocated, 0)) as total
+    from party_payments pp
+    left join (
+      select payment_id, sum(amount::numeric) as allocated
+      from party_payment_allocations
+      group by payment_id
+    ) a on a.payment_id = pp.id
+    where pp.customer_id is not null and pp.type = 'receipt'
+    group by pp.customer_id
+  `)) as unknown as Array<{ customer_id: number; total: string }>;
 
   const salesMap = new Map(salesSums.map(s => [s.customerId, parseFloat(s.total)]));
   const returnsMap = new Map(returnsSums.map(r => [r.customerId, parseFloat(r.total)]));
-  const paymentsMap = new Map(paymentsSums.map(p => [p.customerId, parseFloat(p.total)]));
+  const paymentsMap = new Map(
+    paymentsSums.map((p) => [p.customer_id, parseFloat(String(p.total))])
+  );
 
   const result = [];
   for (const c of allCustomers) {

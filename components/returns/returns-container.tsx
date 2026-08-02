@@ -104,6 +104,7 @@ export function ReturnsContainer({
                       <TableHead>Original Invoice</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -121,6 +122,11 @@ export function ReturnsContainer({
                         <TableCell>{r.reason ?? "-"}</TableCell>
                         <TableCell className="text-right font-semibold text-emerald-700">
                           {formatCurrency(r.grandTotal)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button asChild variant="outline" size="sm">
+                            <Link href={`/returns/${r.id}`}>Show</Link>
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

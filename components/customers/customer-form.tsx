@@ -31,6 +31,7 @@ export function CustomerForm() {
           phone: (fd.get("phone") as string) || undefined,
           gstin: (fd.get("gstin") as string) || undefined,
           address: (fd.get("address") as string) || undefined,
+          membershipNo: (fd.get("membershipNo") as string) || undefined,
           type,
           creditLimit: parseFloat((fd.get("creditLimit") as string) || "0"),
         });
@@ -57,6 +58,10 @@ export function CustomerForm() {
       <div>
         <Label>Phone</Label>
         <Input name="phone" />
+      </div>
+      <div>
+        <Label>Membership Number</Label>
+        <Input name="membershipNo" placeholder="Optional membership ID" />
       </div>
       <div>
         <Label>Type</Label>

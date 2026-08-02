@@ -61,7 +61,7 @@ async function generateReturnNo() {
 }
 
 export async function createSaleReturn(input: z.infer<typeof createReturnSchema>) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = createReturnSchema.parse(input);
 
   let customerGstin = normalizeGstin(data.customerGstin);
@@ -311,7 +311,7 @@ async function generateDebitReturnNo() {
 }
 
 export async function createPurchaseReturn(input: z.infer<typeof createPurchaseReturnSchema>) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = createPurchaseReturnSchema.parse(input);
 
   let subtotal = 0;

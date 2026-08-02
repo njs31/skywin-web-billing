@@ -227,7 +227,7 @@ export async function updateProduct(
   if (data.hsnCode !== undefined && !data.hsnCode.trim()) {
     throw new Error("HSN code is mandatory and cannot be empty.");
   }
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   await db
     .update(products)
     .set({
@@ -275,7 +275,7 @@ const productSchema = z.object({
 });
 
 export async function createProduct(input: z.infer<typeof productSchema>) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   let data;
   try {
     data = productSchema.parse(input);
@@ -305,6 +305,19 @@ export async function createProduct(input: z.infer<typeof productSchema>) {
     })
     .returning();
 
+  if (product && (!product.barcode || !product.barcode.trim())) {
+    const barcode = `SW${String(product.id).padStart(6, "0")}`;
+    await db
+      .update(products)
+      .set({
+        barcode,
+        sku: product.sku?.trim() ? product.sku : barcode,
+      })
+      .where(eq(products.id, product.id));
+    product.barcode = barcode;
+    if (!product.sku?.trim()) product.sku = barcode;
+  }
+
   if (product && data.stockQty > 0) {
     const { addStockToBatch } = await import("@/lib/batches");
     await addStockToBatch(db, {
@@ -316,12 +329,12 @@ export async function createProduct(input: z.infer<typeof productSchema>) {
       expiryDate: data.expiryDate ?? null,
       notes: "Opening stock",
     });
-  } else if (product) {
-    // ensure stock is 0
   }
 
   revalidateTag("products", "max");
   revalidatePath("/products");
+  revalidatePath("/stock");
+  revalidatePath("/pos");
   return product;
 }
 

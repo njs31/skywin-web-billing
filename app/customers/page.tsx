@@ -92,6 +92,7 @@ export default async function CustomersPage() {
                 <TableHead>Type</TableHead>
                 <TableHead>Phone</TableHead>
                 <TableHead>GSTIN</TableHead>
+                <TableHead>Membership</TableHead>
                 <TableHead className="text-right">Credit Limit</TableHead>
               </TableRow>
             </TableHeader>
@@ -109,6 +110,7 @@ export default async function CustomersPage() {
                   <TableCell className="capitalize">{c.type}</TableCell>
                   <TableCell>{c.phone ?? "-"}</TableCell>
                   <TableCell className="text-xs">{c.gstin ?? "-"}</TableCell>
+                  <TableCell className="text-xs">{c.membershipNo ?? "-"}</TableCell>
                   <TableCell className="text-right">
                     {formatCurrency(c.creditLimit ?? 0)}
                   </TableCell>

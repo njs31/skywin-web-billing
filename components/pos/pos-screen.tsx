@@ -76,6 +76,8 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   const [paymentMode, setPaymentMode] = useState<
     "cash" | "upi" | "credit" | "card" | "cheque"
   >("cash");
+  const [splitCashUpi, setSplitCashUpi] = useState(false);
+  const [cashAmountInput, setCashAmountInput] = useState("");
   const [billDiscount, setBillDiscount] = useState("");
   const [operatorName, setOperatorName] = useState(defaultOperator ?? "Counter");
   const [error, setError] = useState("");
@@ -325,12 +327,48 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
       ? customerOutstanding + billCreditAmount
       : null;
 
+  const canSplitPayment =
+    billType === "retail" &&
+    (paymentMode === "cash" || paymentMode === "upi");
+
+  const splitCashAmount = Math.min(
+    gst.grandTotal,
+    Math.max(0, parseFloat(cashAmountInput) || 0)
+  );
+  const splitUpiAmount = Math.max(
+    0,
+    Math.round((gst.grandTotal - splitCashAmount) * 100) / 100
+  );
+
   const completeSale = () => {
     if (cart.length === 0) return;
     if (paymentMode === "credit" && (!customerId || customerId === "none")) {
       setError("Customer registration required for credit transactions.");
       return;
     }
+
+    let cashAmount = 0;
+    let upiAmount = 0;
+    let mode = paymentMode;
+
+    if (canSplitPayment && splitCashUpi) {
+      cashAmount = splitCashAmount;
+      upiAmount = splitUpiAmount;
+      if (Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01) {
+        setError("Cash + UPI must equal the bill total.");
+        return;
+      }
+      if (cashAmount <= 0 || upiAmount <= 0) {
+        setError("Enter a cash amount between 0 and the bill total for split payment.");
+        return;
+      }
+      mode = cashAmount >= upiAmount ? "cash" : "upi";
+    } else if (paymentMode === "cash") {
+      cashAmount = gst.grandTotal;
+    } else if (paymentMode === "upi") {
+      upiAmount = gst.grandTotal;
+    }
+
     setError("");
     startTransition(async () => {
       try {
@@ -342,7 +380,9 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
               : undefined,
           customerName: customerName || undefined,
           customerPhone: customerPhone || undefined,
-          paymentMode,
+          paymentMode: mode,
+          cashAmount,
+          upiAmount,
           operatorName,
           discountAmount: parseFloat(billDiscount) || 0,
           items: cart.map((c) => ({
@@ -361,6 +401,8 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
         setCustomerName("");
         setCustomerPhone("");
         setBillDiscount("");
+        setCashAmountInput("");
+        setSplitCashUpi(false);
         router.push(`/invoices/${sale.id}?print=1`);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to complete sale");
@@ -790,11 +832,14 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                   <Label className="text-xs text-slate-600 font-medium">Payment</Label>
                   <Select
                     value={paymentMode}
-                    onValueChange={(v) =>
-                      setPaymentMode(
-                        v as "cash" | "upi" | "credit" | "card" | "cheque"
-                      )
-                    }
+                    onValueChange={(v) => {
+                      const next = v as "cash" | "upi" | "credit" | "card" | "cheque";
+                      setPaymentMode(next);
+                      if (next !== "cash" && next !== "upi") {
+                        setSplitCashUpi(false);
+                        setCashAmountInput("");
+                      }
+                    }}
                   >
                     <SelectTrigger className="h-9">
                       <SelectValue />
@@ -821,6 +866,46 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                   />
                 </div>
               </div>
+              {canSplitPayment && (
+                <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={splitCashUpi}
+                      onChange={(e) => {
+                        setSplitCashUpi(e.target.checked);
+                        if (!e.target.checked) setCashAmountInput("");
+                      }}
+                    />
+                    Split Cash + UPI
+                  </label>
+                  {splitCashUpi && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs">Cash ₹</Label>
+                        <Input
+                          className="h-9 bg-white"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={cashAmountInput}
+                          onChange={(e) => setCashAmountInput(e.target.value)}
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">UPI ₹ (auto)</Label>
+                        <Input
+                          className="h-9 bg-white"
+                          type="number"
+                          value={splitUpiAmount.toFixed(2)}
+                          readOnly
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <Input
                 className="h-9"
                 placeholder="Operator name"

@@ -51,6 +51,7 @@ export default async function PaymentsPage() {
                   <TableHead>Supplier</TableHead>
                   <TableHead>Mode</TableHead>
                   <TableHead>Reference</TableHead>
+                  <TableHead>Against Bills</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                 </TableRow>
               </TableHeader>
@@ -63,6 +64,9 @@ export default async function PaymentsPage() {
                     <TableCell>{p.supplierName}</TableCell>
                     <TableCell className="capitalize">{p.paymentMode}</TableCell>
                     <TableCell>{p.referenceNo ?? "-"}</TableCell>
+                    <TableCell className="max-w-xs text-xs text-slate-600">
+                      {p.allocatedInvoices || "-"}
+                    </TableCell>
                     <TableCell className="text-right font-semibold">
                       {formatCurrency(p.amount)}
                     </TableCell>

@@ -5,6 +5,7 @@ import {
   getCustomerOutstanding,
   getCustomerSales,
 } from "@/lib/queries/customers";
+import { CustomerEditForm } from "@/components/customers/customer-edit-form";
 import { formatCurrency, formatDateIST } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,12 +41,22 @@ export default async function CustomerDetailPage({
           <p className="text-sm capitalize text-slate-500">
             {customer.type} customer
             {customer.phone && ` · ${customer.phone}`}
+            {customer.membershipNo && ` · Membership ${customer.membershipNo}`}
           </p>
         </div>
         <Button asChild variant="outline">
           <Link href="/customers">Back</Link>
         </Button>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Customer Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CustomerEditForm customer={customer} />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

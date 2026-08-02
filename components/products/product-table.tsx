@@ -186,6 +186,8 @@ export function ProductTable({ products }: { products: Product[] }) {
                     value={gstRate}
                     onChange={(e) => setGstRate(e.target.value)}
                   />
+                ) : toNumber(product.gstRate) === 0 ? (
+                  "Exempt"
                 ) : (
                   `${toNumber(product.gstRate)}%`
                 )}

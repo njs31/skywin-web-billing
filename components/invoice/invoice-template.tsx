@@ -8,6 +8,7 @@ type InvoiceSale = {
   customerRecordName?: string | null;
   customerPhone?: string | null;
   customerGstin?: string | null;
+  customerAddress?: string | null;
   paymentMode: string;
   operatorName?: string | null;
   subtotal: string;
@@ -17,6 +18,8 @@ type InvoiceSale = {
   igst: string;
   grandTotal: string;
   paidAmount?: string | null;
+  cashAmount?: string | null;
+  upiAmount?: string | null;
 };
 
 type InvoiceItem = {
@@ -82,6 +85,12 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
               {sale.customerPhone && ` (${sale.customerPhone})`}
             </p>
           )}
+          {sale.customerAddress && (
+            <p>
+              <span className="font-semibold">Address:</span>{" "}
+              {sale.customerAddress}
+            </p>
+          )}
           {sale.customerGstin && (
             <p>
               <span className="font-semibold">Customer GSTIN:</span>{" "}
@@ -92,8 +101,16 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
         <div className="text-right">
           <p>
             <span className="font-semibold">Payment:</span>{" "}
-            {sale.paymentMode.toUpperCase()}
+            {toNumber(sale.cashAmount) > 0 && toNumber(sale.upiAmount) > 0
+              ? "CASH + UPI"
+              : sale.paymentMode.toUpperCase()}
           </p>
+          {toNumber(sale.cashAmount) > 0 && toNumber(sale.upiAmount) > 0 && (
+            <>
+              <p>Cash: {formatCurrency(sale.cashAmount!)}</p>
+              <p>UPI: {formatCurrency(sale.upiAmount!)}</p>
+            </>
+          )}
           {sale.operatorName && (
             <p>
               <span className="font-semibold">Operator:</span>{" "}

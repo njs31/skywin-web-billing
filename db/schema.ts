@@ -71,6 +71,7 @@ export const customers = pgTable(
     phone: text("phone"),
     gstin: text("gstin"),
     address: text("address"),
+    membershipNo: text("membership_no"),
     type: customerTypeEnum("type").default("retail").notNull(),
     creditLimit: numeric("credit_limit", { precision: 14, scale: 2 }).default(
       "0"
@@ -208,6 +209,12 @@ export const sales = pgTable(
     igst: numeric("igst", { precision: 14, scale: 2 }).default("0").notNull(),
     grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
     paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).default("0"),
+    cashAmount: numeric("cash_amount", { precision: 14, scale: 2 })
+      .default("0")
+      .notNull(),
+    upiAmount: numeric("upi_amount", { precision: 14, scale: 2 })
+      .default("0")
+      .notNull(),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -329,6 +336,29 @@ export const partyPayments = pgTable(
   },
   (table) => ({
     customerIdIdx: index("party_payments_customer_id_idx").on(table.customerId),
+  })
+);
+
+export const partyPaymentAllocations = pgTable(
+  "party_payment_allocations",
+  {
+    id: serial("id").primaryKey(),
+    paymentId: integer("payment_id")
+      .references(() => partyPayments.id, { onDelete: "cascade" })
+      .notNull(),
+    saleId: integer("sale_id").references(() => sales.id),
+    purchaseId: integer("purchase_id").references(() => purchases.id),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    paymentIdIdx: index("party_payment_allocations_payment_id_idx").on(
+      table.paymentId
+    ),
+    saleIdIdx: index("party_payment_allocations_sale_id_idx").on(table.saleId),
+    purchaseIdIdx: index("party_payment_allocations_purchase_id_idx").on(
+      table.purchaseId
+    ),
   })
 );
 

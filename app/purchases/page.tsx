@@ -45,6 +45,7 @@ export default async function PurchasesPage() {
                   <TableHead>Invoice</TableHead>
                   <TableHead>Payment</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -58,6 +59,11 @@ export default async function PurchasesPage() {
                     <TableCell className="capitalize">{p.paymentType}</TableCell>
                     <TableCell className="text-right font-semibold">
                       {formatCurrency(p.grandTotal)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/purchases/${p.id}`}>Show</Link>
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

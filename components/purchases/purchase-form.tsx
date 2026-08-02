@@ -35,6 +35,8 @@ type LineItem = {
   hsnCode?: string;
   batchNumber?: string;
   expiryDate?: string;
+  gstRate?: number;
+  saleRate?: number;
 };
 
 function parseExcelFile(file: File): Promise<{ code: string; qty: number; rate?: number }[]> {
@@ -137,6 +139,8 @@ export function PurchaseForm({
   const [customRate, setCustomRate] = useState("");
   const [customDiscType, setCustomDiscType] = useState<"percent" | "value">("percent");
   const [customDiscVal, setCustomDiscVal] = useState("0");
+  const [customGst, setCustomGst] = useState("0");
+  const [customSaleRate, setCustomSaleRate] = useState("");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -285,6 +289,9 @@ export function PurchaseForm({
         discountType: customDiscType,
         discountValue,
         hsnCode: customHsn.trim(),
+        gstRate: Number.isFinite(parseFloat(customGst)) ? parseFloat(customGst) : 0,
+        saleRate: parseFloat(customSaleRate) || rate,
+        batchNumber: "OPENING",
       },
     ]);
 
@@ -293,6 +300,8 @@ export function PurchaseForm({
     setCustomHsn("");
     setCustomQty("1");
     setCustomRate("");
+    setCustomSaleRate("");
+    setCustomGst("0");
     setCustomDiscVal("0");
     setShowCustomForm(false);
   };
@@ -360,6 +369,8 @@ export function PurchaseForm({
             discountValue: i.discountValue,
             batchNumber: i.batchNumber?.trim() || undefined,
             expiryDate: i.expiryDate?.trim() || undefined,
+            gstRate: i.gstRate ?? 0,
+            saleRate: i.saleRate,
           })),
         });
         router.push("/purchases");
@@ -562,6 +573,32 @@ export function PurchaseForm({
                     value={customRate}
                     onChange={(e) => setCustomRate(e.target.value)}
                   />
+                </div>
+                <div>
+                  <Label className="text-xs">Sale Rate</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="h-9 bg-white"
+                    placeholder="Defaults to purchase rate"
+                    value={customSaleRate}
+                    onChange={(e) => setCustomSaleRate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">GST %</Label>
+                  <select
+                    className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                    value={customGst}
+                    onChange={(e) => setCustomGst(e.target.value)}
+                  >
+                    <option value="0">0% (Exempt)</option>
+                    <option value="5">5%</option>
+                    <option value="12">12%</option>
+                    <option value="18">18%</option>
+                    <option value="28">28%</option>
+                  </select>
                 </div>
                 <div className="sm:col-span-2 md:col-span-2">
                   <Label className="text-xs">Line Discount</Label>

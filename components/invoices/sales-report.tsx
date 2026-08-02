@@ -88,6 +88,7 @@ function lineItemSheetRows(data: SalesReportData) {
     Discount: item.discountValue,
     "GST %": item.gstRate,
     Amount: item.amount,
+    "Grand Total": item.grandTotal,
   }));
 }
 
@@ -140,7 +141,7 @@ function exportPdf(data: SalesReportData) {
       "Discount",
       "CGST",
       "SGST",
-      "Total",
+      "Grand Total",
       "Paid",
     ]],
     body: data.invoices.map((inv, i) => [
@@ -184,6 +185,7 @@ function exportPdf(data: SalesReportData) {
         "Disc",
         "GST%",
         "Amount",
+        "Grand Total",
       ]],
       body: data.lineItems.map((item, i) => [
         i + 1,
@@ -197,6 +199,7 @@ function exportPdf(data: SalesReportData) {
         item.discountValue,
         item.gstRate,
         item.amount,
+        item.grandTotal,
       ]),
       styles: { fontSize: 6.5, cellPadding: 1.2 },
       headStyles: { fillColor: [15, 81, 50], textColor: 255 },

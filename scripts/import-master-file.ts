@@ -37,6 +37,26 @@ function parseNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(num) ? num : fallback;
 }
 
+/** Master File uses "Exempted" / "Exempt" for GST-free products. */
+function parseGstRate(value: unknown): number {
+  if (isNil(value)) return 0;
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+    if (
+      text === "exempted" ||
+      text === "exempt" ||
+      text === "gst exempt" ||
+      text === "gst exempted" ||
+      text === "nil"
+    ) {
+      return 0;
+    }
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const num = parseNumber(value, NaN);
+  return Number.isFinite(num) ? num : 0;
+}
+
 function parseOptionalNumber(value: unknown): number | null {
   if (isNil(value)) return null;
   const num = parseNumber(value, NaN);
@@ -95,6 +115,13 @@ function formatDate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** Excel sale values are GST-inclusive; billing stores and taxes exclusive rates. */
+function excludeGst(inclusiveAmount: number, gstPercent: number): number {
+  if (!Number.isFinite(inclusiveAmount) || inclusiveAmount === 0) return 0;
+  if (!Number.isFinite(gstPercent) || gstPercent <= 0) return inclusiveAmount;
+  return Math.round((inclusiveAmount / (1 + gstPercent / 100)) * 100) / 100;
 }
 
 function parseExpiry(value: unknown): string | null {
@@ -157,9 +184,13 @@ function parseMasterFile(filePath: string): MasterRow[] {
     const name = parseText(row["Product Name"]);
     if (!name) continue;
 
+    const gstRate = parseGstRate(row["GST%"]);
     const purchaseRate = parseNumber(row["Purchase Value"]);
-    const saleRate = parseNumber(row["Retail Sale Value"]);
+    // Retail / wholesale columns in Master File are GST-inclusive.
+    const saleRate = excludeGst(parseNumber(row["Retail Sale Value"]), gstRate);
     const wholesaleRaw = parseOptionalNumber(row["Wholesale Value"]);
+    const wholesaleRate =
+      wholesaleRaw !== null ? excludeGst(wholesaleRaw, gstRate) : saleRate;
     const qty = Math.max(0, parseNumber(row["Quantity"]));
     const categoryName = parseText(row["Category"]) || null;
     const content = parseText(row["Content"]);
@@ -173,9 +204,9 @@ function parseMasterFile(filePath: string): MasterRow[] {
         ? null
         : parseBarcode(row["HSN Code"]) || null,
       categoryName,
-      gstRate: parseNumber(row["GST%"], 18),
+      gstRate,
       purchaseRate,
-      wholesaleRate: wholesaleRaw ?? saleRate,
+      wholesaleRate,
       saleRate,
       mrp: parseOptionalNumber(row["MRP"]),
       qty,
@@ -194,6 +225,9 @@ async function main() {
     throw new Error("No products found in Master File inventory sheet");
   }
   console.log(`Parsed ${items.length} products`);
+  console.log(
+    "Sale/wholesale rates stored GST-exclusive (Excel retail values include GST)."
+  );
 
   console.log("Clearing current inventory and related transactional data...");
   await db.execute(sql`

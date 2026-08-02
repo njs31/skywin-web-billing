@@ -51,6 +51,7 @@ export default async function ReceiptsPage() {
                   <TableHead>Customer</TableHead>
                   <TableHead>Mode</TableHead>
                   <TableHead>Reference</TableHead>
+                  <TableHead>Against Invoices</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                 </TableRow>
               </TableHeader>
@@ -63,6 +64,9 @@ export default async function ReceiptsPage() {
                     <TableCell>{r.customerName}</TableCell>
                     <TableCell className="capitalize">{r.paymentMode}</TableCell>
                     <TableCell>{r.referenceNo ?? "-"}</TableCell>
+                    <TableCell className="max-w-xs text-xs text-slate-600">
+                      {r.allocatedInvoices || "-"}
+                    </TableCell>
                     <TableCell className="text-right font-semibold text-emerald-700">
                       {formatCurrency(r.amount)}
                     </TableCell>
