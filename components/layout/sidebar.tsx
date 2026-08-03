@@ -22,7 +22,6 @@ import {
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import { useState, useEffect } from "react";
-import { PoweredByQwicksapp } from "@/components/branding/powered-by-qwicksapp";
 
 const PURCHASE_ROUTES = ["/purchases", "/suppliers"];
 
@@ -286,7 +285,24 @@ export function Sidebar({
               Logout
             </button>
           </div>
-          <PoweredByQwicksapp size="sm" className="self-start" />
+          <div className="flex w-full justify-center border-t border-slate-800/60 pt-2">
+            <a
+              href="https://qwicksapp.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Powered by Qwicksapp"
+              className="inline-flex justify-center"
+            >
+              {/* Plain img avoids Next/Image cache serving an old asset */}
+              <img
+                src="/poweredby.png?v=3"
+                alt="Powered by Qwicksapp"
+                width={168}
+                height={56}
+                className="h-9 w-auto max-w-[180px] object-contain"
+              />
+            </a>
+          </div>
         </div>
       </aside>
     </>

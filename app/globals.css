@@ -134,28 +134,3 @@ body {
   }
 }
 
-/* Qwicksapp — Powered By badge (pure CSS) */
-.powered-by-qwicksapp {
-  background: #000;
-  border: 1.5px solid #fff;
-  box-sizing: border-box;
-}
-
-.powered-by-wordmark {
-  font-family: Arial Black, Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-}
-
-.powered-by-qwicks,
-.powered-by-app {
-  -webkit-text-stroke: 1px #fff;
-  paint-order: stroke fill;
-}
-
-.powered-by-qwicks {
-  color: #e31c23;
-}
-
-.powered-by-app {
-  color: #2a1a2c;
-}
-

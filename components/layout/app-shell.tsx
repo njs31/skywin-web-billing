@@ -7,7 +7,6 @@ import { Sidebar } from "./sidebar";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BUSINESS } from "@/lib/business";
-import { PoweredByQwicksapp } from "@/components/branding/powered-by-qwicksapp";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -44,12 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
-        <footer className="no-print flex shrink-0 items-center justify-start border-t border-slate-200 bg-white px-4 py-2 md:px-6">
-          <PoweredByQwicksapp size="sm" />
-        </footer>
-      </div>
+      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
     </div>
   );
 }
