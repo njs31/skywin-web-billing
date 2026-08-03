@@ -1,30 +1,87 @@
 "use server";
 
+import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { db } from "@/db";
 import { users, reportingLines, dealerMappings } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { sendWhatsAppOtp } from "@/lib/services/interakt";
 
+const ADMIN_PHONE = "9999999999";
+
+async function ensureAdminUser() {
+  const [existing] = await db
+    .select()
+    .from(users)
+    .where(eq(users.phone, ADMIN_PHONE))
+    .limit(1);
+  if (existing) return existing;
+
+  const [created] = await db
+    .insert(users)
+    .values({
+      name: "Administrator",
+      phone: ADMIN_PHONE,
+      role: "admin",
+    })
+    .returning();
+  return created;
+}
+
+function passwordsMatch(provided: string, expected: string) {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+async function setSession(user: { id: number; role: string }) {
+  const cookieStore = await cookies();
+  cookieStore.set("skywin_session", `${user.id}:${user.role}`, {
+    path: "/",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60,
+  });
+}
+
+/** Admin (9999999999) signs in with ADMIN_PASSWORD from env — no WhatsApp OTP. */
+export async function loginWithAdminPassword(phone: string, password: string) {
+  const cleanPhone = phone.trim().replace(/\D/g, "");
+  if (cleanPhone !== ADMIN_PHONE) {
+    return { success: false as const, error: "Password login is only for the admin account." };
+  }
+
+  const expected = process.env.ADMIN_PASSWORD;
+  if (!expected) {
+    return {
+      success: false as const,
+      error: "ADMIN_PASSWORD is not configured on the server.",
+    };
+  }
+
+  if (!password || !passwordsMatch(password, expected)) {
+    return { success: false as const, error: "Invalid password." };
+  }
+
+  const user = await ensureAdminUser();
+  await setSession(user);
+  return { success: true as const, role: user.role };
+}
+
 export async function sendOtp(phone: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
   if (!cleanPhone || cleanPhone.length < 10) {
-    throw new Error("Please enter a valid 10-digit phone number");
+    return { success: false as const, error: "Please enter a valid 10-digit phone number" };
   }
 
-  // Admin auto-seeding rule for initial setup/testing
-  if (cleanPhone === "9999999999") {
-    const existing = await db.select().from(users).limit(1);
-    if (existing.length === 0) {
-      await db.insert(users).values({
-        name: "Administrator",
-        phone: "9999999999",
-        role: "admin",
-      });
-    }
+  if (cleanPhone === ADMIN_PHONE) {
+    return {
+      success: false as const,
+      error: "Admin uses password login. Enter the admin password instead of OTP.",
+    };
   }
 
-  // Find user
   const [user] = await db
     .select()
     .from(users)
@@ -32,14 +89,15 @@ export async function sendOtp(phone: string) {
     .limit(1);
 
   if (!user) {
-    throw new Error("Phone number not registered. Contact your administrator.");
+    return {
+      success: false as const,
+      error: "Phone number not registered. Contact your administrator.",
+    };
   }
 
-  // Generate 6-digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 mins expiry
+  const expiry = new Date(Date.now() + 10 * 60 * 1000);
 
-  // Update DB
   await db
     .update(users)
     .set({ otp, otpExpiry: expiry })
@@ -47,13 +105,12 @@ export async function sendOtp(phone: string) {
 
   console.log(`[SKYWIN AUTH] Generated OTP for ${cleanPhone}: ${otp}`);
 
-  // Send WhatsApp message via Interakt
   const res = await sendWhatsAppOtp(cleanPhone, otp);
 
   return {
-    success: true,
+    success: true as const,
     phone: cleanPhone,
-    devOtp: process.env.NODE_ENV === "development" || cleanPhone === "9999999999" ? otp : undefined,
+    devOtp: process.env.NODE_ENV === "development" ? otp : undefined,
     whatsappSent: res.success,
     message: res.success
       ? "OTP sent via WhatsApp successfully"
@@ -65,8 +122,19 @@ export async function verifyOtpAndLogin(phone: string, otpInput: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
   const cleanOtp = otpInput.trim();
 
-  if (!cleanPhone) throw new Error("Phone number is required");
-  if (!cleanOtp) throw new Error("Please enter the 6-digit OTP");
+  if (!cleanPhone) {
+    return { success: false as const, error: "Phone number is required" };
+  }
+  if (!cleanOtp) {
+    return { success: false as const, error: "Please enter the 6-digit OTP" };
+  }
+
+  if (cleanPhone === ADMIN_PHONE) {
+    return {
+      success: false as const,
+      error: "Admin uses password login, not OTP.",
+    };
+  }
 
   const [user] = await db
     .select()
@@ -75,63 +143,51 @@ export async function verifyOtpAndLogin(phone: string, otpInput: string) {
     .limit(1);
 
   if (!user) {
-    throw new Error("User not found.");
+    return { success: false as const, error: "User not found." };
   }
 
-  // Allow master bypass in development or for test admin 9999999999
   const isMasterBypass =
-    (cleanPhone === "9999999999" && (cleanOtp === "123456" || cleanOtp === "000000")) ||
-    (process.env.NODE_ENV === "development" && cleanOtp === "000000");
+    process.env.NODE_ENV === "development" && cleanOtp === "000000";
 
   if (!isMasterBypass) {
     if (!user.otp || user.otp !== cleanOtp) {
-      throw new Error("Invalid OTP code. Please try again.");
+      return { success: false as const, error: "Invalid OTP code. Please try again." };
     }
 
     if (!user.otpExpiry || new Date() > user.otpExpiry) {
-      throw new Error("OTP has expired. Please request a new code.");
+      return {
+        success: false as const,
+        error: "OTP has expired. Please request a new code.",
+      };
     }
   }
 
-  // Clear OTP from database
   await db
     .update(users)
     .set({ otp: null, otpExpiry: null })
     .where(eq(users.id, user.id));
 
-  // Set session cookie
-  const cookieStore = await cookies();
-  cookieStore.set("skywin_session", `${user.id}:${user.role}`, {
-    path: "/",
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 7 * 24 * 60 * 60, // 7 days
-  });
-
-  return { success: true, role: user.role };
+  await setSession(user);
+  return { success: true as const, role: user.role };
 }
 
 export async function loginWithPhone(phone: string) {
   const isProduction = process.env.NODE_ENV === "production";
   if (isProduction) {
-    throw new Error("Direct login is disabled. Please use WhatsApp OTP verification.");
+    return {
+      success: false as const,
+      error: "Direct login is disabled. Please use WhatsApp OTP verification.",
+    };
   }
-  const cleanPhone = phone.trim();
-  if (!cleanPhone) throw new Error("Phone number is required");
-
-  // Admin auto-seeding rule for initial setup/testing
-  if (cleanPhone === "9999999999") {
-    const existing = await db.select().from(users).limit(1);
-    if (existing.length === 0) {
-      await db.insert(users).values({
-        name: "Administrator",
-        phone: "9999999999",
-        role: "admin",
-      });
-    }
+  const cleanPhone = phone.trim().replace(/\D/g, "");
+  if (!cleanPhone) {
+    return { success: false as const, error: "Phone number is required" };
   }
 
-  // Find user
+  if (cleanPhone === ADMIN_PHONE) {
+    await ensureAdminUser();
+  }
+
   const [user] = await db
     .select()
     .from(users)
@@ -139,19 +195,14 @@ export async function loginWithPhone(phone: string) {
     .limit(1);
 
   if (!user) {
-    throw new Error("Phone number not registered. Contact your administrator.");
+    return {
+      success: false as const,
+      error: "Phone number not registered. Contact your administrator.",
+    };
   }
 
-  // Set session cookie (userid:role)
-  const cookieStore = await cookies();
-  cookieStore.set("skywin_session", `${user.id}:${user.role}`, {
-    path: "/",
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 7 * 24 * 60 * 60, // 7 days
-  });
-
-  return { success: true, role: user.role };
+  await setSession(user);
+  return { success: true as const, role: user.role };
 }
 
 export async function getCurrentUser() {

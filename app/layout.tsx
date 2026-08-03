@@ -19,6 +19,9 @@ export const metadata: Metadata = {
   description: "POS billing software for SKYWIN BIOTECH Agri Super Market",
 };
 
+// POS app always needs the live DB — never prerender pages at build time.
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({
   children,
 }: Readonly<{

@@ -2,19 +2,35 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { sendOtp, verifyOtpAndLogin, loginWithPhone } from "@/lib/actions/auth";
+import {
+  sendOtp,
+  verifyOtpAndLogin,
+  loginWithPhone,
+  loginWithAdminPassword,
+} from "@/lib/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Smartphone, CheckCircle2, AlertCircle, LogIn, KeyRound, ArrowLeft, RefreshCw, MessageSquare } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertCircle,
+  LogIn,
+  KeyRound,
+  ArrowLeft,
+  RefreshCw,
+  MessageSquare,
+} from "lucide-react";
+
+const ADMIN_PHONE = "9999999999";
 
 export default function LoginPage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [step, setStep] = useState<"phone" | "otp" | "password">("phone");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
@@ -29,7 +45,7 @@ export default function LoginPage() {
     return () => clearInterval(interval);
   }, [resendTimer]);
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handlePhoneSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
@@ -37,6 +53,12 @@ export default function LoginPage() {
 
     if (!phone.trim() || phone.trim().length < 10) {
       setError("Please enter a valid 10-digit mobile number");
+      return;
+    }
+
+    if (phone === ADMIN_PHONE) {
+      setStep("password");
+      setPassword("");
       return;
     }
 
@@ -50,6 +72,8 @@ export default function LoginPage() {
               router.push("/");
               router.refresh();
             }, 600);
+          } else {
+            setError(res.error || "Login failed");
           }
           return;
         }
@@ -62,9 +86,39 @@ export default function LoginPage() {
           }
           setStep("otp");
           setResendTimer(60);
+        } else {
+          setError(res.error || "Failed to send OTP");
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to send OTP");
+      }
+    });
+  };
+
+  const handleAdminPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    if (!password) {
+      setError("Please enter the admin password");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const res = await loginWithAdminPassword(phone, password);
+        if (res.success) {
+          setSuccess("Signed in successfully! Redirecting...");
+          setTimeout(() => {
+            router.push("/");
+            router.refresh();
+          }, 600);
+        } else {
+          setError(res.error || "Invalid password");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Login failed");
       }
     });
   };
@@ -88,6 +142,8 @@ export default function LoginPage() {
             router.push("/");
             router.refresh();
           }, 600);
+        } else {
+          setError(res.error || "Verification failed");
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Verification failed");
@@ -106,6 +162,8 @@ export default function LoginPage() {
           setSuccess("New OTP resent via WhatsApp!");
           if (res.devOtp) setDevOtpHint(res.devOtp);
           setResendTimer(60);
+        } else {
+          setError(res.error || "Failed to resend OTP");
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to resend OTP");
@@ -113,9 +171,16 @@ export default function LoginPage() {
     });
   };
 
+  const goBackToPhone = () => {
+    setStep("phone");
+    setError("");
+    setSuccess("");
+    setPassword("");
+    setOtp("");
+  };
+
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4 py-12 sm:px-6 lg:px-8 overflow-hidden">
-      {/* Decorative gradient backgrounds */}
       <div className="absolute top-1/4 left-1/4 -z-10 h-80 w-80 rounded-full bg-emerald-600/15 blur-[120px] pointer-events-none animate-pulse" />
       <div className="absolute bottom-1/4 right-1/4 -z-10 h-80 w-80 rounded-full bg-blue-600/15 blur-[120px] pointer-events-none" />
 
@@ -141,6 +206,11 @@ export default function LoginPage() {
                     <LogIn className="h-5 w-5 text-emerald-400" />
                     Sign In
                   </>
+                ) : step === "password" ? (
+                  <>
+                    <KeyRound className="h-5 w-5 text-emerald-400" />
+                    Admin Password
+                  </>
                 ) : (
                   <>
                     <KeyRound className="h-5 w-5 text-emerald-400" />
@@ -148,14 +218,10 @@ export default function LoginPage() {
                   </>
                 )}
               </CardTitle>
-              {step === "otp" && (
+              {step !== "phone" && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setStep("phone");
-                    setError("");
-                    setSuccess("");
-                  }}
+                  onClick={goBackToPhone}
                   className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
@@ -166,13 +232,15 @@ export default function LoginPage() {
             <CardDescription className="text-slate-400 text-xs sm:text-sm">
               {step === "phone"
                 ? "Enter your registered mobile number to receive a secure login code via WhatsApp."
-                : `We sent a 6-digit code to +91 ${phone} on WhatsApp.`}
+                : step === "password"
+                  ? "Enter the admin password to access the workspace."
+                  : `We sent a 6-digit code to +91 ${phone} on WhatsApp.`}
             </CardDescription>
           </CardHeader>
 
           <CardContent className="pt-2">
             {step === "phone" ? (
-              <form onSubmit={handleSendOtp} className="space-y-4">
+              <form onSubmit={handlePhoneSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="phone" className="text-slate-300 font-medium">
                     Mobile Number
@@ -194,7 +262,8 @@ export default function LoginPage() {
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
                     <span>
-                      * Enter <span className="font-semibold text-slate-400">9999999999</span> for Admin test access.
+                      * Enter <span className="font-semibold text-slate-400">9999999999</span> for
+                      Admin (password login).
                     </span>
                     {process.env.NODE_ENV === "development" && (
                       <button
@@ -230,8 +299,10 @@ export default function LoginPage() {
                   {isPending ? (
                     <span className="flex items-center gap-2">
                       <RefreshCw className="h-4 w-4 animate-spin" />
-                      {useDirectLogin ? "Signing in..." : "Sending WhatsApp OTP..."}
+                      {useDirectLogin ? "Signing in..." : "Continue..."}
                     </span>
+                  ) : phone === ADMIN_PHONE ? (
+                    "Continue to Password"
                   ) : useDirectLogin ? (
                     "Sign In Directly"
                   ) : (
@@ -242,14 +313,69 @@ export default function LoginPage() {
                   )}
                 </Button>
               </form>
+            ) : step === "password" ? (
+              <form
+                onSubmit={handleAdminPassword}
+                className="space-y-5 animate-in fade-in-50 slide-in-from-right-4 duration-300"
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-slate-300 font-medium">
+                    Password
+                  </Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="Enter admin password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="h-11 border-slate-800 bg-slate-950/60 text-white placeholder-slate-600 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 font-mono text-base transition-all"
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                {error && (
+                  <div className="flex items-center gap-2.5 rounded-lg bg-red-950/60 border border-red-900/40 p-3 text-xs text-red-300">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                {success && (
+                  <div className="flex items-center gap-2.5 rounded-lg bg-emerald-950/60 border border-emerald-900/40 p-3 text-xs text-emerald-300">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                    <span>{success}</span>
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  disabled={isPending || !password}
+                  className="w-full h-11 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold shadow-lg shadow-emerald-900/20 hover:shadow-emerald-900/40 transition-all duration-200"
+                >
+                  {isPending ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Signing in...
+                    </span>
+                  ) : (
+                    "Sign In"
+                  )}
+                </Button>
+              </form>
             ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-5 animate-in fade-in-50 slide-in-from-right-4 duration-300">
+              <form
+                onSubmit={handleVerifyOtp}
+                className="space-y-5 animate-in fade-in-50 slide-in-from-right-4 duration-300"
+              >
                 {devOtpHint && (
                   <div className="rounded-lg bg-emerald-950/80 border border-emerald-500/30 p-3 text-xs text-emerald-300 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-2">
                       <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
                       <span>
-                        Test OTP Code: <strong className="font-mono text-emerald-200 text-sm">{devOtpHint}</strong>
+                        Test OTP Code:{" "}
+                        <strong className="font-mono text-emerald-200 text-sm">{devOtpHint}</strong>
                       </span>
                     </div>
                     <button

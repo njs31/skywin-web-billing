@@ -62,6 +62,7 @@ async function main() {
     saleRate: 120,
     gstRate: 0,
     stockQty: 5,
+    reorderLevel: 0,
     unit: "pcs",
   });
   if (!product) throw new Error("createProduct failed");
