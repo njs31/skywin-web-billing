@@ -49,17 +49,36 @@ export default async function InvoicesPage() {
                   <TableHead>Date</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Payment</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sales.map((sale) => (
+                {sales.map((sale) => {
+                  const paid = Number(sale.paidAmount ?? 0);
+                  const total = Number(sale.grandTotal ?? 0);
+                  const status =
+                    sale.paymentMode === "credit" && paid < total - 0.01
+                      ? paid > 0
+                        ? "Partial"
+                        : "Pending"
+                      : "Paid";
+                  return (
                   <TableRow key={sale.id}>
                     <TableCell className="font-medium">{sale.invoiceNo}</TableCell>
                     <TableCell>{formatDateTimeIST(sale.date)}</TableCell>
                     <TableCell>{sale.customerName ?? "-"}</TableCell>
                     <TableCell className="capitalize">{sale.paymentMode}</TableCell>
+                    <TableCell
+                      className={
+                        status === "Paid"
+                          ? "font-medium text-emerald-700"
+                          : "font-medium text-amber-600"
+                      }
+                    >
+                      {status}
+                    </TableCell>
                     <TableCell className="text-right font-semibold">
                       {formatCurrency(sale.grandTotal)}
                     </TableCell>
@@ -69,7 +88,8 @@ export default async function InvoicesPage() {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}

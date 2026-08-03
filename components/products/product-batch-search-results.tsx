@@ -41,8 +41,8 @@ export function ProductBatchSearchResults({
             rateMode === "purchase"
               ? toNumber(row.batchPurchaseRate ?? row.purchaseRate)
               : rateMode === "wholesale"
-                ? toNumber(row.batchSaleRate ?? row.wholesaleRate ?? row.saleRate)
-                : toNumber(row.batchSaleRate ?? row.saleRate);
+                ? toNumber(row.wholesaleRate ?? row.saleRate)
+                : toNumber(row.saleRate);
 
           return (
             <button

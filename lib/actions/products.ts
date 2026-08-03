@@ -40,6 +40,7 @@ export async function updateProduct(
     stockQty?: number;
     hsnCode?: string;
     expiryDate?: string | null;
+    mrp?: number | null;
   }
 ) {
   return updateProductQuery(id, data);

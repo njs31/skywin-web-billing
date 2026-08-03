@@ -111,6 +111,20 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
               <p>UPI: {formatCurrency(sale.upiAmount!)}</p>
             </>
           )}
+          {sale.paymentMode === "upi" &&
+            toNumber(sale.upiAmount) > 0 &&
+            toNumber(sale.cashAmount) === 0 && (
+              <p>UPI: {formatCurrency(sale.upiAmount!)}</p>
+            )}
+          <p>
+            <span className="font-semibold">Payment Status:</span>{" "}
+            {sale.paymentMode === "credit" &&
+            toNumber(sale.paidAmount) < toNumber(sale.grandTotal)
+              ? toNumber(sale.paidAmount) > 0
+                ? "PARTIAL"
+                : "PENDING"
+              : "PAID"}
+          </p>
           {sale.operatorName && (
             <p>
               <span className="font-semibold">Operator:</span>{" "}
@@ -202,6 +216,30 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
                 <span>{formatCurrency(sale.paidAmount!)}</span>
               </div>
             )}
+          {sale.paymentMode !== "credit" && (
+            <div className="flex justify-between font-semibold text-emerald-700">
+              <span>Payment Status</span>
+              <span>PAID</span>
+            </div>
+          )}
+          {sale.paymentMode === "credit" && (
+            <div
+              className={`flex justify-between font-semibold ${
+                toNumber(sale.paidAmount) >= toNumber(sale.grandTotal)
+                  ? "text-emerald-700"
+                  : "text-amber-600"
+              }`}
+            >
+              <span>Payment Status</span>
+              <span>
+                {toNumber(sale.paidAmount) >= toNumber(sale.grandTotal)
+                  ? "PAID"
+                  : toNumber(sale.paidAmount) > 0
+                    ? "PARTIAL"
+                    : "PENDING"}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

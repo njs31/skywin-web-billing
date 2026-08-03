@@ -48,6 +48,7 @@ function isExpired(value: string | null | undefined) {
 export function ProductTable({ products }: { products: Product[] }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saleRate, setSaleRate] = useState("");
+  const [mrp, setMrp] = useState("");
   const [gstRate, setGstRate] = useState("");
   const [hsnCode, setHsnCode] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
@@ -56,6 +57,7 @@ export function ProductTable({ products }: { products: Product[] }) {
   const startEdit = (product: Product) => {
     setEditingId(product.id);
     setSaleRate(String(toNumber(product.saleRate)));
+    setMrp(product.mrp != null ? String(toNumber(product.mrp)) : "");
     setGstRate(String(toNumber(product.gstRate)));
     setHsnCode(product.hsnCode ?? "");
     setExpiryDate(product.expiryDate ?? "");
@@ -78,9 +80,12 @@ export function ProductTable({ products }: { products: Product[] }) {
             return;
           }
         }
+        const parsedSale = parseFloat(saleRate);
+        const parsedMrp = mrp.trim() === "" ? null : parseFloat(mrp);
         await updateProduct(id, {
-          saleRate: parseFloat(saleRate),
-          gstRate: parseFloat(gstRate),
+          saleRate: Number.isFinite(parsedSale) ? parsedSale : 0,
+          mrp: parsedMrp != null && Number.isFinite(parsedMrp) ? parsedMrp : null,
+          gstRate: Number.isFinite(parseFloat(gstRate)) ? parseFloat(gstRate) : 0,
           hsnCode: hsnCode.trim(),
           expiryDate: expiryDate.trim() || null,
         });
@@ -102,6 +107,7 @@ export function ProductTable({ products }: { products: Product[] }) {
           <TableHead className="text-right">Stock</TableHead>
           <TableHead className="text-right">Purchase Rate</TableHead>
           <TableHead className="text-right">Sale Rate</TableHead>
+          <TableHead className="text-right">MRP</TableHead>
           <TableHead className="text-right">GST %</TableHead>
           <TableHead></TableHead>
         </TableRow>
@@ -176,6 +182,21 @@ export function ProductTable({ products }: { products: Product[] }) {
                   />
                 ) : (
                   formatCurrency(product.saleRate)
+                )}
+              </TableCell>
+              <TableCell className="text-right">
+                {editingId === product.id ? (
+                  <Input
+                    type="number"
+                    className="ml-auto w-24"
+                    value={mrp}
+                    onChange={(e) => setMrp(e.target.value)}
+                    placeholder="MRP"
+                  />
+                ) : product.mrp != null ? (
+                  formatCurrency(product.mrp)
+                ) : (
+                  "-"
                 )}
               </TableCell>
               <TableCell className="text-right">

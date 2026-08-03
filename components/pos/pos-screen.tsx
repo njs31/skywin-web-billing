@@ -207,7 +207,8 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
         barcode: row.barcode,
         hsnCode: row.hsnCode,
         gstRate: row.gstRate,
-        saleRate: row.batchSaleRate ?? row.saleRate,
+        // Always bill at the current product sale/wholesale rate, not a stale batch rate.
+        saleRate: row.saleRate,
         wholesaleRate: row.wholesaleRate,
         purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
         stockQty: row.batchQty || row.productStockQty,
@@ -365,8 +366,14 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
       mode = cashAmount >= upiAmount ? "cash" : "upi";
     } else if (paymentMode === "cash") {
       cashAmount = gst.grandTotal;
+      upiAmount = 0;
     } else if (paymentMode === "upi") {
+      cashAmount = 0;
       upiAmount = gst.grandTotal;
+    } else {
+      // card / cheque — fully paid at counter
+      cashAmount = 0;
+      upiAmount = 0;
     }
 
     setError("");
@@ -383,6 +390,8 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
           paymentMode: mode,
           cashAmount,
           upiAmount,
+          paidAmount:
+            mode === "credit" ? 0 : gst.grandTotal,
           operatorName,
           discountAmount: parseFloat(billDiscount) || 0,
           items: cart.map((c) => ({

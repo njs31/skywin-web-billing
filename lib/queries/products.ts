@@ -218,7 +218,7 @@ export async function updateProduct(
     gstRate: number;
     stockQty?: number;
     reorderLevel?: number;
-    mrp?: number;
+    mrp?: number | null;
     hsnCode?: string;
     barcode?: string;
     expiryDate?: string | null;
@@ -242,7 +242,9 @@ export async function updateProduct(
       ...(data.reorderLevel !== undefined
         ? { reorderLevel: data.reorderLevel.toFixed(2) }
         : {}),
-      ...(data.mrp !== undefined ? { mrp: data.mrp.toFixed(2) } : {}),
+      ...(data.mrp !== undefined
+        ? { mrp: data.mrp === null ? null : data.mrp.toFixed(2) }
+        : {}),
       ...(data.hsnCode !== undefined ? { hsnCode: data.hsnCode } : {}),
       ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
       ...(data.expiryDate !== undefined
@@ -250,6 +252,16 @@ export async function updateProduct(
         : {}),
     })
     .where(eq(products.id, id));
+
+  // Keep batch selling rates in sync so POS never shows a stale batch price
+  // after the product sale rate / MRP is updated.
+  await db
+    .update(productBatches)
+    .set({
+      saleRate: data.saleRate.toFixed(2),
+      updatedAt: new Date(),
+    })
+    .where(eq(productBatches.productId, id));
 
   revalidateTag("products", "max");
   revalidatePath("/products");

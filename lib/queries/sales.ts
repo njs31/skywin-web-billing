@@ -145,14 +145,24 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     { billDiscount: data.discountAmount ?? 0 }
   );
 
-  const cashAmount = round2(data.cashAmount ?? 0);
-  const upiAmount = round2(data.upiAmount ?? 0);
+  let cashAmount = round2(data.cashAmount ?? 0);
+  let upiAmount = round2(data.upiAmount ?? 0);
+
+  // Normalize settlement amounts for non-credit modes so UPI/Cash never stay unpaid.
+  if (data.paymentMode === "upi" && cashAmount === 0 && upiAmount === 0) {
+    upiAmount = gst.grandTotal;
+  } else if (data.paymentMode === "cash" && cashAmount === 0 && upiAmount === 0) {
+    cashAmount = gst.grandTotal;
+  }
+
+  // Non-credit modes are settled immediately at the counter.
+  // Prefer explicit cash/upi split when provided; otherwise mark fully paid.
   const paidAmount =
     data.paymentMode === "credit"
-      ? (data.paidAmount ?? 0)
+      ? round2(data.paidAmount ?? 0)
       : cashAmount + upiAmount > 0
         ? round2(cashAmount + upiAmount)
-        : (data.paidAmount ?? gst.grandTotal);
+        : round2(data.paidAmount ?? gst.grandTotal);
 
   if (
     data.billType === "retail" &&
@@ -161,6 +171,17 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01
   ) {
     throw new Error("Cash + UPI amounts must equal the bill grand total.");
+  }
+
+  // Guard: cash/card/upi/cheque invoices must never remain unpaid.
+  if (
+    data.paymentMode !== "credit" &&
+    Math.abs(paidAmount - gst.grandTotal) > 0.01 &&
+    paidAmount < gst.grandTotal
+  ) {
+    throw new Error(
+      `Payment incomplete for ${data.paymentMode.toUpperCase()} sale. Paid ₹${paidAmount.toFixed(2)} of ₹${gst.grandTotal.toFixed(2)}.`
+    );
   }
 
   const typePrefix =
