@@ -19,11 +19,12 @@ export const metadata: Metadata = {
   description: "POS billing software for SKYWIN BIOTECH Agri Super Market",
   icons: {
     icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
       { url: "/logo.avif", type: "image/avif" },
-      { url: "/icon.png", type: "image/png" },
-      { url: "/favicon.ico" },
     ],
-    apple: [{ url: "/apple-icon.png" }],
+    shortcut: "/favicon.ico",
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 

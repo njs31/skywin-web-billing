@@ -10,6 +10,7 @@ import {
   loginWithAdminPassword,
 } from "@/lib/actions/auth";
 import { BUSINESS } from "@/lib/business";
+import { PoweredByQwicksapp } from "@/components/branding/powered-by-qwicksapp";
 import { AlertCircle, ArrowLeft, CheckCircle2, RefreshCw } from "lucide-react";
 
 const ADMIN_PHONE = "9999999999";
@@ -434,6 +435,11 @@ export default function LoginPage() {
           {BUSINESS.website.replace(/^WWW\./i, "").toLowerCase()}
         </p>
       </div>
+
+      <PoweredByQwicksapp
+        size="md"
+        className="absolute bottom-3 left-3 z-20 sm:bottom-4 sm:left-4"
+      />
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import { useState, useEffect } from "react";
+import { PoweredByQwicksapp } from "@/components/branding/powered-by-qwicksapp";
 
 const PURCHASE_ROUTES = ["/purchases", "/suppliers"];
 
@@ -260,7 +261,7 @@ export function Sidebar({
             );
           })}
         </nav>
-        <div className="border-t border-slate-800 p-3.5 space-y-3">
+        <div className="border-t border-slate-800 px-3 py-2.5 space-y-2">
           {currentUser && (
             <div className="flex flex-col gap-0.5 text-xs">
               <span className="font-semibold text-slate-200 truncate">{currentUser.name}</span>
@@ -270,7 +271,7 @@ export function Sidebar({
               <span className="text-[10px] text-slate-400">{currentUser.phone}</span>
             </div>
           )}
-          <div className="flex items-center justify-between gap-2 border-t border-slate-800/60 pt-2.5">
+          <div className="flex items-center justify-between gap-2 border-t border-slate-800/60 pt-2">
             <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">
               GSTIN: {BUSINESS.gstin}
             </span>
@@ -285,6 +286,7 @@ export function Sidebar({
               Logout
             </button>
           </div>
+          <PoweredByQwicksapp size="sm" className="self-start" />
         </div>
       </aside>
     </>
