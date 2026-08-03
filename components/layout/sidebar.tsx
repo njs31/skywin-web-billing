@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -181,17 +182,25 @@ export function Sidebar({
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="border-b border-slate-800 p-5 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-400">
-              {BUSINESS.name}
-            </p>
-            <h1 className="mt-1 text-base font-bold leading-tight">
-              {BUSINESS.tagline}
-            </h1>
-            <p className="mt-1 text-xs text-slate-400">Billing Software</p>
+        <div className="border-b border-slate-800 p-4 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <Image
+              src="/logo.avif"
+              alt={BUSINESS.name}
+              width={40}
+              height={40}
+              className="h-10 w-10 shrink-0"
+              priority
+            />
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[#b4d12a]">
+                {BUSINESS.name}
+              </p>
+              <h1 className="truncate text-sm font-bold leading-tight">
+                {BUSINESS.tagline}
+              </h1>
+            </div>
           </div>
-          {/* Mobile close button */}
           <button
             type="button"
             onClick={onClose}

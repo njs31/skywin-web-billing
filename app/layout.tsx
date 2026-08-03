@@ -15,8 +15,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: `${BUSINESS.tagline} — POS Billing`,
+  title: `${BUSINESS.name} — ${BUSINESS.tagline}`,
   description: "POS billing software for SKYWIN BIOTECH Agri Super Market",
+  icons: {
+    icon: [
+      { url: "/logo.avif", type: "image/avif" },
+      { url: "/icon.png", type: "image/png" },
+      { url: "/favicon.ico" },
+    ],
+    apple: [{ url: "/apple-icon.png" }],
+  },
 };
 
 // POS app always needs the live DB — never prerender pages at build time.

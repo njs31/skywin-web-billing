@@ -75,3 +75,61 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
+
+/* Login — brand atmosphere + motion */
+.login-grid {
+  background-image:
+    linear-gradient(rgba(180, 209, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 209, 42, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 20%, transparent 75%);
+}
+
+.login-logo-glow {
+  filter: drop-shadow(0 0 28px rgba(180, 209, 42, 0.22));
+  animation: login-logo-in 0.9s ease-out both;
+}
+
+.login-cta {
+  transition: transform 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-cta:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(180, 209, 42, 0.22);
+}
+
+.login-step {
+  animation: login-step-in 0.35s ease-out both;
+}
+
+@keyframes login-logo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes login-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-logo-glow,
+  .login-step,
+  .login-cta {
+    animation: none !important;
+    transition: none !important;
+  }
+}

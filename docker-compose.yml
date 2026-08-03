@@ -5,12 +5,27 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: skywin
-      POSTGRES_PASSWORD: skywin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skywin}
       POSTGRES_DB: skywin_bill
-    ports:
-      - "5432:5432"
     volumes:
       - skywin_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skywin -d skywin_bill"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: skywin-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   skywin_pg_data:
