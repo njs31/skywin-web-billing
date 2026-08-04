@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./sidebar";
+import { NavigationSpinner } from "./navigation-spinner";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BUSINESS } from "@/lib/business";
@@ -43,7 +44,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+      <main className="relative min-h-0 flex-1 overflow-y-auto">
+        <Suspense fallback={null}>
+          <NavigationSpinner />
+        </Suspense>
+        {children}
+      </main>
     </div>
   );
 }

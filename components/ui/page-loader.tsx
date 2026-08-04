@@ -1,78 +1,23 @@
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** Full-page skeleton shown by route `loading.tsx` files while server data loads. */
+/** Centered circular spinner for route `loading.tsx` files. */
 export function PageLoader({
-  variant = "default",
+  label = "Loading…",
 }: {
+  /** Kept for call-site compat; all variants show the circle spinner. */
   variant?: "default" | "table" | "dashboard" | "form";
+  label?: string;
 }) {
-  if (variant === "dashboard") {
-    return (
-      <div className="animate-pulse space-y-6 p-6" role="status" aria-label="Loading">
-        <div className="h-8 w-48 rounded-lg bg-slate-200" />
-        <div className="h-4 w-72 rounded bg-slate-100" />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-28 rounded-xl bg-slate-200" />
-          ))}
-        </div>
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="h-72 rounded-xl bg-slate-200 lg:col-span-2" />
-          <div className="h-72 rounded-xl bg-slate-200" />
-        </div>
-        <span className="sr-only">Loading dashboard…</span>
-      </div>
-    );
-  }
-
-  if (variant === "form") {
-    return (
-      <div className="animate-pulse space-y-6 p-6" role="status" aria-label="Loading">
-        <div className="h-8 w-40 rounded-lg bg-slate-200" />
-        <div className="h-4 w-64 rounded bg-slate-100" />
-        <div className="space-y-3 rounded-xl border border-slate-100 p-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-10 rounded-lg bg-slate-100" />
-          ))}
-        </div>
-        <span className="sr-only">Loading form…</span>
-      </div>
-    );
-  }
-
-  if (variant === "table") {
-    return (
-      <div className="animate-pulse space-y-6 p-6" role="status" aria-label="Loading">
-        <div className="flex items-center justify-between gap-4">
-          <div className="h-8 w-36 rounded-lg bg-slate-200" />
-          <div className="h-9 w-28 rounded-lg bg-slate-200" />
-        </div>
-        <div className="h-10 rounded-lg bg-slate-200" />
-        <div className="space-y-2">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-12 rounded-lg bg-slate-100" />
-          ))}
-        </div>
-        <span className="sr-only">Loading…</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="animate-pulse space-y-6 p-6" role="status" aria-label="Loading">
-      <div className="h-8 w-48 rounded-lg bg-slate-200" />
-      <div className="h-4 w-72 rounded bg-slate-100" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-28 rounded-xl bg-slate-200" />
-        ))}
-      </div>
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="h-64 rounded-xl bg-slate-200" />
-        <div className="h-64 rounded-xl bg-slate-200" />
-      </div>
-      <span className="sr-only">Loading…</span>
+    <div
+      className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-6"
+      role="status"
+      aria-live="polite"
+      aria-label={label}
+    >
+      <Loader2 className="h-10 w-10 animate-spin text-emerald-600" />
+      <p className="text-sm font-medium text-slate-600">{label}</p>
     </div>
   );
 }
