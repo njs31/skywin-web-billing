@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
+import { BlockLoader } from "@/components/ui/page-loader";
 
 type OutstandingSale = {
   id: number;
@@ -222,7 +223,7 @@ export function ReceiptForm({ customers }: { customers: Customer[] }) {
             </div>
           </div>
           {loadingBills ? (
-            <p className="text-sm text-slate-400">Loading invoices...</p>
+            <BlockLoader label="Loading invoices…" className="min-h-[80px] border-0 bg-slate-50" />
           ) : bills.length === 0 ? (
             <p className="text-sm text-slate-400">No outstanding invoices for this customer.</p>
           ) : (

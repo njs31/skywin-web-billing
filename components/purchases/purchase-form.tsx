@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Plus, Trash2, Upload, FileSpreadsheet, AlertCircle, CheckCircle } from "lucide-react";
+import { Plus, Trash2, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { searchProductBatches, resolveProductsForImport } from "@/lib/actions/products";
 import * as XLSX from "xlsx";
 import { createPurchase } from "@/lib/actions/purchases";
@@ -117,6 +117,7 @@ export function PurchaseForm({
   const [paymentType, setPaymentType] = useState<"credit" | "cash">("credit");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [items, setItems] = useState<LineItem[]>([]);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -203,13 +204,20 @@ export function PurchaseForm({
   };
 
   useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults([]);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
     const timer = setTimeout(async () => {
-      if (query.trim()) {
+      try {
         setResults(
-          await searchProductBatches(query, 15, { onlyInStock: false })
+          await searchProductBatches(q, 15, { onlyInStock: false })
         );
-      } else {
-        setResults([]);
+      } finally {
+        setIsSearching(false);
       }
     }, 200);
     return () => clearTimeout(timer);
@@ -489,11 +497,20 @@ export function PurchaseForm({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label className="text-xs">Search Product</Label>
-              <Input
-                placeholder="Or search products by name..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  placeholder="Or search products by name..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="pr-9"
+                />
+                {isSearching && (
+                  <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-emerald-600" />
+                )}
+              </div>
+              {isSearching && query.trim() && results.length === 0 && (
+                <p className="text-xs text-slate-500">Searching products…</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Import via Excel (Marg report supported)</Label>

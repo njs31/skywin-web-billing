@@ -16,7 +16,9 @@ import {
   ShoppingBag,
   Scan,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
+import { InlineLoader } from "@/components/ui/page-loader";
 import { searchProductBatches } from "@/lib/actions/products";
 import { createSale } from "@/lib/actions/sales";
 import {
@@ -97,20 +99,30 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [customerOutstanding, setCustomerOutstanding] = useState<number | null>(null);
+  const [loadingOutstanding, setLoadingOutstanding] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   const searchSeq = useRef(0);
   useEffect(() => {
     const seq = ++searchSeq.current;
+    const q = query.trim();
+    if (q.length < 1) {
+      setResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
     const timer = setTimeout(async () => {
-      if (query.trim().length >= 1) {
-        const rows = await searchProductBatches(query, 20, {
+      try {
+        const rows = await searchProductBatches(q, 20, {
           onlyInStock: false,
         });
         // Drop out-of-order responses so slow queries can't overwrite
         // results for what the cashier is currently typing.
         if (seq === searchSeq.current) setResults(rows);
-      } else {
-        setResults([]);
+      } finally {
+        if (seq === searchSeq.current) setIsSearching(false);
       }
     }, 200);
     return () => clearTimeout(timer);
@@ -120,14 +132,18 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
     if (customerId && customerId !== "none") {
       const cid = parseInt(customerId, 10);
       if (!isNaN(cid)) {
+        setLoadingOutstanding(true);
         import("@/lib/actions/billing").then(({ getCustomerOutstanding }) => {
-          getCustomerOutstanding(cid).then((res) => {
-            setCustomerOutstanding(res);
-          });
+          getCustomerOutstanding(cid)
+            .then((res) => {
+              setCustomerOutstanding(res);
+            })
+            .finally(() => setLoadingOutstanding(false));
         });
       }
     } else {
       setCustomerOutstanding(null);
+      setLoadingOutstanding(false);
     }
   }, [customerId]);
 
@@ -456,13 +472,26 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
           <Input
             ref={searchRef}
-            className="pl-10 text-base"
+            className="pl-10 pr-10 text-base"
             placeholder="Search product, SKU, or scan barcode..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             autoFocus
           />
+          {isSearching && (
+            <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-emerald-600" />
+          )}
+          {isSearching && query.trim().length >= 1 && results.length === 0 && (
+            <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white p-3 shadow-md">
+              <InlineLoader label="Searching products…" />
+            </div>
+          )}
+          {!isSearching && query.trim().length >= 1 && results.length === 0 && (
+            <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-500 shadow-md">
+              No products found
+            </div>
+          )}
           {results.length > 0 && (
             <div className="absolute z-10 mt-1 w-full">
               <ProductBatchSearchResults
@@ -801,7 +830,12 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                   )}
                 </div>
 
-                {customerOutstanding !== null && (
+                {loadingOutstanding && (
+                  <div className="mt-2">
+                    <InlineLoader label="Loading outstanding…" />
+                  </div>
+                )}
+                {!loadingOutstanding && customerOutstanding !== null && (
                   <div className="mt-2 space-y-1">
                     <div className="flex justify-between items-center bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 text-xs text-amber-800 font-medium">
                       <span>Outstanding Debt</span>

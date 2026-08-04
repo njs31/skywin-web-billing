@@ -16,6 +16,7 @@
     "db:assign-hsn": "tsx --env-file=.env.local scripts/assign-hsn.ts",
     "db:import-inventory": "tsx --env-file=.env.local scripts/import-inventory-report.ts",
     "db:import-master": "tsx --env-file=.env.local scripts/import-master-file.ts",
+    "db:import-master:prod": "tsx --env-file=.env.production scripts/import-master-file.ts",
     "db:fix-gst-exempt": "tsx --env-file=.env.local scripts/fix-gst-exempt.ts",
     "db:assign-skus": "tsx --env-file=.env.local scripts/assign-skus.ts",
     "db:assign-expiry": "tsx --env-file=.env.local scripts/assign-expiry.ts",
@@ -42,6 +43,7 @@
     "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "recharts": "^3.10.1",
     "tailwind-merge": "^3.6.0",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"

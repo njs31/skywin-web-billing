@@ -7,6 +7,13 @@ import {
 import { getLowStockProducts, getProductStats } from "@/lib/queries/products";
 import { getOutstandingSummary } from "@/lib/queries/payments";
 import { getGrossProfitReport, getStockValuation } from "@/lib/queries/reports";
+import {
+  getSalesTrend,
+  getPaymentModeMix,
+  getBillTypeMix,
+  getTopProductsChart,
+  getCashUpiSplit,
+} from "@/lib/queries/dashboard";
 import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -26,6 +33,14 @@ import {
   TrendingUp,
   Warehouse,
 } from "lucide-react";
+import {
+  SalesTrendChart,
+  PaymentMixChart,
+  BillTypeChart,
+  TopProductsChart,
+  CashUpiChart,
+  OutstandingChart,
+} from "@/components/dashboard/charts";
 
 export default async function DashboardPage() {
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -39,6 +54,11 @@ export default async function DashboardPage() {
     outstanding,
     profit,
     stockVal,
+    salesTrend,
+    paymentMix,
+    billTypeMix,
+    topProductsChart,
+    cashUpi,
   ] = await Promise.all([
     getTodaySalesTotal(),
     getRecentSales(5),
@@ -48,7 +68,15 @@ export default async function DashboardPage() {
     getOutstandingSummary(),
     getGrossProfitReport(monthStart),
     getStockValuation(),
+    getSalesTrend(30),
+    getPaymentModeMix(30),
+    getBillTypeMix(30),
+    getTopProductsChart(8, 30),
+    getCashUpiSplit(30),
   ]);
+
+  const periodTotal = salesTrend.reduce((s, d) => s + d.total, 0);
+  const periodBills = salesTrend.reduce((s, d) => s + d.bills, 0);
 
   const stats = [
     {
@@ -72,7 +100,7 @@ export default async function DashboardPage() {
       value: formatCurrency(stockVal.saleValue),
       sub: `${stockVal.productCount} products`,
       icon: Warehouse,
-      color: "text-violet-600",
+      color: "text-teal-600",
       href: "/stock",
     },
     {
@@ -107,7 +135,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
           <p className="text-sm text-slate-500">
-            Skywin Agri Super Market — business overview
+            Business performance overview
           </p>
         </div>
         <div className="flex gap-2">
@@ -141,6 +169,84 @@ export default async function DashboardPage() {
           );
         })}
       </div>
+
+      {/* Charts */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">Sales trend</CardTitle>
+                <p className="text-xs text-slate-500">Last 30 days</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-semibold text-slate-900">
+                  {formatCurrency(periodTotal)}
+                </p>
+                <p className="text-xs text-slate-500">{periodBills} bills</p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <SalesTrendChart data={salesTrend} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Payment mix</CardTitle>
+            <p className="text-xs text-slate-500">Last 30 days by mode</p>
+          </CardHeader>
+          <CardContent>
+            <PaymentMixChart data={paymentMix} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Retail vs wholesale</CardTitle>
+            <p className="text-xs text-slate-500">Last 30 days</p>
+          </CardHeader>
+          <CardContent>
+            <BillTypeChart data={billTypeMix} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Cash vs UPI collected</CardTitle>
+            <p className="text-xs text-slate-500">Settlement amounts · 30 days</p>
+          </CardHeader>
+          <CardContent>
+            <CashUpiChart cash={cashUpi.cash} upi={cashUpi.upi} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Receivables vs payables</CardTitle>
+            <p className="text-xs text-slate-500">Outstanding balances</p>
+          </CardHeader>
+          <CardContent>
+            <OutstandingChart
+              receivables={outstanding.receivables}
+              payables={outstanding.payables}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Top products by revenue</CardTitle>
+          <p className="text-xs text-slate-500">Last 30 days</p>
+        </CardHeader>
+        <CardContent>
+          <TopProductsChart data={topProductsChart} />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

@@ -1,14 +1,34 @@
 /**
  * One-time fix: set gst_rate = 0 for Master File products marked Exempted/0.
  * Does not wipe inventory or transactional data.
+ *
+ * Run: npm run db:fix-gst-exempt
+ * Expects master-data.xlsx (or Master File (1).xlsx) in the project root.
  */
 import * as XLSX from "xlsx";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import { db } from "@/db";
 import { products } from "@/db/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 
-const MASTER_FILE = "Master File (1).xlsx";
+const CANDIDATE_FILES = [
+  "master-data.xlsx",
+  "Master File (1).xlsx",
+  "Master File.xlsx",
+];
+
+function resolveMasterFile(): string {
+  for (const name of CANDIDATE_FILES) {
+    const full = path.join(process.cwd(), name);
+    if (fs.existsSync(full)) return full;
+  }
+  throw new Error(
+    `Master inventory Excel not found. Looked for:\n` +
+      CANDIDATE_FILES.map((f) => `  - ${path.join(process.cwd(), f)}`).join("\n") +
+      `\nPlace the file in the project root and re-run.`
+  );
+}
 
 function isNil(value: unknown): boolean {
   if (value === null || value === undefined) return true;
@@ -30,15 +50,20 @@ function isExempt(value: unknown): boolean {
   const text = String(value).trim().toLowerCase();
   return (
     text === "0" ||
+    text === "0.0" ||
+    text === "0.00" ||
     text === "exempted" ||
     text === "exempt" ||
     text === "gst exempt" ||
-    text === "gst exempted"
+    text === "gst exempted" ||
+    text === "nil"
   );
 }
 
 async function main() {
-  const filePath = path.join(process.cwd(), MASTER_FILE);
+  const filePath = resolveMasterFile();
+  console.log(`Reading: ${filePath}`);
+
   const wb = XLSX.readFile(filePath, { cellDates: true });
   const sheetName =
     wb.SheetNames.find((n) => n.toLowerCase() === "inventory") ??
@@ -58,18 +83,28 @@ async function main() {
     ),
   ];
 
-  console.log(`Found ${barcodes.length} exempt barcodes in Master File`);
+  console.log(
+    `Found ${barcodes.length} exempt barcodes in sheet "${sheetName}"`
+  );
   if (barcodes.length === 0) {
     process.exit(0);
   }
 
   const matched = await db
-    .select({ id: products.id, barcode: products.barcode, gstRate: products.gstRate })
+    .select({
+      id: products.id,
+      barcode: products.barcode,
+      gstRate: products.gstRate,
+    })
     .from(products)
     .where(inArray(products.barcode, barcodes));
 
-  const toFix = matched.filter((p) => parseFloat(p.gstRate) !== 0);
-  console.log(`Matched products: ${matched.length}, need GST fix: ${toFix.length}`);
+  const toFix = matched.filter(
+    (p: { gstRate: string }) => parseFloat(p.gstRate) !== 0
+  );
+  console.log(
+    `Matched products: ${matched.length}, need GST fix: ${toFix.length}`
+  );
 
   if (toFix.length > 0) {
     await db
@@ -78,7 +113,7 @@ async function main() {
       .where(
         inArray(
           products.id,
-          toFix.map((p) => p.id)
+          toFix.map((p: { id: number }) => p.id)
         )
       );
   }
@@ -90,7 +125,9 @@ async function main() {
     })
     .from(products);
 
-  console.log(`Done. Products with 0% GST: ${stats?.exempt ?? 0} / ${stats?.total ?? 0}`);
+  console.log(
+    `Done. Products with 0% GST: ${stats?.exempt ?? 0} / ${stats?.total ?? 0}`
+  );
   process.exit(0);
 }
 

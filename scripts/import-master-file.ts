@@ -1,11 +1,27 @@
 import * as XLSX from "xlsx";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import { db } from "@/db";
 import { categories, productBatches, products } from "@/db/schema";
 import { sql } from "drizzle-orm";
 
-const MASTER_FILE = "Master File (1).xlsx";
+const CANDIDATE_FILES = [
+  "master-data.xlsx",
+  "Master File (1).xlsx",
+  "Master File.xlsx",
+];
 const SHEET_NAME = "Inventory";
+
+function resolveMasterFile(): string {
+  for (const name of CANDIDATE_FILES) {
+    const full = path.join(process.cwd(), name);
+    if (fs.existsSync(full)) return full;
+  }
+  throw new Error(
+    `Master inventory Excel not found. Looked for:\n` +
+      CANDIDATE_FILES.map((f) => `  - ${path.join(process.cwd(), f)}`).join("\n")
+  );
+}
 
 type MasterRow = {
   name: string;
@@ -218,8 +234,8 @@ function parseMasterFile(filePath: string): MasterRow[] {
 }
 
 async function main() {
-  const filePath = path.join(process.cwd(), MASTER_FILE);
-  console.log(`Loading inventory from ${MASTER_FILE}...`);
+  const filePath = resolveMasterFile();
+  console.log(`Loading inventory from ${path.basename(filePath)}...`);
   const items = parseMasterFile(filePath);
   if (items.length === 0) {
     throw new Error("No products found in Master File inventory sheet");

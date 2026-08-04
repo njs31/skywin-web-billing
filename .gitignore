@@ -33,3 +33,7 @@ db/migrations/meta
 
 # Docker
 *.log
+
+# Local inventory / business data (upload to VPS via scp, do not commit)
+master-data.xlsx
+Master File*.xlsx
