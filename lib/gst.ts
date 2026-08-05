@@ -149,6 +149,17 @@ export function parseSkuFromName(name: string): string | null {
   return match ? match[1].replace(/\s+/g, "") : null;
 }
 
+export function isInterstateGst(
+  customerGstin: string | null | undefined,
+  businessStateCode: string
+): boolean {
+  const gstin = customerGstin?.trim().toUpperCase() || "";
+  if (gstin.length < 2) return false;
+  const customerState = gstin.slice(0, 2);
+  const businessState = businessStateCode.trim().padStart(2, "0");
+  return customerState !== businessState;
+}
+
 export function getProductRate(
   product: {
     saleRate: string;

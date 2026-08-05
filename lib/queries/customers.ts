@@ -1,7 +1,6 @@
-import { unstable_cache } from "next/cache";
 import { db } from "@/db";
-import { customers, sales, partyPayments, saleReturns } from "@/db/schema";
-import { asc, eq, ilike, or, sql, desc, and, isNotNull } from "drizzle-orm";
+import { customers, sales, saleReturns } from "@/db/schema";
+import { asc, eq, ilike, or, sql, desc, and, isNotNull, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 export async function getCustomers(search?: string) {
@@ -15,14 +14,13 @@ export async function getCustomers(search?: string) {
 
   const query = db.select().from(customers);
 
-  let conditions: any[] = [];
+  const conditions: SQL[] = [];
   if (search?.trim()) {
-    conditions.push(
-      or(
-        ilike(customers.name, `%${search}%`),
-        ilike(customers.phone, `%${search}%`)
-      )
+    const searchCond = or(
+      ilike(customers.name, `%${search}%`),
+      ilike(customers.phone, `%${search}%`)
     );
+    if (searchCond) conditions.push(searchCond);
   }
 
   if (customerIds !== null) {

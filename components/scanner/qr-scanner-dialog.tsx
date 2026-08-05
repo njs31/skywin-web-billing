@@ -14,16 +14,19 @@ type QrScannerDialogProps = {
 export function QrScannerDialog({ open, onClose, onScan }: QrScannerDialogProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const onScanRef = useRef(onScan);
-  onScanRef.current = onScan;
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     if (!open) return;
 
+    let cancelled = false;
     const scannerId = "qr-scanner-region";
     const scanner = new Html5Qrcode(scannerId);
     scannerRef.current = scanner;
-    setError("");
 
     scanner
       .start(
@@ -35,13 +38,19 @@ export function QrScannerDialog({ open, onClose, onScan }: QrScannerDialogProps)
         },
         () => {}
       )
+      .then(() => {
+        if (!cancelled) setError("");
+      })
       .catch(() => {
-        setError(
-          "Camera access denied or unavailable. Use the barcode input field instead."
-        );
+        if (!cancelled) {
+          setError(
+            "Camera access denied or unavailable. Use the barcode input field instead."
+          );
+        }
       });
 
     return () => {
+      cancelled = true;
       if (scannerRef.current?.isScanning) {
         void scannerRef.current.stop().catch(() => {});
       }

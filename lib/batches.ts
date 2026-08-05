@@ -46,7 +46,8 @@ export async function syncProductStockQty(tx: DbOrTx, productId: number) {
     .set({ stockQty: total.toFixed(2) })
     .where(eq(products.id, productId));
 
-  // Keep product.expiryDate as nearest upcoming expiry among batches with stock
+  // Keep product.expiryDate as nearest upcoming expiry among batches with stock.
+  // Clear it when no in-stock batch has an expiry (avoids stale near-expiry alerts).
   const [nearest] = await tx
     .select({ expiryDate: productBatches.expiryDate })
     .from(productBatches)
@@ -60,12 +61,10 @@ export async function syncProductStockQty(tx: DbOrTx, productId: number) {
     .orderBy(asc(productBatches.expiryDate))
     .limit(1);
 
-  if (nearest?.expiryDate) {
-    await tx
-      .update(products)
-      .set({ expiryDate: nearest.expiryDate })
-      .where(eq(products.id, productId));
-  }
+  await tx
+    .update(products)
+    .set({ expiryDate: nearest?.expiryDate ?? null })
+    .where(eq(products.id, productId));
 
   return total;
 }

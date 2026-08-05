@@ -25,6 +25,7 @@ import {
   calculateGstBreakdown,
   calculateLineAmount,
   getProductRate,
+  isInterstateGst,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Customer, Product } from "@/db/schema";
@@ -43,6 +44,7 @@ import {
 import { ProductScanBar } from "@/components/scanner/product-scan-bar";
 import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
+import { BUSINESS } from "@/lib/business";
 
 type CartItem = {
   id: string;
@@ -314,6 +316,19 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
     setCart((prev) => prev.filter((c) => c.id !== id));
   };
 
+  const selectedCustomer = useMemo(
+    () =>
+      customerId && customerId !== "none"
+        ? customers.find((c) => String(c.id) === customerId) ?? null
+        : null,
+    [customers, customerId]
+  );
+
+  const interstate = isInterstateGst(
+    selectedCustomer?.gstin,
+    BUSINESS.stateCode
+  );
+
   const gst = calculateGstBreakdown(
     cart.map((c) => ({
       qty: c.qty,
@@ -322,7 +337,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
       discountType: c.discountType,
       discountValue: c.discountValue,
     })),
-    { billDiscount: parseFloat(billDiscount) || 0 }
+    { billDiscount: parseFloat(billDiscount) || 0, interstate }
   );
 
   const filteredCustomers = useMemo(() => {
@@ -738,14 +753,23 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                   <span>-{formatCurrency(gst.discountAmount)}</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span className="text-slate-500">CGST</span>
-                <span>{formatCurrency(gst.cgst)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">SGST</span>
-                <span>{formatCurrency(gst.sgst)}</span>
-              </div>
+              {interstate ? (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">IGST</span>
+                  <span>{formatCurrency(gst.igst)}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">CGST</span>
+                    <span>{formatCurrency(gst.cgst)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">SGST</span>
+                    <span>{formatCurrency(gst.sgst)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between text-base font-bold">
                 <span>Total</span>
                 <span className="text-emerald-700">

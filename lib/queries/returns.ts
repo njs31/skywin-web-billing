@@ -19,6 +19,8 @@ import { format } from "date-fns";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 const returnItemSchema = z.object({
   productId: z.number(),
   qty: z.number().positive(),
@@ -44,19 +46,15 @@ function isValidGstin(gstin: string) {
   return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstin);
 }
 
-async function generateReturnNo() {
+async function generateReturnNo(tx: DbOrTx) {
   const today = format(new Date(), "yyyyMMdd");
   const prefix = `RET-${today}-`;
-  const [last] = await db
-    .select({ returnNo: saleReturns.returnNo })
-    .from(saleReturns)
-    .where(sql`${saleReturns.returnNo} like ${prefix + "%"}`)
-    .orderBy(desc(saleReturns.returnNo))
-    .limit(1);
-  let seq = 1;
-  if (last?.returnNo) {
-    seq = parseInt(last.returnNo.split("-").pop() ?? "0", 10) + 1;
-  }
+  const rows = (await tx.execute(sql`
+    select coalesce(max(nullif(substring(return_no from '([0-9]+)$'), '')::int), 0) + 1 as next_seq
+    from sale_returns
+    where return_no like ${prefix + "%"}
+  `)) as unknown as Array<{ next_seq: number | string }>;
+  const seq = Number(rows[0]?.next_seq ?? 1);
   return `${prefix}${String(seq).padStart(4, "0")}`;
 }
 
@@ -110,9 +108,9 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
     }))
   );
 
-  const returnNo = await generateReturnNo();
-
   const saleReturn = await db.transaction(async (tx) => {
+    const returnNo = await generateReturnNo(tx);
+
     if (data.customerId && customerGstin) {
       const { customers } = await import("@/db/schema");
       const [existingGst] = await tx
@@ -294,19 +292,15 @@ const createPurchaseReturnSchema = z.object({
   items: z.array(purchaseReturnItemSchema).min(1),
 });
 
-async function generateDebitReturnNo() {
+async function generateDebitReturnNo(tx: DbOrTx) {
   const today = format(new Date(), "yyyyMMdd");
   const prefix = `DEB-${today}-`;
-  const [last] = await db
-    .select({ returnNo: purchaseReturns.returnNo })
-    .from(purchaseReturns)
-    .where(sql`${purchaseReturns.returnNo} like ${prefix + "%"}`)
-    .orderBy(desc(purchaseReturns.returnNo))
-    .limit(1);
-  let seq = 1;
-  if (last?.returnNo) {
-    seq = parseInt(last.returnNo.split("-").pop() ?? "0", 10) + 1;
-  }
+  const rows = (await tx.execute(sql`
+    select coalesce(max(nullif(substring(return_no from '([0-9]+)$'), '')::int), 0) + 1 as next_seq
+    from purchase_returns
+    where return_no like ${prefix + "%"}
+  `)) as unknown as Array<{ next_seq: number | string }>;
+  const seq = Number(rows[0]?.next_seq ?? 1);
   return `${prefix}${String(seq).padStart(4, "0")}`;
 }
 
@@ -319,9 +313,10 @@ export async function createPurchaseReturn(input: z.infer<typeof createPurchaseR
     subtotal += item.qty * item.rate;
   }
   const grandTotal = Math.round(subtotal * 100) / 100;
-  const returnNo = await generateDebitReturnNo();
 
   const purchaseReturn = await db.transaction(async (tx) => {
+    const returnNo = await generateDebitReturnNo(tx);
+
     const [created] = await tx
       .insert(purchaseReturns)
       .values({

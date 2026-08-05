@@ -6,11 +6,10 @@ import {
   sales,
   saleItems,
   purchases,
-  purchaseItems,
   categories,
   customers,
 } from "@/db/schema";
-import { eq, sql, desc, asc, gte, lte, and, isNotNull } from "drizzle-orm";
+import { eq, sql, desc, asc, gte, lte, and, isNotNull, ilike, or } from "drizzle-orm";
 
 export async function adjustStock(
   productId: number,
@@ -68,7 +67,19 @@ export async function adjustStock(
 }
 
 export async function getStockStatus(search?: string) {
-  const query = db
+  const conditions = [eq(products.isActive, true)];
+  if (search?.trim()) {
+    const q = `%${search.trim()}%`;
+    conditions.push(
+      or(
+        ilike(products.name, q),
+        ilike(products.sku, q),
+        ilike(products.barcode, q)
+      )!
+    );
+  }
+
+  return db
     .select({
       id: products.id,
       name: products.name,
@@ -82,11 +93,9 @@ export async function getStockStatus(search?: string) {
     })
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
-    .where(eq(products.isActive, true))
+    .where(and(...conditions))
     .orderBy(asc(products.name))
     .limit(500);
-
-  return query;
 }
 
 export async function getNearExpiryProducts(days = 90) {

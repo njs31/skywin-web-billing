@@ -3,12 +3,12 @@ import {
   sales,
   saleItems,
   products,
-  stockMovements,
   customers,
 } from "@/db/schema";
 import {
   calculateGstBreakdown,
   calculateLineAmount,
+  isInterstateGst,
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { format } from "date-fns";
@@ -133,16 +133,35 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   }
   const productIds = [...productQtyMap.keys()];
 
+  const normalizedItems = data.items.map((i) => {
+    const hasExplicitValue =
+      i.discountValue > 0 || i.discountType === "value";
+    const discountValue = hasExplicitValue
+      ? i.discountValue
+      : (i.discountPercent ?? i.discountValue);
+    return { ...i, discountValue };
+  });
+
+  // Resolve customer GSTIN early for IGST vs CGST/SGST (B2B interstate).
+  let interstate = false;
+  if (data.customerId) {
+    const [cust] = await db
+      .select({ gstin: customers.gstin })
+      .from(customers)
+      .where(eq(customers.id, data.customerId))
+      .limit(1);
+    interstate = isInterstateGst(cust?.gstin, settings.stateCode);
+  }
+
   const gst = calculateGstBreakdown(
-    data.items.map((i) => ({
+    normalizedItems.map((i) => ({
       qty: i.qty,
       rate: i.rate,
       gstRate: i.gstRate,
-      discountPercent: i.discountPercent ?? 0,
       discountType: i.discountType,
       discountValue: i.discountValue,
     })),
-    { billDiscount: data.discountAmount ?? 0 }
+    { billDiscount: data.discountAmount ?? 0, interstate }
   );
 
   let cashAmount = round2(data.cashAmount ?? 0);
@@ -262,7 +281,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
           }
         }
 
-        for (const item of data.items) {
+        for (const item of normalizedItems) {
           if (!item.productId) continue;
           const effectiveHsn =
             item.hsnCode || productInfo.get(item.productId)!.hsnCode;
@@ -281,9 +300,9 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       }
 
       type Deduction = { batchId: number; batchNumber: string; qty: number };
-      const itemDeductions: Deduction[][] = data.items.map(() => []);
+      const itemDeductions: Deduction[][] = normalizedItems.map(() => []);
 
-      data.items.forEach((item, idx) => {
+      normalizedItems.forEach((item, idx) => {
         if (!item.productId) return;
         const info = productInfo.get(item.productId)!;
 
@@ -381,6 +400,9 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       }
 
       if (data.paymentMode === "credit" && finalCustomerId) {
+        // Match getCustomerOutstanding: only subtract UNALLOCATED receipts.
+        // Allocated receipts already raise sales.paid_amount — counting them
+        // again would understate outstanding and allow over-limit credit.
         const [creditRow] = (await tx.execute(sql`
           select
             c.credit_limit as credit_limit,
@@ -393,9 +415,15 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
               from sale_returns where customer_id = c.id
             ), 0) as returns_total,
             coalesce((
-              select sum(amount::numeric)
-              from party_payments where customer_id = c.id and type = 'receipt'
-            ), 0) as payments_total
+              select sum(pp.amount::numeric - coalesce(a.allocated, 0))
+              from party_payments pp
+              left join (
+                select payment_id, sum(amount::numeric) as allocated
+                from party_payment_allocations
+                group by payment_id
+              ) a on a.payment_id = pp.id
+              where pp.customer_id = c.id and pp.type = 'receipt'
+            ), 0) as unallocated_receipts
           from customers c
           where c.id = ${finalCustomerId}
         `)) as unknown as Array<Record<string, unknown>>;
@@ -405,17 +433,19 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
           const currentOutstanding =
             parseFloat(String(creditRow?.sales_total ?? "0")) -
             parseFloat(String(creditRow?.returns_total ?? "0")) -
-            parseFloat(String(creditRow?.payments_total ?? "0"));
+            parseFloat(String(creditRow?.unallocated_receipts ?? "0"));
 
-          if (currentOutstanding + gst.grandTotal > limit) {
+          // Credit sale may already include a partial paidAmount (advance).
+          const newCredit = Math.max(0, gst.grandTotal - paidAmount);
+          if (currentOutstanding + newCredit > limit) {
             throw new Error(
-              `Credit limit exceeded. Outstanding: ₹${currentOutstanding.toFixed(2)}, Limit: ₹${limit.toFixed(2)}, New invoice: ₹${gst.grandTotal.toFixed(2)}`
+              `Credit limit exceeded. Outstanding: ₹${currentOutstanding.toFixed(2)}, Limit: ₹${limit.toFixed(2)}, New credit: ₹${newCredit.toFixed(2)}`
             );
           }
         }
       }
 
-      const itemValues = data.items.map((item, idx) => {
+      const itemValues = normalizedItems.map((item, idx) => {
         const amount = calculateLineAmount(
           item.qty,
           item.rate,
@@ -433,7 +463,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       });
 
       const movementValues: ReturnType<typeof sql>[] = [];
-      data.items.forEach((item, idx) => {
+      normalizedItems.forEach((item, idx) => {
         const deductions = itemDeductions[idx];
         if (!item.productId || deductions.length === 0) return;
         const batchLabel = deductions
@@ -539,7 +569,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
           )
           update products p
           set stock_qty = agg.total,
-              expiry_date = coalesce(agg.nearest, p.expiry_date)
+              expiry_date = agg.nearest
           from (
             select
               b.product_id,

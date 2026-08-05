@@ -78,6 +78,63 @@ export async function createPartyPayment(input: z.infer<typeof paymentSchema>) {
       .returning();
 
     for (const row of allocations) {
+      // Reject over-allocation: silently capping paid_amount while recording a
+      // larger allocation amount would corrupt outstanding balances.
+      if (row.saleId) {
+        const [sale] = await tx
+          .select({
+            invoiceNo: sales.invoiceNo,
+            grandTotal: sales.grandTotal,
+            paidAmount: sales.paidAmount,
+            customerId: sales.customerId,
+          })
+          .from(sales)
+          .where(eq(sales.id, row.saleId))
+          .limit(1);
+        if (!sale) throw new Error(`Invoice #${row.saleId} not found.`);
+        if (data.customerId && sale.customerId !== data.customerId) {
+          throw new Error(
+            `Invoice ${sale.invoiceNo} does not belong to this customer.`
+          );
+        }
+        const balance = round2(
+          parseFloat(sale.grandTotal) - parseFloat(sale.paidAmount ?? "0")
+        );
+        if (row.amount - balance > 0.01) {
+          throw new Error(
+            `Allocation ₹${row.amount.toFixed(2)} exceeds balance ₹${balance.toFixed(2)} on ${sale.invoiceNo}.`
+          );
+        }
+      }
+
+      if (row.purchaseId) {
+        const [purchase] = await tx
+          .select({
+            invoiceNo: purchases.invoiceNo,
+            grandTotal: purchases.grandTotal,
+            paidAmount: purchases.paidAmount,
+            supplierId: purchases.supplierId,
+          })
+          .from(purchases)
+          .where(eq(purchases.id, row.purchaseId))
+          .limit(1);
+        if (!purchase) throw new Error(`Purchase #${row.purchaseId} not found.`);
+        if (data.supplierId && purchase.supplierId !== data.supplierId) {
+          throw new Error(
+            `Purchase ${purchase.invoiceNo ?? `#${row.purchaseId}`} does not belong to this supplier.`
+          );
+        }
+        const balance = round2(
+          parseFloat(purchase.grandTotal) -
+            parseFloat(purchase.paidAmount ?? "0")
+        );
+        if (row.amount - balance > 0.01) {
+          throw new Error(
+            `Allocation ₹${row.amount.toFixed(2)} exceeds balance ₹${balance.toFixed(2)} on ${purchase.invoiceNo ?? `purchase #${row.purchaseId}`}.`
+          );
+        }
+      }
+
       await tx.insert(partyPaymentAllocations).values({
         paymentId: created.id,
         saleId: row.saleId ?? null,

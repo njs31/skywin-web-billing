@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { products, categories, productBatches } from "@/db/schema";
 import { ilike, or, sql, asc, eq, and, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { inferGstRate, parseSkuFromName } from "@/lib/gst";
+import { parseSkuFromName } from "@/lib/gst";
 
 const CACHE_TAG = {
   products: "products",
@@ -44,6 +44,7 @@ export type ProductBatchSearchResult = {
   saleRate: string;
   wholesaleRate: string | null;
   purchaseRate: string;
+  mrp: string | null;
   productStockQty: string;
   batchId: number | null;
   batchNumber: string | null;

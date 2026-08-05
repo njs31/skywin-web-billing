@@ -103,7 +103,9 @@ export async function sendOtp(phone: string) {
     .set({ otp, otpExpiry: expiry })
     .where(eq(users.id, user.id));
 
-  console.log(`[SKYWIN AUTH] Generated OTP for ${cleanPhone}: ${otp}`);
+  if (process.env.NODE_ENV === "development") {
+    console.log(`[SKYWIN AUTH] Generated OTP for ${cleanPhone}: ${otp}`);
+  }
 
   const res = await sendWhatsAppOtp(cleanPhone, otp);
 
