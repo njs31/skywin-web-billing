@@ -248,8 +248,27 @@ export async function getSaleReturnById(id: number) {
   }
 
   const [ret] = await db
-    .select()
+    .select({
+      id: saleReturns.id,
+      returnNo: saleReturns.returnNo,
+      saleId: saleReturns.saleId,
+      customerId: saleReturns.customerId,
+      customerGstin: saleReturns.customerGstin,
+      date: saleReturns.date,
+      subtotal: saleReturns.subtotal,
+      cgst: saleReturns.cgst,
+      sgst: saleReturns.sgst,
+      grandTotal: saleReturns.grandTotal,
+      reason: saleReturns.reason,
+      createdAt: saleReturns.createdAt,
+      customerName: customers.name,
+      customerPhone: customers.phone,
+      customerAddress: customers.address,
+      saleInvoiceNo: sales.invoiceNo,
+    })
     .from(saleReturns)
+    .leftJoin(sales, eq(saleReturns.saleId, sales.id))
+    .leftJoin(customers, eq(saleReturns.customerId, customers.id))
     .where(eq(saleReturns.id, id))
     .limit(1);
   if (!ret) return null;
@@ -267,6 +286,7 @@ export async function getSaleReturnById(id: number) {
       customName: saleReturnItems.customName,
       qty: saleReturnItems.qty,
       rate: saleReturnItems.rate,
+      gstRate: saleReturnItems.gstRate,
       amount: saleReturnItems.amount,
       hsnCode: sql<string>`coalesce(${saleReturnItems.hsnCode}, ${products.hsnCode})`,
     })

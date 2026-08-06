@@ -9,6 +9,8 @@ type PrintButtonProps = {
   invoiceNo?: string;
   grandTotal?: string;
   phone?: string;
+  documentType?: string;
+  buttonText?: string;
 };
 
 export function PrintButton({
@@ -16,6 +18,8 @@ export function PrintButton({
   invoiceNo,
   grandTotal,
   phone,
+  documentType = "Invoice",
+  buttonText = "Print Invoice",
 }: PrintButtonProps) {
   useEffect(() => {
     if (autoPrint) {
@@ -26,7 +30,7 @@ export function PrintButton({
 
   const shareWhatsApp = () => {
     const text = encodeURIComponent(
-      `Invoice ${invoiceNo ?? ""} from SKYWIN AGRI SUPER MARKET. Total: ₹${grandTotal ?? ""}. Thank you!`
+      `${documentType} ${invoiceNo ?? ""} from SKYWIN AGRI SUPER MARKET. Total: ₹${grandTotal ?? ""}. Thank you!`
     );
     const url = phone
       ? `https://wa.me/91${phone.replace(/\D/g, "")}?text=${text}`
@@ -40,7 +44,7 @@ export function PrintButton({
         <MessageCircle className="mr-2 h-4 w-4" />
         WhatsApp
       </Button>
-      <Button onClick={() => window.print()}>Print Invoice</Button>
+      <Button onClick={() => window.print()}>{buttonText}</Button>
     </div>
   );
 }

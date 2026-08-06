@@ -56,6 +56,7 @@ export default function NewProductPage() {
           expiryDate: expiryDate.trim() || undefined,
           unit: "pcs",
         });
+        router.refresh();
         router.push("/products");
       } catch (err) {
         let msg = err instanceof Error ? err.message : "Failed to create product";

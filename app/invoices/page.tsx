@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Printer } from "lucide-react";
 import { getSales } from "@/lib/queries/sales";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 import { SalesReport } from "@/components/invoices/sales-report";
@@ -83,9 +84,17 @@ export default async function InvoicesPage() {
                       {formatCurrency(sale.grandTotal)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/invoices/${sale.id}`}>View</Link>
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/invoices/${sale.id}`}>View</Link>
+                        </Button>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/invoices/${sale.id}?print=1`} target="_blank">
+                            <Printer className="mr-1.5 h-3.5 w-3.5" />
+                            Print
+                          </Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                   );

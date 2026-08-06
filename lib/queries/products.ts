@@ -1,6 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
-import { products, categories, productBatches } from "@/db/schema";
+import { products, categories, productBatches, stockMovements } from "@/db/schema";
 import { ilike, or, sql, asc, eq, and, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { parseSkuFromName } from "@/lib/gst";
@@ -333,23 +333,45 @@ export async function createProduct(input: z.infer<typeof productSchema>) {
     if (!product.sku?.trim()) product.sku = barcode;
   }
 
-  if (product && data.stockQty > 0) {
-    const { addStockToBatch } = await import("@/lib/batches");
-    await addStockToBatch(db, {
-      productId: product.id,
-      batchNumber: "OPENING",
-      qty: data.stockQty,
-      purchaseRate: data.purchaseRate,
-      saleRate: data.saleRate,
-      expiryDate: data.expiryDate ?? null,
-      notes: "Opening stock",
-    });
+  if (product) {
+    const qty = data.stockQty ?? 0;
+    if (qty > 0) {
+      const { addStockToBatch } = await import("@/lib/batches");
+      const batch = await addStockToBatch(db, {
+        productId: product.id,
+        batchNumber: "OPENING",
+        qty,
+        purchaseRate: data.purchaseRate,
+        saleRate: data.saleRate,
+        expiryDate: data.expiryDate ?? null,
+        notes: "Opening stock",
+      });
+      await db.insert(stockMovements).values({
+        productId: product.id,
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        type: "adjustment",
+        qtyDelta: qty.toFixed(2),
+        notes: "Opening stock",
+      });
+      product.stockQty = qty.toFixed(2);
+    } else {
+      await db.insert(productBatches).values({
+        productId: product.id,
+        batchNumber: "OPENING",
+        qty: "0.00",
+        purchaseRate: data.purchaseRate.toFixed(2),
+        saleRate: data.saleRate.toFixed(2),
+        expiryDate: data.expiryDate ?? null,
+        notes: "Opening stock",
+      });
+    }
   }
 
-  revalidateTag("products", "max");
-  revalidatePath("/products");
-  revalidatePath("/stock");
-  revalidatePath("/pos");
+  await revalidateTag("products", "max");
+  await revalidatePath("/products");
+  await revalidatePath("/stock");
+  await revalidatePath("/pos");
   return product;
 }
 

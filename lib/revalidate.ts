@@ -1,5 +1,7 @@
 /** Safe wrappers so scripts/tests outside a Next request don't crash. */
-export async function safeRevalidateTag(...args: Parameters<typeof import("next/cache").revalidateTag>) {
+export async function safeRevalidateTag(
+  ...args: Parameters<typeof import("next/cache").revalidateTag>
+) {
   try {
     const { revalidateTag } = await import("next/cache");
     revalidateTag(...args);

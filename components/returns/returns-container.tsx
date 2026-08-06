@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { ReturnForm } from "./return-form";
 import { PurchaseReturnForm } from "./purchase-return-form";
+import { Printer } from "lucide-react";
 import Link from "next/link";
 
 type ReturnsContainerProps = {
@@ -124,9 +125,17 @@ export function ReturnsContainer({
                           {formatCurrency(r.grandTotal)}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button asChild variant="outline" size="sm">
-                            <Link href={`/returns/${r.id}`}>Show</Link>
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button asChild variant="outline" size="sm">
+                              <Link href={`/returns/${r.id}`}>View</Link>
+                            </Button>
+                            <Button asChild variant="outline" size="sm">
+                              <Link href={`/returns/${r.id}?print=1`} target="_blank">
+                                <Printer className="mr-1.5 h-3.5 w-3.5" />
+                                Print Credit Note
+                              </Link>
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
