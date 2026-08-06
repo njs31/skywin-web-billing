@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { Pencil, Trash2, Check, X } from "lucide-react";
 import { isInventoryPinRequired, verifyInventoryAdminPin } from "@/lib/actions/billing";
 
 function formatExpiry(value: string | null | undefined) {
@@ -129,19 +130,19 @@ export function ProductTable({ products }: { products: Product[] }) {
   };
 
   return (
-    <Table>
+    <Table className="text-xs">
       <TableHeader>
-        <TableRow>
-          <TableHead>Product</TableHead>
-          <TableHead>SKU</TableHead>
-          <TableHead>HSN Code</TableHead>
-          <TableHead>Expiry Date</TableHead>
-          <TableHead className="text-right">Stock</TableHead>
-          <TableHead className="text-right">Purchase Rate</TableHead>
-          <TableHead className="text-right">Sale Rate</TableHead>
-          <TableHead className="text-right">MRP</TableHead>
-          <TableHead className="text-right">GST %</TableHead>
-          <TableHead></TableHead>
+        <TableRow className="bg-slate-50/80">
+          <TableHead className="py-2.5 px-3">Product</TableHead>
+          <TableHead className="py-2.5 px-2">SKU</TableHead>
+          <TableHead className="py-2.5 px-2">HSN</TableHead>
+          <TableHead className="py-2.5 px-2">Expiry</TableHead>
+          <TableHead className="py-2.5 px-2 text-right">Stock</TableHead>
+          <TableHead className="py-2.5 px-2 text-right">Pur. Rate</TableHead>
+          <TableHead className="py-2.5 px-2 text-right">Sale Rate</TableHead>
+          <TableHead className="py-2.5 px-2 text-right">MRP</TableHead>
+          <TableHead className="py-2.5 px-2 text-right">GST %</TableHead>
+          <TableHead className="py-2.5 px-2 text-right w-20">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -152,32 +153,32 @@ export function ProductTable({ products }: { products: Product[] }) {
             <TableRow
               key={product.id}
               className={
-                toNumber(product.stockQty) < 10 ? "bg-amber-50" : undefined
+                toNumber(product.stockQty) < 10 ? "bg-amber-50/60" : undefined
               }
             >
-              <TableCell className="max-w-xs font-medium">
+              <TableCell className="max-w-[200px] font-medium truncate py-2 px-3">
                 {product.name}
               </TableCell>
-              <TableCell className="text-slate-500">
+              <TableCell className="text-slate-500 py-2 px-2 whitespace-nowrap">
                 {product.sku ?? "-"}
               </TableCell>
-              <TableCell className="text-slate-700 font-mono text-sm">
+              <TableCell className="text-slate-700 font-mono text-xs py-2 px-2 whitespace-nowrap">
                 {editingId === product.id ? (
                   <Input
-                    className="w-24 h-8"
+                    className="w-20 h-7 text-xs px-1.5"
                     value={hsnCode}
                     onChange={(e) => setHsnCode(e.target.value)}
                     placeholder="HSN..."
                   />
                 ) : (
-                  product.hsnCode || <span className="text-red-500 font-bold">Missing!</span>
+                  product.hsnCode || <span className="text-red-500 font-semibold">Missing!</span>
                 )}
               </TableCell>
-              <TableCell>
+              <TableCell className="py-2 px-2 whitespace-nowrap">
                 {editingId === product.id ? (
                   <Input
                     type="date"
-                    className="h-8 w-36"
+                    className="h-7 w-32 text-xs px-1.5"
                     value={expiryDate}
                     onChange={(e) => setExpiryDate(e.target.value)}
                   />
@@ -192,23 +193,23 @@ export function ProductTable({ products }: { products: Product[] }) {
                     }
                   >
                     {formatExpiry(product.expiryDate)}
-                    {expired ? " (Expired)" : nearExpiry ? " (Near)" : ""}
+                    {expired ? " (Exp)" : nearExpiry ? " (Near)" : ""}
                   </span>
                 ) : (
                   <span className="text-slate-400">-</span>
                 )}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right py-2 px-2 whitespace-nowrap font-medium">
                 {toNumber(product.stockQty)}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right py-2 px-2 whitespace-nowrap text-slate-600">
                 {formatCurrency(product.purchaseRate)}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right py-2 px-2 whitespace-nowrap">
                 {editingId === product.id ? (
                   <Input
                     type="number"
-                    className="ml-auto w-24"
+                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
                     value={saleRate}
                     onChange={(e) => setSaleRate(e.target.value)}
                   />
@@ -216,11 +217,11 @@ export function ProductTable({ products }: { products: Product[] }) {
                   formatCurrency(product.saleRate)
                 )}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right py-2 px-2 whitespace-nowrap">
                 {editingId === product.id ? (
                   <Input
                     type="number"
-                    className="ml-auto w-24"
+                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
                     value={mrp}
                     onChange={(e) => setMrp(e.target.value)}
                     placeholder="MRP"
@@ -231,11 +232,11 @@ export function ProductTable({ products }: { products: Product[] }) {
                   "-"
                 )}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right py-2 px-2 whitespace-nowrap">
                 {editingId === product.id ? (
                   <Input
                     type="number"
-                    className="ml-auto w-16"
+                    className="ml-auto w-14 h-7 text-xs px-1.5 text-right"
                     value={gstRate}
                     onChange={(e) => setGstRate(e.target.value)}
                   />
@@ -245,27 +246,48 @@ export function ProductTable({ products }: { products: Product[] }) {
                   `${toNumber(product.gstRate)}%`
                 )}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right py-2 px-2 whitespace-nowrap">
                 {editingId === product.id ? (
-                  <Button size="sm" disabled={isPending} onClick={() => save(product.id)}>
-                    Save
-                  </Button>
-                ) : (
-                  <div className="flex justify-end gap-2">
+                  <div className="flex justify-end gap-1">
                     <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => startEdit(product)}
+                      size="icon"
+                      className="h-7 w-7 bg-emerald-600 hover:bg-emerald-700 text-white"
+                      disabled={isPending}
+                      onClick={() => save(product.id)}
+                      title="Save changes"
                     >
-                      Edit
+                      <Check className="h-3.5 w-3.5" />
                     </Button>
                     <Button
-                      size="sm"
-                      variant="destructive"
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-slate-500 hover:bg-slate-100"
+                      onClick={() => setEditingId(null)}
+                      title="Cancel"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                      onClick={() => startEdit(product)}
+                      title="Edit product"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
                       disabled={isPending}
                       onClick={() => handleDelete(product)}
+                      title="Delete product"
                     >
-                      Delete
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 )}
