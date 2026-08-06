@@ -21,6 +21,9 @@ export const DEFAULT_SETTINGS = {
   wholesaleMarkup: "5",
   inventoryAdminPinRequired: "false",
   inventoryAdminPin: "1234",
+  qwicksApiKey: "skywin_qwicks_api_key_7596",
+  qwicksMerchantId: "skywin",
+  qwicksHost: "qwicks.app",
 } as const;
 
 export type AppSettings = Record<keyof typeof DEFAULT_SETTINGS, string>;

@@ -34,6 +34,9 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             allowNegativeStock: "false",
             inventoryAdminPinRequired: fd.get("inventoryAdminPinRequired") as string,
             inventoryAdminPin: fd.get("inventoryAdminPin") as string,
+            qwicksMerchantId: fd.get("qwicksMerchantId") as string,
+            qwicksApiKey: fd.get("qwicksApiKey") as string,
+            qwicksHost: fd.get("qwicksHost") as string,
           },
           fd.get("currentPin") as string || undefined,
         );
@@ -102,6 +105,34 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
               </select>
             </div>
           </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 border-t pt-4">
+            <div className="sm:col-span-2">
+              <h3 className="font-semibold text-base text-slate-900">QwicksApp Integration API</h3>
+              <p className="text-xs text-slate-500">
+                Configure QwicksApp API credentials and merchant endpoints for real-time inventory pulls, checkout stock validation, and order webhooks.
+              </p>
+            </div>
+            <div>
+              <Label>QwicksApp Merchant ID</Label>
+              <Input name="qwicksMerchantId" defaultValue={settings.qwicksMerchantId} placeholder="skywin" />
+            </div>
+            <div>
+              <Label>QwicksApp API Key (x-api-key)</Label>
+              <Input name="qwicksApiKey" defaultValue={settings.qwicksApiKey} placeholder="skywin_qwicks_api_key_7596" />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>QwicksApp Host Environment</Label>
+              <Input name="qwicksHost" defaultValue={settings.qwicksHost} placeholder="qwicks.app" />
+            </div>
+            <div className="sm:col-span-2 bg-slate-50 p-3 rounded-lg border text-xs text-slate-600 space-y-1">
+              <p className="font-semibold text-slate-800">Integration Endpoints Hosted for QwicksApp Team:</p>
+              <p>• <strong>Live Inventory Pull:</strong> <code className="bg-slate-200 px-1 rounded">GET /api/qwicks/inventory</code> or <code className="bg-slate-200 px-1 rounded">GET /api/updateInventory/{settings.qwicksMerchantId || "skywin"}</code></p>
+              <p>• <strong>Stock Check at Checkout:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/stock-check</code></p>
+              <p>• <strong>Order Ingestion Webhook:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/order-placed</code></p>
+            </div>
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2 border-t pt-4">
             <div>
               <Label>Require PIN for Inventory alterations</Label>
