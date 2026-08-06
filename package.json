@@ -17,6 +17,7 @@
     "db:import-inventory": "tsx --env-file=.env.local scripts/import-inventory-report.ts",
     "db:import-master": "tsx --env-file=.env.local scripts/import-master-file.ts",
     "db:import-master:prod": "tsx --env-file=.env.production scripts/import-master-file.ts",
+    "db:import-suppliers": "tsx --env-file=.env.local scripts/import-suppliers-from-tally.ts",
     "db:fix-gst-exempt": "tsx --env-file=.env.local scripts/fix-gst-exempt.ts",
     "db:assign-skus": "tsx --env-file=.env.local scripts/assign-skus.ts",
     "db:assign-expiry": "tsx --env-file=.env.local scripts/assign-expiry.ts",

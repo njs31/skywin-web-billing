@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
-import { suppliers } from "@/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { partyPayments, purchaseReturns, purchases, suppliers } from "@/db/schema";
+import { asc, count, eq } from "drizzle-orm";
 import { z } from "zod";
 
 export const getSuppliers = unstable_cache(
@@ -32,15 +32,8 @@ const createSupplierSchema = z.object({
 
 export type CreateSupplierInput = z.infer<typeof createSupplierSchema>;
 
-export async function createSupplier(input: CreateSupplierInput | string, contact?: string) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
-
-  // Back-compat: older callers passed (name, contact)
-  const parsed =
-    typeof input === "string"
-      ? createSupplierSchema.parse({ name: input, phone: contact })
-      : createSupplierSchema.parse(input);
-
+function normalizeSupplierFields(input: CreateSupplierInput) {
+  const parsed = createSupplierSchema.parse(input);
   const gstin = parsed.gstin?.toUpperCase() || null;
   const pan = parsed.pan?.toUpperCase() || null;
   const phone = parsed.phone?.replace(/\D/g, "") || null;
@@ -58,25 +51,39 @@ export async function createSupplier(input: CreateSupplierInput | string, contac
     throw new Error("PIN code must be 6 digits");
   }
 
-  try {
-    const [supplier] = await db
-      .insert(suppliers)
-      .values({
-        name: parsed.name,
-        gstin,
-        pan,
-        address: parsed.address || null,
-        city: parsed.city || null,
-        state: parsed.state || null,
-        pinCode: parsed.pinCode || null,
-        phone,
-        contact: phone,
-      })
-      .returning();
+  return {
+    name: parsed.name,
+    gstin,
+    pan,
+    address: parsed.address || null,
+    city: parsed.city || null,
+    state: parsed.state || null,
+    pinCode: parsed.pinCode || null,
+    phone,
+    contact: phone,
+  };
+}
 
-    revalidateTag("suppliers", "max");
-    revalidatePath("/suppliers");
-    revalidatePath("/purchases/new");
+async function revalidateSupplierPaths(id?: number) {
+  const { revalidatePath, revalidateTag } = await import("next/cache");
+  revalidateTag("suppliers", "max");
+  revalidatePath("/suppliers");
+  revalidatePath("/purchases/new");
+  revalidatePath("/purchases");
+  if (id) revalidatePath(`/suppliers/${id}`);
+}
+
+export async function createSupplier(input: CreateSupplierInput | string, contact?: string) {
+  const parsed =
+    typeof input === "string"
+      ? createSupplierSchema.parse({ name: input, phone: contact })
+      : createSupplierSchema.parse(input);
+
+  const values = normalizeSupplierFields(parsed);
+
+  try {
+    const [supplier] = await db.insert(suppliers).values(values).returning();
+    await revalidateSupplierPaths(supplier.id);
     return supplier;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -85,4 +92,66 @@ export async function createSupplier(input: CreateSupplierInput | string, contac
     }
     throw err;
   }
+}
+
+export async function updateSupplier(id: number, input: CreateSupplierInput) {
+  const values = normalizeSupplierFields(input);
+
+  try {
+    const [supplier] = await db
+      .update(suppliers)
+      .set(values)
+      .where(eq(suppliers.id, id))
+      .returning();
+
+    if (!supplier) throw new Error("Supplier not found");
+    await revalidateSupplierPaths(id);
+    return supplier;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("unique") || message.includes("duplicate")) {
+      throw new Error("A supplier with this name already exists");
+    }
+    throw err;
+  }
+}
+
+export async function deleteSupplier(id: number) {
+  const [purchaseCount] = await db
+    .select({ c: count() })
+    .from(purchases)
+    .where(eq(purchases.supplierId, id));
+  if (purchaseCount.c > 0) {
+    throw new Error(
+      "Cannot delete this supplier — purchases are linked. Edit details instead."
+    );
+  }
+
+  const [returnCount] = await db
+    .select({ c: count() })
+    .from(purchaseReturns)
+    .where(eq(purchaseReturns.supplierId, id));
+  if (returnCount.c > 0) {
+    throw new Error(
+      "Cannot delete this supplier — purchase returns are linked. Edit details instead."
+    );
+  }
+
+  const [paymentCount] = await db
+    .select({ c: count() })
+    .from(partyPayments)
+    .where(eq(partyPayments.supplierId, id));
+  if (paymentCount.c > 0) {
+    throw new Error(
+      "Cannot delete this supplier — payments are linked. Edit details instead."
+    );
+  }
+
+  const [deleted] = await db
+    .delete(suppliers)
+    .where(eq(suppliers.id, id))
+    .returning({ id: suppliers.id });
+
+  if (!deleted) throw new Error("Supplier not found");
+  await revalidateSupplierPaths(id);
 }

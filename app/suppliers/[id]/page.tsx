@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SupplierRowActions } from "@/components/suppliers/supplier-row-actions";
 
 export default async function SupplierDetailPage({
   params,
@@ -36,14 +37,15 @@ export default async function SupplierDetailPage({
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">{supplier.name}</h1>
           <p className="text-sm text-slate-500">
             Total purchased: {formatCurrency(supplier.totalPurchased)}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <SupplierRowActions supplier={supplier} showView={false} />
           <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
             <Link href="/purchases/new">New Purchase</Link>
           </Button>
