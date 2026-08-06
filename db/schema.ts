@@ -56,7 +56,11 @@ export const suppliers = pgTable("suppliers", {
   contact: text("contact"),
   phone: text("phone"),
   gstin: text("gstin"),
+  pan: text("pan"),
   address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  pinCode: text("pin_code"),
   totalPurchased: numeric("total_purchased", { precision: 14, scale: 2 })
     .default("0")
     .notNull(),

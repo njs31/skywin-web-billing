@@ -1,7 +1,10 @@
 "use server";
 
-import { createSupplier as createSupplierMutation } from "@/lib/queries/suppliers";
+import {
+  createSupplier as createSupplierMutation,
+  type CreateSupplierInput,
+} from "@/lib/queries/suppliers";
 
-export async function createSupplier(name: string, contact?: string) {
-  return createSupplierMutation(name, contact);
+export async function createSupplier(input: CreateSupplierInput) {
+  return createSupplierMutation(input);
 }

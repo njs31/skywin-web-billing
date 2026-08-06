@@ -25,20 +25,65 @@ export default async function SupplierDetailPage({
   if (!supplier) notFound();
 
   const purchases = await getPurchasesBySupplier(supplierId);
+  const fullAddress = [
+    supplier.address,
+    supplier.city,
+    supplier.state,
+    supplier.pinCode,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">{supplier.name}</h1>
           <p className="text-sm text-slate-500">
             Total purchased: {formatCurrency(supplier.totalPurchased)}
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/suppliers">Back</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
+            <Link href="/purchases/new">New Purchase</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/suppliers">Back</Link>
+          </Button>
+        </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Supplier Details</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 text-sm">
+          <div>
+            <p className="text-xs text-slate-500">GST</p>
+            <p className="font-mono font-medium">{supplier.gstin || "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">PAN</p>
+            <p className="font-mono font-medium">{supplier.pan || "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">Mobile</p>
+            <p className="font-medium">{supplier.phone || "—"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">City / State / PIN</p>
+            <p className="font-medium">
+              {[supplier.city, supplier.state, supplier.pinCode]
+                .filter(Boolean)
+                .join(", ") || "—"}
+            </p>
+          </div>
+          <div className="sm:col-span-2">
+            <p className="text-xs text-slate-500">Address</p>
+            <p className="font-medium">{fullAddress || "—"}</p>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
