@@ -3,12 +3,21 @@ services:
     image: postgres:16-alpine
     container_name: skywin-postgres
     restart: unless-stopped
+    command: >
+      postgres
+      -c wal_level=replica
+      -c archive_mode=on
+      -c archive_command='test ! -f /var/lib/postgresql/wal_archive/%f && cp %p /var/lib/postgresql/wal_archive/%f'
+      -c archive_timeout=300
+      -c max_wal_senders=5
     environment:
       POSTGRES_USER: skywin
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skywin}
       POSTGRES_DB: skywin_bill
     volumes:
       - skywin_pg_data:/var/lib/postgresql/data
+      - /var/skywin-pitr/wal_archive:/var/lib/postgresql/wal_archive
+      - /var/skywin-pitr/base_backups:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U skywin -d skywin_bill"]
       interval: 5s
