@@ -156,6 +156,7 @@ export const getProducts = unstable_cache(
     return db
       .select()
       .from(products)
+      .where(eq(products.isActive, true))
       .orderBy(asc(products.name))
       .limit(pageSize)
       .offset(offset);
@@ -168,7 +169,8 @@ export const getProductCount = unstable_cache(
   async () => {
     const [result] = await db
       .select({ count: sql<number>`count(*)::int` })
-      .from(products);
+      .from(products)
+      .where(eq(products.isActive, true));
     return result?.count ?? 0;
   },
   ["products-count"],
@@ -179,7 +181,7 @@ export async function getProductById(id: number) {
   const [product] = await db
     .select()
     .from(products)
-    .where(eq(products.id, id))
+    .where(and(eq(products.id, id), eq(products.isActive, true)))
     .limit(1);
   return product ?? null;
 }
@@ -189,7 +191,12 @@ export const getLowStockProducts = unstable_cache(
     return db
       .select()
       .from(products)
-      .where(sql`${products.stockQty}::numeric < ${threshold}`)
+      .where(
+        and(
+          eq(products.isActive, true),
+          sql`${products.stockQty}::numeric < ${threshold}`
+        )
+      )
       .orderBy(asc(products.stockQty))
       .limit(20);
   },
@@ -204,12 +211,26 @@ export const getProductStats = unstable_cache(
         total: sql<number>`count(*)::int`,
         lowStock: sql<number>`count(*) filter (where ${products.stockQty}::numeric < 10)::int`,
       })
-      .from(products);
+      .from(products)
+      .where(eq(products.isActive, true));
     return result;
   },
   ["product-stats"],
   { revalidate: 60, tags: [CACHE_TAG.products] }
 );
+
+export async function deleteProduct(id: number) {
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
+  await db
+    .update(products)
+    .set({ isActive: false })
+    .where(eq(products.id, id));
+
+  await revalidateTag("products", "max");
+  await revalidatePath("/products");
+  await revalidatePath("/stock");
+  await revalidatePath("/pos");
+}
 
 export { CACHE_TAG as PRODUCT_CACHE_TAG };
 

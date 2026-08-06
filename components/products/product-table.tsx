@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateProduct } from "@/lib/actions/products";
+import { updateProduct, deleteProduct } from "@/lib/actions/products";
+import { useRouter } from "next/navigation";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Product } from "@/db/schema";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ function isExpired(value: string | null | undefined) {
 }
 
 export function ProductTable({ products }: { products: Product[] }) {
+  const router = useRouter();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saleRate, setSaleRate] = useState("");
   const [mrp, setMrp] = useState("");
@@ -92,6 +94,36 @@ export function ProductTable({ products }: { products: Product[] }) {
         setEditingId(null);
       } catch (err) {
         alert(err instanceof Error ? err.message : "Failed to update product");
+      }
+    });
+  };
+
+  const handleDelete = (product: Product) => {
+    startTransition(async () => {
+      try {
+        const pinRequired = await isInventoryPinRequired();
+        if (pinRequired) {
+          const pin = window.prompt(
+            `Enter Supervisor/Admin PIN to delete product "${product.name}":`
+          );
+          if (pin === null) return;
+          const valid = await verifyInventoryAdminPin(pin);
+          if (!valid) {
+            alert("Incorrect PIN. Access denied.");
+            return;
+          }
+        } else {
+          if (
+            !confirm(`Are you sure you want to delete product "${product.name}"?`)
+          ) {
+            return;
+          }
+        }
+
+        await deleteProduct(product.id);
+        router.refresh();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Failed to delete product");
       }
     });
   };
@@ -219,13 +251,23 @@ export function ProductTable({ products }: { products: Product[] }) {
                     Save
                   </Button>
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => startEdit(product)}
-                  >
-                    Edit
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => startEdit(product)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={isPending}
+                      onClick={() => handleDelete(product)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 )}
               </TableCell>
             </TableRow>

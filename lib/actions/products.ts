@@ -4,6 +4,7 @@ import {
   searchProducts as searchProductsQuery,
   searchProductBatches as searchProductBatchesQuery,
   updateProduct as updateProductQuery,
+  deleteProduct as deleteProductQuery,
   getAllProductsForExport,
 } from "@/lib/queries/products";
 import { getProductByScanCode as getProductByScanCodeQuery } from "@/lib/queries/stock-import";
@@ -44,6 +45,10 @@ export async function updateProduct(
   }
 ) {
   return updateProductQuery(id, data);
+}
+
+export async function deleteProduct(id: number) {
+  return deleteProductQuery(id);
 }
 
 export async function importStockFromExcel(rows: StockImportRow[]) {
