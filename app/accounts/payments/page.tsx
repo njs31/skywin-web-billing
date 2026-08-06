@@ -1,5 +1,5 @@
 import { getSupplierPayments } from "@/lib/queries/payments";
-import { getSuppliers } from "@/lib/queries/suppliers";
+import { getAllSuppliers } from "@/lib/queries/suppliers";
 import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -15,7 +15,7 @@ import { PaymentForm } from "@/components/accounts/payment-form";
 export default async function PaymentsPage() {
   const [payments, suppliers] = await Promise.all([
     getSupplierPayments(),
-    getSuppliers(),
+    getAllSuppliers(),
   ]);
 
   return (

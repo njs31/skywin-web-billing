@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { Supplier } from "@/db/schema";
 import { formatCurrency } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { InlineLoader } from "@/components/ui/page-loader";
 import {
   Table,
   TableBody,
@@ -14,30 +16,46 @@ import {
 } from "@/components/ui/table";
 import { SupplierRowActions } from "@/components/suppliers/supplier-row-actions";
 
-export function SupplierList({ suppliers }: { suppliers: Supplier[] }) {
-  const [query, setQuery] = useState("");
+export function SupplierList({
+  suppliers,
+  totalCount,
+  currentPage,
+  pageSize,
+  defaultQuery = "",
+}: {
+  suppliers: Supplier[];
+  totalCount: number;
+  currentPage: number;
+  pageSize: number;
+  defaultQuery?: string;
+}) {
+  const router = useRouter();
+  const [query, setQuery] = useState(defaultQuery);
+  const [isPending, startTransition] = useTransition();
+  const skipFirst = useRef(true);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return suppliers;
-    return suppliers.filter((s) => {
-      const haystack = [
-        s.name,
-        s.phone,
-        s.gstin,
-        s.pan,
-        s.city,
-        s.state,
-        s.pinCode,
-        s.address,
-        s.contact,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [suppliers, query]);
+  useEffect(() => {
+    setQuery(defaultQuery);
+  }, [defaultQuery]);
+
+  useEffect(() => {
+    if (skipFirst.current) {
+      skipFirst.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (query.trim()) params.set("q", query.trim());
+      const next = `/suppliers?${params.toString()}`;
+      startTransition(() => {
+        router.replace(next);
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, router]);
+
+  const startIndex = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIndex = Math.min(currentPage * pageSize, totalCount);
 
   return (
     <div>
@@ -48,19 +66,22 @@ export function SupplierList({ suppliers }: { suppliers: Supplier[] }) {
           placeholder="Search by name, GST, mobile, city…"
           aria-label="Search suppliers"
         />
-        <p className="mt-2 text-xs text-slate-500">
-          Showing {filtered.length} of {suppliers.length} suppliers
-          {query.trim() ? ` for “${query.trim()}”` : ""}
-        </p>
+        <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+          <span>
+            {totalCount === 0
+              ? "0 suppliers found"
+              : `Showing ${startIndex}–${endIndex} of ${totalCount} suppliers`}
+            {query.trim() ? ` for “${query.trim()}”` : ""}
+          </span>
+          {isPending && <InlineLoader label="Searching suppliers…" />}
+        </div>
       </div>
 
       {suppliers.length === 0 ? (
         <p className="px-6 py-6 text-sm text-slate-400">
-          No suppliers yet. Add one to use in Purchase Entry.
-        </p>
-      ) : filtered.length === 0 ? (
-        <p className="px-6 py-6 text-sm text-slate-400">
-          No suppliers match your search.
+          {query.trim()
+            ? "No suppliers match your search."
+            : "No suppliers yet. Add one to use in Purchase Entry."}
         </p>
       ) : (
         <Table>
@@ -75,7 +96,7 @@ export function SupplierList({ suppliers }: { suppliers: Supplier[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((supplier) => (
+            {suppliers.map((supplier) => (
               <TableRow key={supplier.id}>
                 <TableCell className="font-medium">{supplier.name}</TableCell>
                 <TableCell className="font-mono text-xs">

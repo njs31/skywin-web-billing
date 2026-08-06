@@ -1,6 +1,6 @@
 import { getSaleReturns, getPurchaseReturns } from "@/lib/queries/returns";
 import { getCustomers } from "@/lib/queries/customers";
-import { getSuppliers } from "@/lib/queries/suppliers";
+import { getAllSuppliers } from "@/lib/queries/suppliers";
 import { ReturnsContainer } from "@/components/returns/returns-container";
 
 export default async function ReturnsPage() {
@@ -8,7 +8,7 @@ export default async function ReturnsPage() {
     getSaleReturns(),
     getPurchaseReturns(),
     getCustomers(),
-    getSuppliers(),
+    getAllSuppliers(),
   ]);
 
   return (

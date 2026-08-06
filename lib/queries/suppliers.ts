@@ -1,12 +1,74 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import { partyPayments, purchaseReturns, purchases, suppliers } from "@/db/schema";
-import { asc, count, eq } from "drizzle-orm";
+import { asc, count, eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 
-export const getSuppliers = unstable_cache(
+export const getAllSuppliers = unstable_cache(
   async () => db.select().from(suppliers).orderBy(asc(suppliers.name)),
+  ["suppliers-all"],
+  { revalidate: 120, tags: ["suppliers"] }
+);
+
+export const getSuppliers = unstable_cache(
+  async (search?: string, page = 1, pageSize = 20) => {
+    const q = search?.trim();
+    const offset = (page - 1) * pageSize;
+
+    if (q) {
+      const pattern = `%${q}%`;
+      return db
+        .select()
+        .from(suppliers)
+        .where(
+          or(
+            ilike(suppliers.name, pattern),
+            ilike(suppliers.phone, pattern),
+            ilike(suppliers.gstin, pattern),
+            ilike(suppliers.city, pattern)
+          )
+        )
+        .orderBy(asc(suppliers.name))
+        .limit(pageSize)
+        .offset(offset);
+    }
+
+    return db
+      .select()
+      .from(suppliers)
+      .orderBy(asc(suppliers.name))
+      .limit(pageSize)
+      .offset(offset);
+  },
   ["suppliers-list"],
+  { revalidate: 120, tags: ["suppliers"] }
+);
+
+export const getSupplierCount = unstable_cache(
+  async (search?: string) => {
+    const q = search?.trim();
+    if (q) {
+      const pattern = `%${q}%`;
+      const [result] = await db
+        .select({ count: count() })
+        .from(suppliers)
+        .where(
+          or(
+            ilike(suppliers.name, pattern),
+            ilike(suppliers.phone, pattern),
+            ilike(suppliers.gstin, pattern),
+            ilike(suppliers.city, pattern)
+          )
+        );
+      return result?.count ?? 0;
+    }
+
+    const [result] = await db
+      .select({ count: count() })
+      .from(suppliers);
+    return result?.count ?? 0;
+  },
+  ["suppliers-count"],
   { revalidate: 120, tags: ["suppliers"] }
 );
 
