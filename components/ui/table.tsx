@@ -22,6 +22,18 @@ function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
   );
 }
 
+function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
+  return (
+    <tfoot
+      className={cn(
+        "border-t bg-slate-50 font-semibold [&>tr]:hover:bg-slate-50",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
 function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   return (
     <tr
@@ -52,4 +64,12 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
   );
 }
 
-export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell };
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableRow,
+  TableHead,
+  TableCell,
+};

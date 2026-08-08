@@ -42,6 +42,7 @@ export async function updateProduct(
     hsnCode?: string;
     expiryDate?: string | null;
     mrp?: number | null;
+    discountPercent?: number;
   }
 ) {
   return updateProductQuery(id, data);

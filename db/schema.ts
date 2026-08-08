@@ -102,6 +102,9 @@ export const products = pgTable(
     saleRate: numeric("sale_rate", { precision: 14, scale: 2 }).notNull(),
     wholesaleRate: numeric("wholesale_rate", { precision: 14, scale: 2 }),
     mrp: numeric("mrp", { precision: 14, scale: 2 }),
+    discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
+      .default("0")
+      .notNull(),
     stockQty: numeric("stock_qty", { precision: 14, scale: 2 })
       .default("0")
       .notNull(),

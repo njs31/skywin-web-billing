@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Search, Trash2, X } from "lucide-react";
 import { searchProductBatches } from "@/lib/actions/products";
 import { createSaleReturn } from "@/lib/actions/billing";
+import { searchSalesForReturn } from "@/lib/actions/sales";
 import { calculateLineAmount } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
+import type { SaleInvoiceOption } from "@/lib/queries/sales";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +36,12 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [invoiceQuery, setInvoiceQuery] = useState("");
+  const [invoiceResults, setInvoiceResults] = useState<SaleInvoiceOption[]>([]);
+  const [selectedInvoice, setSelectedInvoice] = useState<SaleInvoiceOption | null>(
+    null
+  );
+  const [isInvoiceDropdownOpen, setIsInvoiceDropdownOpen] = useState(false);
 
   const selectedCustomer = useMemo(
     () =>
@@ -64,6 +72,24 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
     setIsCustomerDropdownOpen(false);
   };
 
+  const clearInvoice = () => {
+    setSelectedInvoice(null);
+    setInvoiceQuery("");
+    setInvoiceResults([]);
+    setIsInvoiceDropdownOpen(false);
+  };
+
+  const pickInvoice = (inv: SaleInvoiceOption) => {
+    setSelectedInvoice(inv);
+    setInvoiceQuery(inv.invoiceNo);
+    setIsInvoiceDropdownOpen(false);
+    if (inv.customerId) {
+      setCustomerId(String(inv.customerId));
+      setCustomerSearch(inv.customerName);
+      setIsCustomerDropdownOpen(false);
+    }
+  };
+
   useEffect(() => {
     const t = setTimeout(async () => {
       if (query.trim())
@@ -72,6 +98,19 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
     }, 200);
     return () => clearTimeout(t);
   }, [query]);
+
+  useEffect(() => {
+    if (selectedInvoice) return;
+    const t = setTimeout(async () => {
+      const rows = await searchSalesForReturn(invoiceQuery, {
+        customerId:
+          customerId !== "none" ? parseInt(customerId, 10) : undefined,
+        limit: 15,
+      });
+      setInvoiceResults(rows);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [invoiceQuery, customerId, selectedInvoice]);
 
   useEffect(() => {
     if (selectedCustomer) {
@@ -143,6 +182,7 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
     startTransition(async () => {
       try {
         await createSaleReturn({
+          saleId: selectedInvoice?.id,
           customerId:
             customerId !== "none" ? parseInt(customerId, 10) : undefined,
           customerGstin: customerGstin.trim()
@@ -161,6 +201,7 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
         setCustomerId("none");
         setCustomerSearch("");
         setCustomerGstin("");
+        clearInvoice();
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to save return.");
@@ -170,6 +211,77 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
 
   return (
     <div className="space-y-4">
+      <div>
+        <Label>Against Invoice (original bill)</Label>
+        <div className="relative mt-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <Input
+            className="pl-9 pr-9"
+            placeholder="Search invoice no. or customer..."
+            value={
+              selectedInvoice && !isInvoiceDropdownOpen
+                ? `${selectedInvoice.invoiceNo} — ${selectedInvoice.customerName}`
+                : invoiceQuery
+            }
+            onChange={(e) => {
+              setInvoiceQuery(e.target.value);
+              setSelectedInvoice(null);
+              setIsInvoiceDropdownOpen(true);
+            }}
+            onFocus={() => {
+              setIsInvoiceDropdownOpen(true);
+              if (selectedInvoice) {
+                setInvoiceQuery(selectedInvoice.invoiceNo);
+              }
+            }}
+          />
+          {(selectedInvoice || invoiceQuery) && (
+            <button
+              type="button"
+              className="absolute right-2 top-2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              onClick={clearInvoice}
+              title="Clear invoice"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+          {isInvoiceDropdownOpen && (
+            <div className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white p-1.5 shadow-lg">
+              {invoiceResults.length === 0 ? (
+                <p className="px-2 py-2 text-xs text-slate-400">
+                  No invoices found
+                </p>
+              ) : (
+                invoiceResults.map((inv) => (
+                  <button
+                    key={inv.id}
+                    type="button"
+                    onClick={() => pickInvoice(inv)}
+                    className="flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left text-sm hover:bg-emerald-50"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-slate-800">
+                        {inv.invoiceNo}
+                      </span>
+                      <span className="block truncate text-[11px] text-slate-500">
+                        {inv.customerName} · {inv.billType} ·{" "}
+                        {new Date(inv.date).toLocaleDateString("en-IN")}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-semibold text-slate-700">
+                      {formatCurrency(inv.grandTotal)}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Select the original bill so the credit note print shows “Against Invoice No”
+        </p>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label>Customer</Label>

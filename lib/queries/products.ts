@@ -45,6 +45,7 @@ export type ProductBatchSearchResult = {
   wholesaleRate: string | null;
   purchaseRate: string;
   mrp: string | null;
+  discountPercent: string;
   productStockQty: string;
   batchId: number | null;
   batchNumber: string | null;
@@ -94,6 +95,7 @@ export async function searchProductBatches(
       wholesaleRate: products.wholesaleRate,
       purchaseRate: products.purchaseRate,
       mrp: products.mrp,
+      discountPercent: products.discountPercent,
       productStockQty: products.stockQty,
       batchId: productBatches.id,
       batchNumber: productBatches.batchNumber,
@@ -137,6 +139,7 @@ export async function searchProductBatches(
     wholesaleRate: row.wholesaleRate,
     purchaseRate: row.purchaseRate,
     mrp: row.mrp,
+    discountPercent: row.discountPercent,
     productStockQty: row.productStockQty,
     batchId: row.batchId,
     batchNumber: row.batchNumber,
@@ -243,6 +246,7 @@ export async function updateProduct(
     stockQty?: number;
     reorderLevel?: number;
     mrp?: number | null;
+    discountPercent?: number;
     hsnCode?: string;
     barcode?: string;
     expiryDate?: string | null;
@@ -268,6 +272,9 @@ export async function updateProduct(
         : {}),
       ...(data.mrp !== undefined
         ? { mrp: data.mrp === null ? null : data.mrp.toFixed(2) }
+        : {}),
+      ...(data.discountPercent !== undefined
+        ? { discountPercent: data.discountPercent.toFixed(2) }
         : {}),
       ...(data.hsnCode !== undefined ? { hsnCode: data.hsnCode } : {}),
       ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
@@ -303,6 +310,7 @@ const productSchema = z.object({
   saleRate: z.number().nonnegative(),
   wholesaleRate: z.number().nonnegative().optional(),
   mrp: z.number().nonnegative().optional(),
+  discountPercent: z.number().nonnegative().max(100).optional(),
   stockQty: z.number().nonnegative().default(0),
   reorderLevel: z.number().nonnegative().default(10),
   hsnCode: z.string().min(1, "HSN code is mandatory"),
@@ -333,6 +341,7 @@ export async function createProduct(input: z.infer<typeof productSchema>) {
       saleRate: data.saleRate.toFixed(2),
       wholesaleRate: (data.wholesaleRate ?? data.saleRate).toFixed(2),
       mrp: data.mrp?.toFixed(2),
+      discountPercent: (data.discountPercent ?? 0).toFixed(2),
       stockQty: "0.00",
       reorderLevel: data.reorderLevel.toFixed(2),
       hsnCode: data.hsnCode,

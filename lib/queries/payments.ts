@@ -266,6 +266,53 @@ export async function getReceipts() {
     .limit(100);
 }
 
+export async function getPartyPaymentById(id: number) {
+  const [payment] = await db
+    .select({
+      id: partyPayments.id,
+      type: partyPayments.type,
+      date: partyPayments.date,
+      amount: partyPayments.amount,
+      paymentMode: partyPayments.paymentMode,
+      referenceNo: partyPayments.referenceNo,
+      notes: partyPayments.notes,
+      customerId: partyPayments.customerId,
+      supplierId: partyPayments.supplierId,
+      customerName: customers.name,
+      customerPhone: customers.phone,
+      customerGstin: customers.gstin,
+      customerAddress: customers.address,
+      supplierName: suppliers.name,
+      supplierPhone: suppliers.phone,
+      supplierGstin: suppliers.gstin,
+      supplierAddress: suppliers.address,
+    })
+    .from(partyPayments)
+    .leftJoin(customers, eq(partyPayments.customerId, customers.id))
+    .leftJoin(suppliers, eq(partyPayments.supplierId, suppliers.id))
+    .where(eq(partyPayments.id, id))
+    .limit(1);
+
+  if (!payment) return null;
+
+  const allocations = await db
+    .select({
+      id: partyPaymentAllocations.id,
+      amount: partyPaymentAllocations.amount,
+      saleId: partyPaymentAllocations.saleId,
+      purchaseId: partyPaymentAllocations.purchaseId,
+      saleInvoiceNo: sales.invoiceNo,
+      purchaseInvoiceNo: purchases.invoiceNo,
+      billDate: sql<Date | null>`coalesce(${sales.date}, ${purchases.date})`,
+    })
+    .from(partyPaymentAllocations)
+    .leftJoin(sales, eq(partyPaymentAllocations.saleId, sales.id))
+    .leftJoin(purchases, eq(partyPaymentAllocations.purchaseId, purchases.id))
+    .where(eq(partyPaymentAllocations.paymentId, id));
+
+  return { ...payment, allocations };
+}
+
 export async function getSupplierPayments() {
   return db
     .select({

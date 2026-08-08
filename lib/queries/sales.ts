@@ -648,6 +648,57 @@ export async function getSales() {
   return query.orderBy(desc(sales.date)).limit(500);
 }
 
+export type SaleInvoiceOption = {
+  id: number;
+  invoiceNo: string;
+  date: Date;
+  customerId: number | null;
+  customerName: string;
+  grandTotal: string;
+  billType: string;
+};
+
+/** Search recent invoices for sale-return "against bill" picker. */
+export async function searchSalesForReturn(
+  query: string,
+  options?: { customerId?: number; limit?: number }
+): Promise<SaleInvoiceOption[]> {
+  const q = query.trim();
+  const limit = options?.limit ?? 20;
+  const filters = [];
+
+  if (options?.customerId) {
+    filters.push(eq(sales.customerId, options.customerId));
+  }
+  if (q) {
+    filters.push(
+      sql`(
+        ${sales.invoiceNo} ilike ${"%" + q + "%"}
+        or coalesce(${sales.customerName}, '') ilike ${"%" + q + "%"}
+        or coalesce(${customers.name}, '') ilike ${"%" + q + "%"}
+      )`
+    );
+  }
+
+  const rows = await db
+    .select({
+      id: sales.id,
+      invoiceNo: sales.invoiceNo,
+      date: sales.date,
+      customerId: sales.customerId,
+      customerName: sql<string>`coalesce(${customers.name}, ${sales.customerName}, 'Walk-in')`,
+      grandTotal: sales.grandTotal,
+      billType: sales.billType,
+    })
+    .from(sales)
+    .leftJoin(customers, eq(sales.customerId, customers.id))
+    .where(filters.length ? and(...filters) : undefined)
+    .orderBy(desc(sales.date))
+    .limit(limit);
+
+  return rows;
+}
+
 export async function getSaleById(id: number) {
   const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
   const user = await getCurrentUser();

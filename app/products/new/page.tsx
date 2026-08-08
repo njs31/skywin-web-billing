@@ -21,6 +21,7 @@ export default function NewProductPage() {
   const [saleRate, setSaleRate] = useState("");
   const [wholesaleRate, setWholesaleRate] = useState("");
   const [mrp, setMrp] = useState("");
+  const [discountPercent, setDiscountPercent] = useState("0");
   const [hsnCode, setHsnCode] = useState("");
   const [gstRate, setGstRate] = useState("18");
   const [stockQty, setStockQty] = useState("0");
@@ -49,6 +50,7 @@ export default function NewProductPage() {
           saleRate: parseFloat(saleRate) || 0,
           wholesaleRate: wholesaleRate ? parseFloat(wholesaleRate) : undefined,
           mrp: mrp ? parseFloat(mrp) : undefined,
+          discountPercent: parseFloat(discountPercent) || 0,
           hsnCode: hsnCode.trim(), // Send as-is, zod will validate if empty!
           gstRate: parseFloat(gstRate) || 0,
           stockQty: parseFloat(stockQty) || 0,
@@ -177,6 +179,20 @@ export default function NewProductPage() {
                   value={mrp}
                   onChange={(e) => setMrp(e.target.value)}
                   placeholder="0.00"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="discountPercent">Discount (%)</Label>
+                <Input
+                  id="discountPercent"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={discountPercent}
+                  onChange={(e) => setDiscountPercent(e.target.value)}
+                  placeholder="0"
                 />
               </div>
 

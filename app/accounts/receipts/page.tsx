@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { getReceipts } from "@/lib/queries/payments";
 import { getCustomers } from "@/lib/queries/customers";
 import { formatCurrency } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -53,6 +55,7 @@ export default async function ReceiptsPage() {
                   <TableHead>Reference</TableHead>
                   <TableHead>Against Invoices</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -69,6 +72,25 @@ export default async function ReceiptsPage() {
                     </TableCell>
                     <TableCell className="text-right font-semibold text-emerald-700">
                       {formatCurrency(r.amount)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/accounts/receipts/${r.id}`}>View</Link>
+                        </Button>
+                        <Button
+                          asChild
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          <Link
+                            href={`/accounts/receipts/${r.id}?print=1`}
+                            target="_blank"
+                          >
+                            Print
+                          </Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

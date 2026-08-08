@@ -18,6 +18,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -53,8 +54,23 @@ const QUICK_RANGES = [
   { label: "Last 30 Days", days: 30 },
 ] as const;
 
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function lineItemTotals(data: SalesReportData) {
+  return data.lineItems.reduce(
+    (acc, item) => {
+      acc.qty += item.qty;
+      acc.amount += item.amount;
+      return acc;
+    },
+    { qty: 0, amount: 0 }
+  );
+}
+
 function invoiceSheetRows(data: SalesReportData) {
-  return data.invoices.map((inv, index) => ({
+  const rows = data.invoices.map((inv, index) => ({
     "S.No.": index + 1,
     Invoice: inv.invoiceNo,
     Date: formatDateTimeIST(inv.date),
@@ -70,10 +86,28 @@ function invoiceSheetRows(data: SalesReportData) {
     "Grand Total": inv.grandTotal,
     Paid: inv.paidAmount,
   }));
+  const s = data.summary;
+  rows.push({
+    "S.No.": "" as unknown as number,
+    Invoice: "GRAND TOTAL",
+    Date: "",
+    "Bill Type": "",
+    Customer: "",
+    Payment: "",
+    Operator: "",
+    Subtotal: s.subtotal,
+    Discount: s.discountAmount,
+    CGST: s.cgst,
+    SGST: s.sgst,
+    IGST: s.igst,
+    "Grand Total": s.grandTotal,
+    Paid: s.paidAmount,
+  });
+  return rows;
 }
 
 function lineItemSheetRows(data: SalesReportData) {
-  return data.lineItems.map((item, index) => ({
+  const rows = data.lineItems.map((item, index) => ({
     "S.No.": index + 1,
     Invoice: item.invoiceNo,
     Date: formatDateTimeIST(item.date),
@@ -90,6 +124,25 @@ function lineItemSheetRows(data: SalesReportData) {
     Amount: item.amount,
     "Grand Total": item.grandTotal,
   }));
+  const totals = lineItemTotals(data);
+  rows.push({
+    "S.No.": "" as unknown as number,
+    Invoice: "GRAND TOTAL",
+    Date: "",
+    "Bill Type": "",
+    Customer: "",
+    Payment: "",
+    Product: "",
+    HSN: "",
+    Qty: round2(totals.qty),
+    Rate: "" as unknown as number,
+    "Discount Type": "",
+    Discount: "" as unknown as number,
+    "GST %": "" as unknown as number,
+    Amount: round2(totals.amount),
+    "Grand Total": "" as unknown as number,
+  });
+  return rows;
 }
 
 function exportExcel(data: SalesReportData) {
@@ -113,6 +166,7 @@ function exportExcel(data: SalesReportData) {
 function exportPdf(data: SalesReportData) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const { summary } = data;
+  const itemTotals = lineItemTotals(data);
 
   doc.setFontSize(14);
   doc.text(BUSINESS.name, 14, 14);
@@ -158,8 +212,23 @@ function exportPdf(data: SalesReportData) {
       inv.grandTotal,
       inv.paidAmount,
     ]),
+    foot: [[
+      "",
+      "GRAND TOTAL",
+      "",
+      "",
+      "",
+      "",
+      summary.subtotal.toFixed(2),
+      summary.discountAmount.toFixed(2),
+      summary.cgst.toFixed(2),
+      summary.sgst.toFixed(2),
+      summary.grandTotal.toFixed(2),
+      summary.paidAmount.toFixed(2),
+    ]],
     styles: { fontSize: 7, cellPadding: 1.2 },
     headStyles: { fillColor: [15, 81, 50], textColor: 255 },
+    footStyles: { fillColor: [226, 232, 240], textColor: 20, fontStyle: "bold" },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     margin: { left: 10, right: 10 },
   });
@@ -201,8 +270,23 @@ function exportPdf(data: SalesReportData) {
         item.amount,
         item.grandTotal,
       ]),
+      foot: [[
+        "",
+        "GRAND TOTAL",
+        "",
+        "",
+        "",
+        "",
+        round2(itemTotals.qty).toFixed(2),
+        "",
+        "",
+        "",
+        round2(itemTotals.amount).toFixed(2),
+        "",
+      ]],
       styles: { fontSize: 6.5, cellPadding: 1.2 },
       headStyles: { fillColor: [15, 81, 50], textColor: 255 },
+      footStyles: { fillColor: [226, 232, 240], textColor: 20, fontStyle: "bold" },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       margin: { left: 10, right: 10 },
     });
@@ -481,6 +565,27 @@ export function SalesReport() {
                             </TableRow>
                           ))}
                         </TableBody>
+                        <TableFooter>
+                          <TableRow>
+                            <TableCell colSpan={5}>Grand Total</TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(report.summary.subtotal)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(report.summary.discountAmount)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(report.summary.cgst)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(report.summary.sgst)}
+                            </TableCell>
+                            <TableCell className="text-right text-emerald-700">
+                              {formatCurrency(report.summary.grandTotal)}
+                            </TableCell>
+                            <TableCell />
+                          </TableRow>
+                        </TableFooter>
                       </Table>
                     </div>
                   )}
@@ -541,6 +646,22 @@ export function SalesReport() {
                             </TableRow>
                           ))}
                         </TableBody>
+                        <TableFooter>
+                          <TableRow>
+                            <TableCell colSpan={5}>Grand Total</TableCell>
+                            <TableCell className="text-right">
+                              {round2(
+                                report.lineItems.reduce((s, i) => s + i.qty, 0)
+                              )}
+                            </TableCell>
+                            <TableCell colSpan={3} />
+                            <TableCell className="text-right text-emerald-700">
+                              {formatCurrency(
+                                report.lineItems.reduce((s, i) => s + i.amount, 0)
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        </TableFooter>
                       </Table>
                     </div>
                   )}

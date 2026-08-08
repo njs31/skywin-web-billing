@@ -204,7 +204,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
             rate,
             gstRate: toNumber(product.gstRate),
             discountType: "percent" as const,
-            discountValue: 0,
+            discountValue: toNumber(product.discountPercent ?? 0),
             availableQty: stock,
           },
         ];
@@ -230,6 +230,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
         wholesaleRate: row.wholesaleRate,
         purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
         stockQty: row.batchQty || row.productStockQty,
+        discountPercent: row.discountPercent,
       } as Product;
 
       addToCart(product, qty, {

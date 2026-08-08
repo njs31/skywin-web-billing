@@ -52,6 +52,7 @@ export function ProductTable({ products }: { products: Product[] }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [saleRate, setSaleRate] = useState("");
   const [mrp, setMrp] = useState("");
+  const [discountPercent, setDiscountPercent] = useState("");
   const [gstRate, setGstRate] = useState("");
   const [hsnCode, setHsnCode] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
@@ -61,6 +62,7 @@ export function ProductTable({ products }: { products: Product[] }) {
     setEditingId(product.id);
     setSaleRate(String(toNumber(product.saleRate)));
     setMrp(product.mrp != null ? String(toNumber(product.mrp)) : "");
+    setDiscountPercent(String(toNumber(product.discountPercent)));
     setGstRate(String(toNumber(product.gstRate)));
     setHsnCode(product.hsnCode ?? "");
     setExpiryDate(product.expiryDate ?? "");
@@ -85,9 +87,11 @@ export function ProductTable({ products }: { products: Product[] }) {
         }
         const parsedSale = parseFloat(saleRate);
         const parsedMrp = mrp.trim() === "" ? null : parseFloat(mrp);
+        const parsedDisc = parseFloat(discountPercent);
         await updateProduct(id, {
           saleRate: Number.isFinite(parsedSale) ? parsedSale : 0,
           mrp: parsedMrp != null && Number.isFinite(parsedMrp) ? parsedMrp : null,
+          discountPercent: Number.isFinite(parsedDisc) ? parsedDisc : 0,
           gstRate: Number.isFinite(parseFloat(gstRate)) ? parseFloat(gstRate) : 0,
           hsnCode: hsnCode.trim(),
           expiryDate: expiryDate.trim() || null,
@@ -141,6 +145,7 @@ export function ProductTable({ products }: { products: Product[] }) {
           <TableHead className="py-2.5 px-2 text-right">Pur. Rate</TableHead>
           <TableHead className="py-2.5 px-2 text-right">Sale Rate</TableHead>
           <TableHead className="py-2.5 px-2 text-right">MRP</TableHead>
+          <TableHead className="py-2.5 px-2 text-right">Disc %</TableHead>
           <TableHead className="py-2.5 px-2 text-right">GST %</TableHead>
           <TableHead className="py-2.5 px-2 text-right w-20">Actions</TableHead>
         </TableRow>
@@ -230,6 +235,21 @@ export function ProductTable({ products }: { products: Product[] }) {
                   formatCurrency(product.mrp)
                 ) : (
                   "-"
+                )}
+              </TableCell>
+              <TableCell className="text-right py-2 px-2 whitespace-nowrap">
+                {editingId === product.id ? (
+                  <Input
+                    type="number"
+                    className="ml-auto w-14 h-7 text-xs px-1.5 text-right"
+                    value={discountPercent}
+                    onChange={(e) => setDiscountPercent(e.target.value)}
+                    min="0"
+                    max="100"
+                    step="0.01"
+                  />
+                ) : (
+                  `${toNumber(product.discountPercent)}%`
                 )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap">
