@@ -56,6 +56,7 @@ export function ProductTable({ products }: { products: Product[] }) {
   const [gstRate, setGstRate] = useState("");
   const [hsnCode, setHsnCode] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
+  const [stockQty, setStockQty] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const startEdit = (product: Product) => {
@@ -66,11 +67,17 @@ export function ProductTable({ products }: { products: Product[] }) {
     setGstRate(String(toNumber(product.gstRate)));
     setHsnCode(product.hsnCode ?? "");
     setExpiryDate(product.expiryDate ?? "");
+    setStockQty(String(toNumber(product.stockQty)));
   };
 
   const save = (id: number) => {
     if (!hsnCode.trim()) {
       alert("HSN code is mandatory.");
+      return;
+    }
+    const parsedStock = parseFloat(stockQty);
+    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+      alert("Stock must be a number greater than or equal to 0.");
       return;
     }
     startTransition(async () => {
@@ -95,8 +102,10 @@ export function ProductTable({ products }: { products: Product[] }) {
           gstRate: Number.isFinite(parseFloat(gstRate)) ? parseFloat(gstRate) : 0,
           hsnCode: hsnCode.trim(),
           expiryDate: expiryDate.trim() || null,
+          stockQty: parsedStock,
         });
         setEditingId(null);
+        router.refresh();
       } catch (err) {
         alert(err instanceof Error ? err.message : "Failed to update product");
       }
@@ -205,7 +214,18 @@ export function ProductTable({ products }: { products: Product[] }) {
                 )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap font-medium">
-                {toNumber(product.stockQty)}
+                {editingId === product.id ? (
+                  <Input
+                    type="number"
+                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
+                    value={stockQty}
+                    onChange={(e) => setStockQty(e.target.value)}
+                    min="0"
+                    step="0.01"
+                  />
+                ) : (
+                  toNumber(product.stockQty)
+                )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap text-slate-600">
                 {formatCurrency(product.purchaseRate)}

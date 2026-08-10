@@ -21,7 +21,6 @@ export async function adjustStock(
     purchaseRate?: number;
   }
 ) {
-  const { revalidatePath, revalidateTag } = await import("next/cache");
   const {
     addStockToBatch,
     deductStockFefo,
@@ -61,6 +60,7 @@ export async function adjustStock(
     }
   });
 
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   revalidateTag("products", "max");
   revalidatePath("/stock");
   revalidatePath("/products");

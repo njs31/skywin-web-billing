@@ -255,7 +255,24 @@ export async function updateProduct(
   if (data.hsnCode !== undefined && !data.hsnCode.trim()) {
     throw new Error("HSN code is mandatory and cannot be empty.");
   }
+  if (data.stockQty !== undefined && data.stockQty < 0) {
+    throw new Error("Stock cannot be negative.");
+  }
   const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
+
+  // Capture current stock before other updates so batch sync uses the right delta.
+  let stockDelta: number | null = null;
+  if (data.stockQty !== undefined) {
+    const [current] = await db
+      .select({ stockQty: products.stockQty })
+      .from(products)
+      .where(eq(products.id, id))
+      .limit(1);
+    if (!current) throw new Error("Product not found");
+    const currentQty = parseFloat(current.stockQty ?? "0");
+    stockDelta = Math.round((data.stockQty - currentQty) * 100) / 100;
+  }
+
   await db
     .update(products)
     .set({
@@ -263,9 +280,6 @@ export async function updateProduct(
       gstRate: data.gstRate.toFixed(2),
       ...(data.wholesaleRate !== undefined
         ? { wholesaleRate: data.wholesaleRate.toFixed(2) }
-        : {}),
-      ...(data.stockQty !== undefined
-        ? { stockQty: data.stockQty.toFixed(2) }
         : {}),
       ...(data.reorderLevel !== undefined
         ? { reorderLevel: data.reorderLevel.toFixed(2) }
@@ -293,6 +307,12 @@ export async function updateProduct(
       updatedAt: new Date(),
     })
     .where(eq(productBatches.productId, id));
+
+  // Live stock edits must go through batch adjustment so POS batch qty stays correct.
+  if (stockDelta != null && Math.abs(stockDelta) > 0.0001) {
+    const { adjustStock } = await import("@/lib/queries/reports");
+    await adjustStock(id, stockDelta, "Stock edited from Products page");
+  }
 
   revalidateTag("products", "max");
   revalidatePath("/products");
