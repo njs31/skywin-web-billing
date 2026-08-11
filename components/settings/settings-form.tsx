@@ -115,7 +115,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             </div>
             <div>
               <Label>QwicksApp Merchant ID</Label>
-              <Input name="qwicksMerchantId" defaultValue={settings.qwicksMerchantId} placeholder="skywin" />
+              <Input name="qwicksMerchantId" defaultValue={settings.qwicksMerchantId} placeholder="SkywinKmu" />
             </div>
             <div>
               <Label>QwicksApp API Key (x-api-key)</Label>
@@ -127,7 +127,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             </div>
             <div className="sm:col-span-2 bg-slate-50 p-3 rounded-lg border text-xs text-slate-600 space-y-1">
               <p className="font-semibold text-slate-800">Integration Endpoints Hosted for QwicksApp Team:</p>
-              <p>• <strong>Live Inventory Pull:</strong> <code className="bg-slate-200 px-1 rounded">GET /api/qwicks/inventory</code> or <code className="bg-slate-200 px-1 rounded">GET /api/updateInventory/{settings.qwicksMerchantId || "skywin"}</code></p>
+              <p>• <strong>Live Inventory Pull:</strong> <code className="bg-slate-200 px-1 rounded">GET /api/qwicks/inventory</code> or <code className="bg-slate-200 px-1 rounded">GET /api/updateInventory/{settings.qwicksMerchantId || "SkywinKmu"}</code></p>
               <p>• <strong>Stock Check at Checkout:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/stock-check</code></p>
               <p>• <strong>Order Ingestion Webhook:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/order-placed</code></p>
             </div>

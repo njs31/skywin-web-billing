@@ -22,7 +22,7 @@ export const DEFAULT_SETTINGS = {
   inventoryAdminPinRequired: "false",
   inventoryAdminPin: "1234",
   qwicksApiKey: "skywin_qwicks_api_key_7596",
-  qwicksMerchantId: "skywin",
+  qwicksMerchantId: "SkywinKmu",
   qwicksHost: "qwicks.app",
 } as const;
 

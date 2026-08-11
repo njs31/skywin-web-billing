@@ -26,7 +26,7 @@ export type QwicksProductItem = {
 
 export async function getQwicksInventoryPayload() {
   const settings = await getSettings();
-  const merchantId = settings.qwicksMerchantId || "skywin";
+  const merchantId = settings.qwicksMerchantId || "SkywinKmu";
 
   const rows = await db
     .select({
@@ -85,7 +85,7 @@ export async function validateQwicksStockCheck(body: {
   }>;
 }) {
   const settings = await getSettings();
-  const merchantId = settings.qwicksMerchantId || "skywin";
+  const merchantId = settings.qwicksMerchantId || "SkywinKmu";
   const items = body.items ?? [];
 
   if (items.length === 0) {
@@ -234,7 +234,7 @@ export async function processQwicksOrderPlaced(body: any) {
 export async function pushInventoryToQwicksApp() {
   const settings = await getSettings();
   const apiKey = settings.qwicksApiKey;
-  const merchantId = settings.qwicksMerchantId || "skywin";
+  const merchantId = settings.qwicksMerchantId || "SkywinKmu";
   const host = settings.qwicksHost || "qwicks.app";
 
   if (!apiKey) {

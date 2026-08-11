@@ -324,7 +324,7 @@ def generate_pdf():
         Paragraph(
             "<b>Sample Response JSON:</b><br/>"
             "{\n"
-            '  "merchantId": "skywin",\n'
+            '  "merchantId": "SkywinKmu",\n'
             '  "totalProducts": 1015,\n'
             '  "replaceExistingImages": false,\n'
             '  "products": [\n'
@@ -370,7 +370,7 @@ def generate_pdf():
             "<b>Response JSON:</b><br/>"
             "{\n"
             '  "success": true,\n'
-            '  "merchantId": "skywin",\n'
+            '  "merchantId": "SkywinKmu",\n'
             '  "requestId": "stk_101",\n'
             '  "canPlaceOrder": true,\n'
             '  "results": [\n'
