@@ -422,6 +422,12 @@ export async function createProduct(input: z.infer<typeof productSchema>) {
   await revalidatePath("/products");
   await revalidatePath("/stock");
   await revalidatePath("/pos");
+
+  if (product && (data.stockQty ?? 0) > 0) {
+    const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+    scheduleQwicksStockPush([product.id]);
+  }
+
   return product;
 }
 

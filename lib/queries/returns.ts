@@ -201,6 +201,9 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
   revalidatePath("/stock");
   revalidatePath("/customers");
 
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush(data.items.map((item) => item.productId));
+
   return saleReturn;
 }
 
@@ -401,6 +404,13 @@ export async function createPurchaseReturn(input: z.infer<typeof createPurchaseR
   revalidatePath("/returns");
   revalidatePath("/products");
   revalidatePath("/stock");
+
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush(
+    data.items
+      .map((item) => item.productId)
+      .filter((id): id is number => typeof id === "number")
+  );
 
   return purchaseReturn;
 }

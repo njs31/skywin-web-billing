@@ -56,6 +56,7 @@ export async function importStockFromRows(
   const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
   const failed: StockImportResult["failed"] = [];
   let imported = 0;
+  const touchedProductIds: number[] = [];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -106,12 +107,16 @@ export async function importStockFromRows(
       });
     });
 
+    touchedProductIds.push(product.id);
     imported++;
   }
 
   revalidateTag("products", "max");
   revalidatePath("/stock");
   revalidatePath("/products");
+
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush(touchedProductIds);
 
   return { imported, failed };
 }

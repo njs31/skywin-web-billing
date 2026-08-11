@@ -155,6 +155,8 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
       })
       .returning();
 
+    const touchedProductIds: number[] = [];
+
     for (const item of lineItems) {
       let productId = item.productId || null;
 
@@ -232,6 +234,8 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
           qtyDelta: item.qty.toFixed(2),
           referenceId: created.id,
         });
+
+        touchedProductIds.push(productId);
       }
     }
 
@@ -242,7 +246,7 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
       })
       .where(eq(suppliers.id, data.supplierId));
 
-    return created;
+    return { created, touchedProductIds };
   });
 
   revalidateTag("purchases", "max");
@@ -253,5 +257,8 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
   revalidatePath("/suppliers");
   revalidatePath("/");
 
-  return purchase;
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush(purchase.touchedProductIds);
+
+  return purchase.created;
 }

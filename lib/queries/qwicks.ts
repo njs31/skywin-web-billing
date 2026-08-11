@@ -24,6 +24,56 @@ export type QwicksProductItem = {
   isActive: boolean;
 };
 
+function mapProductToQwicksItem(
+  product: typeof products.$inferSelect,
+  categoryName: string | null
+): QwicksProductItem {
+  const code = product.sku || product.barcode || `PROD-${product.id}`;
+  const saleRateNum = toNumber(product.saleRate);
+  const mrpNum = product.mrp ? toNumber(product.mrp) : saleRateNum;
+  const stockNum = Math.max(0, Math.floor(toNumber(product.stockQty)));
+  const gstNum = toNumber(product.gstRate);
+  const cat = categoryName || "General";
+
+  return {
+    productCode: code,
+    fullName: product.name,
+    shortName: product.name,
+    description: `HSN: ${product.hsnCode || "-"}`,
+    salePrice: saleRateNum,
+    price: saleRateNum,
+    mrp: mrpNum,
+    stock: stockNum,
+    categoryName: cat,
+    category: cat,
+    barCode: product.barcode || product.sku || code,
+    hsn: product.hsnCode || "",
+    taxPercentage: gstNum,
+    taxPercent: gstNum,
+    expiryDate: product.expiryDate ?? null,
+    isActive: product.isActive,
+  };
+}
+
+export async function buildQwicksProductPayload(productIds: number[]) {
+  const uniqueIds = [...new Set(productIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (uniqueIds.length === 0) return [] as QwicksProductItem[];
+
+  const { inArray } = await import("drizzle-orm");
+  const rows = await db
+    .select({
+      product: products,
+      categoryName: categories.name,
+    })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(inArray(products.id, uniqueIds));
+
+  return rows.map(({ product, categoryName }) =>
+    mapProductToQwicksItem(product, categoryName)
+  );
+}
+
 export async function getQwicksInventoryPayload() {
   const settings = await getSettings();
   const merchantId = settings.qwicksMerchantId || "SkywinKmu";
@@ -38,33 +88,9 @@ export async function getQwicksInventoryPayload() {
     .where(eq(products.isActive, true))
     .orderBy(asc(products.name));
 
-  const items: QwicksProductItem[] = rows.map(({ product, categoryName }) => {
-    const code = product.sku || product.barcode || `PROD-${product.id}`;
-    const saleRateNum = toNumber(product.saleRate);
-    const mrpNum = product.mrp ? toNumber(product.mrp) : saleRateNum;
-    const stockNum = Math.max(0, Math.floor(toNumber(product.stockQty)));
-    const gstNum = toNumber(product.gstRate);
-    const cat = categoryName || "General";
-
-    return {
-      productCode: code,
-      fullName: product.name,
-      shortName: product.name,
-      description: `HSN: ${product.hsnCode || "-"}`,
-      salePrice: saleRateNum,
-      price: saleRateNum,
-      mrp: mrpNum,
-      stock: stockNum,
-      categoryName: cat,
-      category: cat,
-      barCode: product.barcode || product.sku || code,
-      hsn: product.hsnCode || "",
-      taxPercentage: gstNum,
-      taxPercent: gstNum,
-      expiryDate: product.expiryDate ?? null,
-      isActive: product.isActive,
-    };
-  });
+  const items: QwicksProductItem[] = rows.map(({ product, categoryName }) =>
+    mapProductToQwicksItem(product, categoryName)
+  );
 
   return {
     merchantId,
@@ -231,19 +257,20 @@ export async function processQwicksOrderPlaced(body: any) {
   };
 }
 
-export async function pushInventoryToQwicksApp() {
+async function postInventoryToQwicksApp(items: QwicksProductItem[]) {
+  if (items.length === 0) return null;
+
   const settings = await getSettings();
-  const apiKey = settings.qwicksApiKey;
+  const apiKey = settings.qwicksApiKey?.trim();
   const merchantId = settings.qwicksMerchantId || "SkywinKmu";
   const host = settings.qwicksHost || "qwicks.app";
 
   if (!apiKey) {
-    throw new Error("QwicksApp API Key is not configured in Settings.");
+    console.warn("[QwicksApp] Skipping inventory push: API key not configured");
+    return null;
   }
 
-  const payload = await getQwicksInventoryPayload();
   const url = `https://${host}/api/updateInventory/${merchantId}`;
-
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -252,7 +279,7 @@ export async function pushInventoryToQwicksApp() {
     },
     body: JSON.stringify({
       replaceExistingImages: false,
-      products: payload.products,
+      products: items,
     }),
   });
 
@@ -262,4 +289,37 @@ export async function pushInventoryToQwicksApp() {
   }
 
   return response.json();
+}
+
+/** Push only the given products' current stock/identity to QwicksApp. */
+export async function pushProductsToQwicksApp(productIds: number[]) {
+  const items = await buildQwicksProductPayload(productIds);
+  if (items.length === 0) return null;
+  return postInventoryToQwicksApp(items);
+}
+
+/**
+ * Fire-and-forget stock sync so POS/checkout never waits on QwicksApp.
+ * Failures are logged only.
+ */
+export function scheduleQwicksStockPush(productIds: number[]) {
+  const uniqueIds = [...new Set(productIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (uniqueIds.length === 0) return;
+
+  void pushProductsToQwicksApp(uniqueIds).catch((err) => {
+    console.error(
+      "[QwicksApp] Real-time inventory push failed:",
+      err instanceof Error ? err.message : err
+    );
+  });
+}
+
+/** Full-catalog push (manual / admin). */
+export async function pushInventoryToQwicksApp() {
+  const payload = await getQwicksInventoryPayload();
+  const result = await postInventoryToQwicksApp(payload.products);
+  if (result === null && payload.products.length > 0) {
+    throw new Error("QwicksApp API Key is not configured in Settings.");
+  }
+  return result;
 }

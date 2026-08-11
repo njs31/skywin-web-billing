@@ -608,6 +608,9 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   revalidatePath("/reports");
   revalidatePath("/accounts/outstanding");
 
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush(productIds);
+
   return sale;
 }
 

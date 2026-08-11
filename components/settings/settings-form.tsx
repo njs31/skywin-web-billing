@@ -110,7 +110,8 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             <div className="sm:col-span-2">
               <h3 className="font-semibold text-base text-slate-900">QwicksApp Integration API</h3>
               <p className="text-xs text-slate-500">
-                Configure QwicksApp API credentials and merchant endpoints for real-time inventory pulls, checkout stock validation, and order webhooks.
+                Configure QwicksApp API credentials. Stock changes (sales, purchases, adjustments, returns, imports) push only the changed products in real time to{" "}
+                <code className="bg-slate-100 px-1 rounded">POST /api/updateInventory/{"{merchantId}"}</code> on QwicksApp. They can also pull inventory, validate stock at checkout, and send orders here.
               </p>
             </div>
             <div>
@@ -127,6 +128,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             </div>
             <div className="sm:col-span-2 bg-slate-50 p-3 rounded-lg border text-xs text-slate-600 space-y-1">
               <p className="font-semibold text-slate-800">Integration Endpoints Hosted for QwicksApp Team:</p>
+              <p>• <strong>Real-time stock push (Skywin → QwicksApp):</strong> automatic on stock changes to <code className="bg-slate-200 px-1 rounded">POST https://{settings.qwicksHost || "qwicks.app"}/api/updateInventory/{settings.qwicksMerchantId || "SkywinKmu"}</code></p>
               <p>• <strong>Live Inventory Pull:</strong> <code className="bg-slate-200 px-1 rounded">GET /api/qwicks/inventory</code> or <code className="bg-slate-200 px-1 rounded">GET /api/updateInventory/{settings.qwicksMerchantId || "SkywinKmu"}</code></p>
               <p>• <strong>Stock Check at Checkout:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/stock-check</code></p>
               <p>• <strong>Order Ingestion Webhook:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/order-placed</code></p>

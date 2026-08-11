@@ -64,6 +64,9 @@ export async function adjustStock(
   revalidateTag("products", "max");
   revalidatePath("/stock");
   revalidatePath("/products");
+
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush([productId]);
 }
 
 export async function getStockStatus(search?: string) {
