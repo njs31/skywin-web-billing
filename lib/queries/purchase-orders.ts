@@ -7,7 +7,6 @@ import {
 } from "@/db/schema";
 import { calculateLineAmount } from "@/lib/gst";
 import { getIndianFinancialYearBounds } from "@/lib/financial-year";
-import { format } from "date-fns";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -34,21 +33,18 @@ function round2(n: number) {
 type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 async function generatePoNumber(tx: DbOrTx) {
-  const dayStamp = format(new Date(), "yyyyMMdd");
-  const numberPrefix = `PO-${dayStamp}-`;
   const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
 
   const rows = (await tx.execute(sql`
     select coalesce(max(nullif(substring(po_number from '([0-9]+)$'), '')::int), 0) + 1 as next_seq
     from purchase_orders
-    where po_number like 'PO-%'
+    where po_number ~ '^OP[0-9]+$'
       and date >= ${fyStart}
       and date <= ${fyEnd}
   `)) as unknown as Array<{ next_seq: number | string }>;
 
   const seq = Number(rows[0]?.next_seq ?? 1);
-  const padded = String(seq).padStart(Math.max(4, String(seq).length), "0");
-  return `${numberPrefix}${padded}`;
+  return `OP${String(seq).padStart(6, "0")}`;
 }
 
 export async function createPurchaseOrder(

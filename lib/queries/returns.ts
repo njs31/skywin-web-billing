@@ -317,15 +317,20 @@ const createPurchaseReturnSchema = z.object({
 });
 
 async function generateDebitReturnNo(tx: DbOrTx) {
-  const today = format(new Date(), "yyyyMMdd");
-  const prefix = `DEB-${today}-`;
+  const { getIndianFinancialYearBounds } = await import("@/lib/financial-year");
+  const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
   const rows = (await tx.execute(sql`
     select coalesce(max(nullif(substring(return_no from '([0-9]+)$'), '')::int), 0) + 1 as next_seq
     from purchase_returns
-    where return_no like ${prefix + "%"}
+    where (
+      return_no ~ '^DN[0-9]+$'
+      or return_no like 'DEB-%'
+    )
+      and date >= ${fyStart}
+      and date <= ${fyEnd}
   `)) as unknown as Array<{ next_seq: number | string }>;
   const seq = Number(rows[0]?.next_seq ?? 1);
-  return `${prefix}${String(seq).padStart(4, "0")}`;
+  return `DN${String(seq).padStart(5, "0")}`;
 }
 
 export async function createPurchaseReturn(input: z.infer<typeof createPurchaseReturnSchema>) {

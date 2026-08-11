@@ -28,9 +28,16 @@ export default async function PurchaseOrderDetailPage({
     address: settings.address,
     phone: settings.phone,
     email: settings.email,
+    website: settings.website,
     gstin: settings.gstin,
     state: settings.state,
     stateCode: settings.stateCode,
+    seedLicense: settings.seedLicense,
+    fertLicense: settings.fertLicense,
+    bankName: settings.bankName,
+    bankBranch: settings.bankBranch,
+    bankAccountNo: settings.bankAccountNo,
+    bankIfsc: settings.bankIfsc,
   };
 
   return (

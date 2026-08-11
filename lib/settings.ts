@@ -24,6 +24,12 @@ export const DEFAULT_SETTINGS = {
   qwicksApiKey: "skywin_qwicks_api_key_7596",
   qwicksMerchantId: "SkywinKmu",
   qwicksHost: "qwicks.app",
+  seedLicense: "4300/TNJ/2026",
+  fertLicense: "TN/2026-25/TNJ/KBK/RL0025",
+  bankName: "CITY UNION BANK LTD",
+  bankBranch: "GANDHI NAGAR(KUM)",
+  bankAccountNo: "512020010037167",
+  bankIfsc: "CIUB0000171",
 } as const;
 
 export type AppSettings = Record<keyof typeof DEFAULT_SETTINGS, string>;
