@@ -278,6 +278,7 @@ async function postInventoryToQwicksApp(items: QwicksProductItem[]) {
       "x-api-key": apiKey,
     },
     body: JSON.stringify({
+      merchantId,
       replaceExistingImages: false,
       products: items,
     }),
