@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ReceiptForm } from "@/components/accounts/receipt-form";
+import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
 
 export default async function ReceiptsPage() {
   const [receipts, customers] = await Promise.all([
@@ -78,18 +79,7 @@ export default async function ReceiptsPage() {
                         <Button asChild size="sm" variant="outline">
                           <Link href={`/accounts/receipts/${r.id}`}>View</Link>
                         </Button>
-                        <Button
-                          asChild
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700"
-                        >
-                          <Link
-                            href={`/accounts/receipts/${r.id}?print=1`}
-                            target="_blank"
-                          >
-                            Print
-                          </Link>
-                        </Button>
+                        <PrintSizeMenu href={`/accounts/receipts/${r.id}`} />
                       </div>
                     </TableCell>
                   </TableRow>

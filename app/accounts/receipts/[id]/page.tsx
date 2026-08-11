@@ -11,10 +11,10 @@ export default async function ReceiptDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ print?: string }>;
+  searchParams: Promise<{ print?: string; size?: string }>;
 }) {
   const { id } = await params;
-  const { print } = await searchParams;
+  const { print, size } = await searchParams;
   const [payment, settings] = await Promise.all([
     getPartyPaymentById(parseInt(id, 10)),
     getSettings(),
@@ -57,10 +57,7 @@ export default async function ReceiptDetailPage({
         </Button>
         <PrintButton
           autoPrint={print === "1"}
-          invoiceNo={`RCP-${payment.id}`}
-          grandTotal={payment.amount}
-          phone={payment.customerPhone ?? undefined}
-          documentType="Receipt"
+          initialSize={size}
           buttonText="Print Receipt"
         />
       </div>

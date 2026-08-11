@@ -11,10 +11,10 @@ export default async function InvoiceDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ print?: string }>;
+  searchParams: Promise<{ print?: string; size?: string }>;
 }) {
   const { id } = await params;
-  const { print } = await searchParams;
+  const { print, size } = await searchParams;
   const [sale, settings] = await Promise.all([
     getSaleById(parseInt(id, 10)),
     getSettings(),
@@ -40,9 +40,8 @@ export default async function InvoiceDetailPage({
         </Button>
         <PrintButton
           autoPrint={print === "1"}
-          invoiceNo={sale.invoiceNo}
-          grandTotal={sale.grandTotal}
-          phone={sale.customerPhone ?? undefined}
+          initialSize={size}
+          buttonText="Print Invoice"
         />
       </div>
       <InvoiceTemplate business={business} sale={sale} items={sale.items} />

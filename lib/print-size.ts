@@ -33,6 +33,12 @@ export function setStoredPrintSize(size: PrintSize) {
   }
 }
 
+export function resolvePrintSize(
+  value: string | null | undefined
+): PrintSize {
+  return isPrintSize(value) ? value : getStoredPrintSize();
+}
+
 /** Apply paper size hint before calling window.print(). */
 export function applyPrintSize(size?: PrintSize) {
   const next = size ?? getStoredPrintSize();
@@ -52,6 +58,14 @@ export function applyPrintSize(size?: PrintSize) {
 }
 
 export function triggerPrint(size?: PrintSize) {
-  applyPrintSize(size);
+  const next = applyPrintSize(size);
+  setStoredPrintSize(next);
   window.print();
+}
+
+export function buildPrintHref(pathname: string, size: PrintSize) {
+  const url = new URL(pathname, "http://local");
+  url.searchParams.set("print", "1");
+  url.searchParams.set("size", size);
+  return `${url.pathname}?${url.searchParams.toString()}`;
 }

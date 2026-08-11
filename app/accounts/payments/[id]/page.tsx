@@ -11,10 +11,10 @@ export default async function PaymentDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ print?: string }>;
+  searchParams: Promise<{ print?: string; size?: string }>;
 }) {
   const { id } = await params;
-  const { print } = await searchParams;
+  const { print, size } = await searchParams;
   const [payment, settings] = await Promise.all([
     getPartyPaymentById(parseInt(id, 10)),
     getSettings(),
@@ -57,10 +57,7 @@ export default async function PaymentDetailPage({
         </Button>
         <PrintButton
           autoPrint={print === "1"}
-          invoiceNo={`PAY-${payment.id}`}
-          grandTotal={payment.amount}
-          phone={payment.supplierPhone ?? undefined}
-          documentType="Payment"
+          initialSize={size}
           buttonText="Print Payment"
         />
       </div>

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { ReturnForm } from "./return-form";
 import { PurchaseReturnForm } from "./purchase-return-form";
-import { Printer } from "lucide-react";
+import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
 import Link from "next/link";
 
 type ReturnsContainerProps = {
@@ -129,12 +129,10 @@ export function ReturnsContainer({
                             <Button asChild variant="outline" size="sm">
                               <Link href={`/returns/${r.id}`}>View</Link>
                             </Button>
-                            <Button asChild variant="outline" size="sm">
-                              <Link href={`/returns/${r.id}?print=1`} target="_blank">
-                                <Printer className="mr-1.5 h-3.5 w-3.5" />
-                                Print Credit Note
-                              </Link>
-                            </Button>
+                            <PrintSizeMenu
+                              href={`/returns/${r.id}`}
+                              label="Print Credit Note"
+                            />
                           </div>
                         </TableCell>
                       </TableRow>

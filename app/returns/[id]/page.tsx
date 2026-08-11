@@ -11,10 +11,10 @@ export default async function CreditNoteDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ print?: string }>;
+  searchParams: Promise<{ print?: string; size?: string }>;
 }) {
   const { id } = await params;
-  const { print } = await searchParams;
+  const { print, size } = await searchParams;
   const [creditNote, settings] = await Promise.all([
     getSaleReturnById(parseInt(id, 10)),
     getSettings(),
@@ -48,10 +48,7 @@ export default async function CreditNoteDetailPage({
         </div>
         <PrintButton
           autoPrint={print === "1"}
-          invoiceNo={creditNote.returnNo}
-          grandTotal={creditNote.grandTotal}
-          phone={creditNote.customerPhone ?? undefined}
-          documentType="Credit Note"
+          initialSize={size}
           buttonText="Print Credit Note"
         />
       </div>

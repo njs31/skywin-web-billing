@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Printer } from "lucide-react";
 import { getSales } from "@/lib/queries/sales";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 import { SalesReport } from "@/components/invoices/sales-report";
+import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -88,12 +88,7 @@ export default async function InvoicesPage() {
                         <Button asChild size="sm" variant="outline">
                           <Link href={`/invoices/${sale.id}`}>View</Link>
                         </Button>
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={`/invoices/${sale.id}?print=1`} target="_blank">
-                            <Printer className="mr-1.5 h-3.5 w-3.5" />
-                            Print
-                          </Link>
-                        </Button>
+                        <PrintSizeMenu href={`/invoices/${sale.id}`} />
                       </div>
                     </TableCell>
                   </TableRow>

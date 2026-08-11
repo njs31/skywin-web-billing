@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { getStoredPrintSize, triggerPrint } from "@/lib/print-size";
 
+/** Kept for any remaining auto-print callers; prefers stored paper size. */
 export function AutoPrint({ autoPrint }: { autoPrint?: boolean }) {
   useEffect(() => {
     if (!autoPrint) return;

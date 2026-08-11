@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PaymentForm } from "@/components/accounts/payment-form";
+import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
 
 export default async function PaymentsPage() {
   const [payments, suppliers] = await Promise.all([
@@ -78,18 +79,7 @@ export default async function PaymentsPage() {
                         <Button asChild size="sm" variant="outline">
                           <Link href={`/accounts/payments/${p.id}`}>View</Link>
                         </Button>
-                        <Button
-                          asChild
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700"
-                        >
-                          <Link
-                            href={`/accounts/payments/${p.id}?print=1`}
-                            target="_blank"
-                          >
-                            Print
-                          </Link>
-                        </Button>
+                        <PrintSizeMenu href={`/accounts/payments/${p.id}`} />
                       </div>
                     </TableCell>
                   </TableRow>

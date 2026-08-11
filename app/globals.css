@@ -36,7 +36,32 @@ body {
 
   html[data-print-size="A5"] .print-sheet {
     max-width: 148mm !important;
-    font-size: 11px;
+    width: 100% !important;
+    padding: 6mm !important;
+    font-size: 9pt !important;
+    line-height: 1.35 !important;
+  }
+
+  html[data-print-size="A5"] .print-sheet h1 {
+    font-size: 13pt !important;
+    line-height: 1.2 !important;
+  }
+
+  html[data-print-size="A5"] .print-sheet h2 {
+    font-size: 11pt !important;
+    line-height: 1.2 !important;
+  }
+
+  html[data-print-size="A5"] .print-sheet table,
+  html[data-print-size="A5"] .print-sheet th,
+  html[data-print-size="A5"] .print-sheet td {
+    font-size: 8pt !important;
+  }
+
+  html[data-print-size="A5"] .print-sheet th,
+  html[data-print-size="A5"] .print-sheet td {
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
   }
 
   html[data-print-size="A4"] .print-sheet {
