@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createCustomer } from "@/lib/actions/billing";
+import type { Customer } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,19 +15,33 @@ import {
 } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
 
-export function CustomerForm() {
+type CustomerFormProps = {
+  onSuccess?: (customer: Customer) => void;
+  compact?: boolean;
+  defaultName?: string;
+  defaultPhone?: string;
+};
+
+export function CustomerForm({
+  onSuccess,
+  compact = false,
+  defaultName = "",
+  defaultPhone = "",
+}: CustomerFormProps) {
   const router = useRouter();
   const [type, setType] = useState<"retail" | "wholesale" | "farmer">("retail");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
+  const [showMore, setShowMore] = useState(!compact);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
     setError("");
     startTransition(async () => {
       try {
-        await createCustomer({
+        const customer = await createCustomer({
           name: fd.get("name") as string,
           phone: (fd.get("phone") as string) || undefined,
           gstin: (fd.get("gstin") as string) || undefined,
@@ -35,9 +50,13 @@ export function CustomerForm() {
           type,
           creditLimit: parseFloat((fd.get("creditLimit") as string) || "0"),
         });
-        router.refresh();
-        (e.target as HTMLFormElement).reset();
+        form.reset();
         setType("retail");
+        if (onSuccess) {
+          onSuccess(customer);
+        } else {
+          router.refresh();
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to save customer");
       }
@@ -53,15 +72,11 @@ export function CustomerForm() {
       )}
       <div>
         <Label>Name *</Label>
-        <Input name="name" required />
+        <Input name="name" required defaultValue={defaultName} />
       </div>
       <div>
         <Label>Phone</Label>
-        <Input name="phone" />
-      </div>
-      <div>
-        <Label>Membership Number</Label>
-        <Input name="membershipNo" placeholder="Optional membership ID" />
+        <Input name="phone" defaultValue={defaultPhone} />
       </div>
       <div>
         <Label>Type</Label>
@@ -92,10 +107,28 @@ export function CustomerForm() {
         <Label>Credit Limit</Label>
         <Input name="creditLimit" type="number" min={0} defaultValue={0} />
       </div>
-      <div>
-        <Label>Address</Label>
-        <Input name="address" />
-      </div>
+
+      {compact && !showMore ? (
+        <button
+          type="button"
+          className="text-xs font-medium text-emerald-700 hover:underline"
+          onClick={() => setShowMore(true)}
+        >
+          More details (address, membership)
+        </button>
+      ) : (
+        <>
+          <div>
+            <Label>Membership Number</Label>
+            <Input name="membershipNo" placeholder="Optional membership ID" />
+          </div>
+          <div>
+            <Label>Address</Label>
+            <Input name="address" />
+          </div>
+        </>
+      )}
+
       <Button type="submit" disabled={isPending} className="w-full">
         {isPending ? "Saving..." : "Add Customer"}
       </Button>

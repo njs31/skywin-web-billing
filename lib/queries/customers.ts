@@ -86,6 +86,7 @@ export async function createCustomer(input: z.infer<typeof customerSchema>) {
     .returning();
   revalidateTag("customers", "max");
   revalidatePath("/customers");
+  revalidatePath("/pos");
   return customer;
 }
 

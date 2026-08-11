@@ -41,7 +41,7 @@ export function PaymentVoucherTemplate({
   const partyLabel = isReceipt ? "Received from" : "Paid to";
 
   return (
-    <div className="mx-auto max-w-3xl bg-white p-8 text-sm text-slate-900 print:p-4 border shadow-sm">
+    <div className="mx-auto max-w-3xl print-sheet bg-white p-8 text-sm text-slate-900 print:p-4 border shadow-sm">
       <div className="border-b-2 border-slate-900 pb-4 text-center">
         <h1 className="text-xl font-bold uppercase">{business.name}</h1>
         <h2 className="text-lg font-semibold">{business.tagline}</h2>

@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MessageCircle } from "lucide-react";
+import {
+  DEFAULT_PRINT_SIZE,
+  PRINT_SIZES,
+  getStoredPrintSize,
+  setStoredPrintSize,
+  triggerPrint,
+  type PrintSize,
+} from "@/lib/print-size";
 
 type PrintButtonProps = {
   autoPrint?: boolean;
@@ -11,6 +19,7 @@ type PrintButtonProps = {
   phone?: string;
   documentType?: string;
   buttonText?: string;
+  showWhatsApp?: boolean;
 };
 
 export function PrintButton({
@@ -20,13 +29,25 @@ export function PrintButton({
   phone,
   documentType = "Invoice",
   buttonText = "Print Invoice",
+  showWhatsApp = true,
 }: PrintButtonProps) {
+  const [printSize, setPrintSize] = useState<PrintSize>(DEFAULT_PRINT_SIZE);
+
   useEffect(() => {
-    if (autoPrint) {
-      const timer = setTimeout(() => window.print(), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [autoPrint]);
+    setPrintSize(getStoredPrintSize());
+  }, []);
+
+  useEffect(() => {
+    if (!autoPrint) return;
+    const timer = setTimeout(() => triggerPrint(printSize), 500);
+    return () => clearTimeout(timer);
+  }, [autoPrint, printSize]);
+
+  const onSizeChange = (size: PrintSize) => {
+    setPrintSize(size);
+    setStoredPrintSize(size);
+    document.documentElement.dataset.printSize = size;
+  };
 
   const shareWhatsApp = () => {
     const text = encodeURIComponent(
@@ -39,12 +60,29 @@ export function PrintButton({
   };
 
   return (
-    <div className="flex gap-2">
-      <Button variant="outline" onClick={shareWhatsApp}>
-        <MessageCircle className="mr-2 h-4 w-4" />
-        WhatsApp
-      </Button>
-      <Button onClick={() => window.print()}>{buttonText}</Button>
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-2 text-sm text-slate-600">
+        <span className="whitespace-nowrap">Paper</span>
+        <select
+          value={printSize}
+          onChange={(e) => onSizeChange(e.target.value as PrintSize)}
+          className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          aria-label="Print paper size"
+        >
+          {PRINT_SIZES.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+      </label>
+      {showWhatsApp ? (
+        <Button variant="outline" onClick={shareWhatsApp}>
+          <MessageCircle className="mr-2 h-4 w-4" />
+          WhatsApp
+        </Button>
+      ) : null}
+      <Button onClick={() => triggerPrint(printSize)}>{buttonText}</Button>
     </div>
   );
 }

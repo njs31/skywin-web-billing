@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import { ProductScanBar } from "@/components/scanner/product-scan-bar";
 import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
+import { AddCustomerDialog } from "@/components/customers/add-customer-dialog";
 import { useRouter } from "next/navigation";
 import { BUSINESS } from "@/lib/business";
 
@@ -67,13 +68,14 @@ type PosScreenProps = {
   defaultOperator?: string;
 };
 
-export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
+export function PosScreen({ customers: initialCustomers, defaultOperator }: PosScreenProps) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [billType, setBillType] = useState<"retail" | "wholesale">("retail");
+  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [customerId, setCustomerId] = useState<string>("none");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -103,6 +105,24 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
   const [customerOutstanding, setCustomerOutstanding] = useState<number | null>(null);
   const [loadingOutstanding, setLoadingOutstanding] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    setCustomers(initialCustomers);
+  }, [initialCustomers]);
+
+  const handleCustomerCreated = (customer: Customer) => {
+    setCustomers((prev) => {
+      if (prev.some((c) => c.id === customer.id)) return prev;
+      return [...prev, customer].sort((a, b) => a.name.localeCompare(b.name));
+    });
+    setCustomerId(String(customer.id));
+    setCustomerSearch(customer.name);
+    setCustomerName("");
+    setCustomerPhone("");
+    setIsCustomerDropdownOpen(false);
+    setBillType(customer.type === "wholesale" ? "wholesale" : "retail");
+    router.refresh();
+  };
 
   const searchSeq = useRef(0);
   useEffect(() => {
@@ -780,11 +800,18 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
             </div>
 
             <div className="grid gap-2">
-              <div>
+              <div className="flex items-center justify-between gap-2">
                 <Label className="text-xs text-slate-600 font-medium">
                   Customer
                 </Label>
-                <div className="relative mt-1">
+                <AddCustomerDialog
+                  compactTrigger
+                  defaultName={customerSearch.trim() || customerName}
+                  defaultPhone={customerPhone}
+                  onCreated={handleCustomerCreated}
+                />
+              </div>
+              <div className="relative mt-1">
                   <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
                   <Input
                     className="h-9 pl-9 text-sm"
@@ -828,7 +855,7 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                       </button>
                       {filteredCustomers.length === 0 ? (
                         <p className="px-2 py-2 text-xs text-slate-400">
-                          No customers match your search
+                          No customers match — use New Customer
                         </p>
                       ) : (
                         filteredCustomers.map((c) => (
@@ -878,7 +905,6 @@ export function PosScreen({ customers, defaultOperator }: PosScreenProps) {
                     )}
                   </div>
                 )}
-              </div>
               {(!customerId || customerId === "none") && (
                 <div className="space-y-2">
                   <Input

@@ -33,6 +33,19 @@ body {
     margin: 0 !important;
     padding: 0 !important;
   }
+
+  html[data-print-size="A5"] .print-sheet {
+    max-width: 148mm !important;
+    font-size: 11px;
+  }
+
+  html[data-print-size="A4"] .print-sheet {
+    max-width: 210mm !important;
+  }
+
+  html[data-print-size="A3"] .print-sheet {
+    max-width: 297mm !important;
+  }
 }
 
 /* Custom thin scrollbar styles */
