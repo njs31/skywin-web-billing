@@ -76,12 +76,6 @@ export const customers = pgTable(
     gstin: text("gstin"),
     address: text("address"),
     membershipNo: text("membership_no"),
-    acre: text("acre"),
-    crop: text("crop"),
-    pinCode: text("pin_code"),
-    village: text("village"),
-    taluk: text("taluk"),
-    district: text("district"),
     type: customerTypeEnum("type").default("retail").notNull(),
     creditLimit: numeric("credit_limit", { precision: 14, scale: 2 }).default(
       "0"
@@ -221,9 +215,6 @@ export const sales = pgTable(
     sgst: numeric("sgst", { precision: 14, scale: 2 }).default("0").notNull(),
     igst: numeric("igst", { precision: 14, scale: 2 }).default("0").notNull(),
     grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
-    roundOff: numeric("round_off", { precision: 14, scale: 2 })
-      .default("0")
-      .notNull(),
     paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).default("0"),
     cashAmount: numeric("cash_amount", { precision: 14, scale: 2 })
       .default("0")
@@ -231,8 +222,6 @@ export const sales = pgTable(
     upiAmount: numeric("upi_amount", { precision: 14, scale: 2 })
       .default("0")
       .notNull(),
-    poNumber: text("po_number"),
-    purchaseOrderId: integer("purchase_order_id"),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -319,9 +308,6 @@ export const purchaseReturns = pgTable("purchase_returns", {
   supplierId: integer("supplier_id").references(() => suppliers.id).notNull(),
   date: timestamp("date").defaultNow().notNull(),
   subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
-  cgst: numeric("cgst", { precision: 14, scale: 2 }).default("0").notNull(),
-  sgst: numeric("sgst", { precision: 14, scale: 2 }).default("0").notNull(),
-  igst: numeric("igst", { precision: 14, scale: 2 }).default("0").notNull(),
   grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -334,34 +320,6 @@ export const purchaseReturnItems = pgTable("purchase_return_items", {
     .notNull(),
   productId: integer("product_id")
     .references(() => products.id),
-  customName: text("custom_name"),
-  qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
-  rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
-  gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).default("0").notNull(),
-  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
-  hsnCode: text("hsn_code"),
-});
-
-export const purchaseOrders = pgTable("purchase_orders", {
-  id: serial("id").primaryKey(),
-  poNumber: text("po_number").notNull().unique(),
-  customerId: integer("customer_id").references(() => customers.id),
-  customerName: text("customer_name"),
-  customerPhone: text("customer_phone"),
-  date: timestamp("date").defaultNow().notNull(),
-  notes: text("notes"),
-  subtotal: numeric("subtotal", { precision: 14, scale: 2 }).default("0").notNull(),
-  grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).default("0").notNull(),
-  status: text("status").default("open").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const purchaseOrderItems = pgTable("purchase_order_items", {
-  id: serial("id").primaryKey(),
-  purchaseOrderId: integer("purchase_order_id")
-    .references(() => purchaseOrders.id, { onDelete: "cascade" })
-    .notNull(),
-  productId: integer("product_id").references(() => products.id),
   customName: text("custom_name"),
   qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
@@ -584,8 +542,6 @@ export type SaleReturn = typeof saleReturns.$inferSelect;
 export type PartyPayment = typeof partyPayments.$inferSelect;
 export type PurchaseReturn = typeof purchaseReturns.$inferSelect;
 export type PurchaseReturnItem = typeof purchaseReturnItems.$inferSelect;
-export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
-export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type ReportingLine = typeof reportingLines.$inferSelect;
 export type DealerMapping = typeof dealerMappings.$inferSelect;

@@ -157,19 +157,6 @@ function exportExcel(data: SalesReportData) {
     XLSX.utils.json_to_sheet(lineItemSheetRows(data)),
     "Line Items"
   );
-  const receivedRows = Object.entries(data.summary.receivedByMode || {})
-    .filter(([, amt]) => amt > 0)
-    .map(([mode, amount]) => ({
-      Mode: mode.toUpperCase(),
-      "Amount Received": amount,
-    }));
-  if (receivedRows.length > 0) {
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(receivedRows),
-      "Received by Mode"
-    );
-  }
   XLSX.writeFile(
     wb,
     `Skywin-Sales-Report-${data.fromDate}-to-${data.toDate}.xlsx`
@@ -682,39 +669,6 @@ export function SalesReport() {
               </Card>
             </TabsContent>
           </Tabs>
-
-          {Object.keys(report.summary.receivedByMode || {}).length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Amounts received by payment mode
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-6 p-4 pt-0">
-                {Object.entries(report.summary.receivedByMode)
-                  .filter(([, amt]) => amt > 0)
-                  .map(([mode, amount]) => (
-                    <div key={mode} className="min-w-[120px]">
-                      <p className="text-xs capitalize text-slate-500">{mode}</p>
-                      <p className="text-lg font-semibold text-emerald-700">
-                        {formatCurrency(amount)}
-                      </p>
-                    </div>
-                  ))}
-                <div className="min-w-[140px] border-l border-slate-200 pl-6">
-                  <p className="text-xs text-slate-500">Total received</p>
-                  <p className="text-lg font-bold">
-                    {formatCurrency(
-                      Object.values(report.summary.receivedByMode).reduce(
-                        (s, n) => s + n,
-                        0
-                      )
-                    )}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
         </>
       ) : null}
     </div>

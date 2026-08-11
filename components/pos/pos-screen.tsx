@@ -23,7 +23,6 @@ import { searchProductBatches } from "@/lib/actions/products";
 import { createSale } from "@/lib/actions/sales";
 import {
   calculateGstBreakdown,
-  applyRupeeRounding,
   calculateLineAmount,
   getProductRate,
   isInterstateGst,
@@ -106,7 +105,6 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [customerOutstanding, setCustomerOutstanding] = useState<number | null>(null);
   const [loadingOutstanding, setLoadingOutstanding] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [poNumber, setPoNumber] = useState("");
 
   useEffect(() => {
     setCustomers(initialCustomers);
@@ -352,17 +350,15 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
     BUSINESS.stateCode
   );
 
-  const gst = applyRupeeRounding(
-    calculateGstBreakdown(
-      cart.map((c) => ({
-        qty: c.qty,
-        rate: c.rate,
-        gstRate: c.gstRate,
-        discountType: c.discountType,
-        discountValue: c.discountValue,
-      })),
-      { billDiscount: parseFloat(billDiscount) || 0, interstate }
-    )
+  const gst = calculateGstBreakdown(
+    cart.map((c) => ({
+      qty: c.qty,
+      rate: c.rate,
+      gstRate: c.gstRate,
+      discountType: c.discountType,
+      discountValue: c.discountValue,
+    })),
+    { billDiscount: parseFloat(billDiscount) || 0, interstate }
   );
 
   const filteredCustomers = useMemo(() => {
@@ -450,7 +446,6 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
             mode === "credit" ? 0 : gst.grandTotal,
           operatorName,
           discountAmount: parseFloat(billDiscount) || 0,
-          poNumber: poNumber.trim() || undefined,
           items: cart.map((c) => ({
             productId: c.product ? c.product.id : undefined,
             customName: c.product ? undefined : c.name,
@@ -796,15 +791,6 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                   </div>
                 </>
               )}
-              {gst.roundOff != null && Math.abs(gst.roundOff) >= 0.005 && (
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Round Off</span>
-                  <span>
-                    {gst.roundOff > 0 ? "+" : ""}
-                    {formatCurrency(gst.roundOff)}
-                  </span>
-                </div>
-              )}
               <div className="flex justify-between text-base font-bold">
                 <span>Total</span>
                 <span className="text-emerald-700">
@@ -919,40 +905,6 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                     )}
                   </div>
                 )}
-
-                {selectedCustomer &&
-                  (selectedCustomer.acre ||
-                    selectedCustomer.crop ||
-                    selectedCustomer.village ||
-                    selectedCustomer.taluk ||
-                    selectedCustomer.district ||
-                    selectedCustomer.pinCode) && (
-                    <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                      {[
-                        selectedCustomer.acre && `Acre: ${selectedCustomer.acre}`,
-                        selectedCustomer.crop && `Crop: ${selectedCustomer.crop}`,
-                        selectedCustomer.village &&
-                          `Village: ${selectedCustomer.village}`,
-                        selectedCustomer.taluk && `Taluk: ${selectedCustomer.taluk}`,
-                        selectedCustomer.district &&
-                          `District: ${selectedCustomer.district}`,
-                        selectedCustomer.pinCode &&
-                          `PIN: ${selectedCustomer.pinCode}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  )}
-
-                <div className="mt-2">
-                  <Label className="text-xs">Purchase Order No.</Label>
-                  <Input
-                    value={poNumber}
-                    onChange={(e) => setPoNumber(e.target.value)}
-                    placeholder="Optional PO number"
-                    className="mt-1 h-9"
-                  />
-                </div>
               {(!customerId || customerId === "none") && (
                 <div className="space-y-2">
                   <Input

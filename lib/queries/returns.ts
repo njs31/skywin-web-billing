@@ -305,7 +305,6 @@ const purchaseReturnItemSchema = z.object({
   customName: z.string().optional(),
   qty: z.number().positive(),
   rate: z.number().nonnegative(),
-  gstRate: z.number().nonnegative().default(0),
   hsnCode: z.string().optional().nullable(),
 });
 
@@ -317,33 +316,26 @@ const createPurchaseReturnSchema = z.object({
 });
 
 async function generateDebitReturnNo(tx: DbOrTx) {
-  const { getIndianFinancialYearBounds } = await import("@/lib/financial-year");
-  const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
+  const today = format(new Date(), "yyyyMMdd");
+  const prefix = `DEB-${today}-`;
   const rows = (await tx.execute(sql`
     select coalesce(max(nullif(substring(return_no from '([0-9]+)$'), '')::int), 0) + 1 as next_seq
     from purchase_returns
-    where (
-      return_no ~ '^DN[0-9]+$'
-      or return_no like 'DEB-%'
-    )
-      and date >= ${fyStart}
-      and date <= ${fyEnd}
+    where return_no like ${prefix + "%"}
   `)) as unknown as Array<{ next_seq: number | string }>;
   const seq = Number(rows[0]?.next_seq ?? 1);
-  return `DN${String(seq).padStart(5, "0")}`;
+  return `${prefix}${String(seq).padStart(4, "0")}`;
 }
 
 export async function createPurchaseReturn(input: z.infer<typeof createPurchaseReturnSchema>) {
   const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = createPurchaseReturnSchema.parse(input);
 
-  const gst = calculateGstBreakdown(
-    data.items.map((i) => ({
-      qty: i.qty,
-      rate: i.rate,
-      gstRate: i.gstRate,
-    }))
-  );
+  let subtotal = 0;
+  for (const item of data.items) {
+    subtotal += item.qty * item.rate;
+  }
+  const grandTotal = Math.round(subtotal * 100) / 100;
 
   const purchaseReturn = await db.transaction(async (tx) => {
     const returnNo = await generateDebitReturnNo(tx);
@@ -354,11 +346,8 @@ export async function createPurchaseReturn(input: z.infer<typeof createPurchaseR
         returnNo,
         purchaseId: data.purchaseId,
         supplierId: data.supplierId,
-        subtotal: gst.subtotal.toFixed(2),
-        cgst: gst.cgst.toFixed(2),
-        sgst: gst.sgst.toFixed(2),
-        igst: gst.igst.toFixed(2),
-        grandTotal: gst.grandTotal.toFixed(2),
+        subtotal: grandTotal.toFixed(2),
+        grandTotal: grandTotal.toFixed(2),
         reason: data.reason,
       })
       .returning();
@@ -377,14 +366,13 @@ export async function createPurchaseReturn(input: z.infer<typeof createPurchaseR
         throw new Error(`HSN code is mandatory for all debit note items.`);
       }
 
-      const amount = calculateLineAmount(item.qty, item.rate);
+      const amount = item.qty * item.rate;
       await tx.insert(purchaseReturnItems).values({
         returnId: created.id,
         productId: item.productId || null,
         customName: item.customName || null,
         qty: item.qty.toFixed(2),
         rate: item.rate.toFixed(2),
-        gstRate: item.gstRate.toFixed(2),
         amount: amount.toFixed(2),
         hsnCode: itemHsn,
       });
@@ -450,24 +438,12 @@ export async function getPurchaseReturnById(id: number) {
     .select({
       id: purchaseReturns.id,
       returnNo: purchaseReturns.returnNo,
-      purchaseId: purchaseReturns.purchaseId,
-      supplierId: purchaseReturns.supplierId,
       date: purchaseReturns.date,
-      subtotal: purchaseReturns.subtotal,
-      cgst: purchaseReturns.cgst,
-      sgst: purchaseReturns.sgst,
-      igst: purchaseReturns.igst,
       grandTotal: purchaseReturns.grandTotal,
       reason: purchaseReturns.reason,
-      createdAt: purchaseReturns.createdAt,
       supplierName: suppliers.name,
-      supplierPhone: suppliers.phone,
-      supplierAddress: suppliers.address,
-      supplierGstin: suppliers.gstin,
-      purchaseInvoiceNo: purchases.invoiceNo,
     })
     .from(purchaseReturns)
-    .leftJoin(purchases, eq(purchaseReturns.purchaseId, purchases.id))
     .innerJoin(suppliers, eq(purchaseReturns.supplierId, suppliers.id))
     .where(eq(purchaseReturns.id, id))
     .limit(1);
@@ -480,7 +456,6 @@ export async function getPurchaseReturnById(id: number) {
       customName: purchaseReturnItems.customName,
       qty: purchaseReturnItems.qty,
       rate: purchaseReturnItems.rate,
-      gstRate: purchaseReturnItems.gstRate,
       amount: purchaseReturnItems.amount,
       hsnCode: sql<string>`coalesce(${purchaseReturnItems.hsnCode}, ${products.hsnCode})`,
     })

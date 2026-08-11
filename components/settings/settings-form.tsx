@@ -37,12 +37,6 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             qwicksMerchantId: fd.get("qwicksMerchantId") as string,
             qwicksApiKey: fd.get("qwicksApiKey") as string,
             qwicksHost: fd.get("qwicksHost") as string,
-            seedLicense: fd.get("seedLicense") as string,
-            fertLicense: fd.get("fertLicense") as string,
-            bankName: fd.get("bankName") as string,
-            bankBranch: fd.get("bankBranch") as string,
-            bankAccountNo: fd.get("bankAccountNo") as string,
-            bankIfsc: fd.get("bankIfsc") as string,
           },
           fd.get("currentPin") as string || undefined,
         );
@@ -138,41 +132,6 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
               <p>• <strong>Live Inventory Pull:</strong> <code className="bg-slate-200 px-1 rounded">GET /api/qwicks/inventory</code> or <code className="bg-slate-200 px-1 rounded">GET /api/updateInventory/{settings.qwicksMerchantId || "SkywinKmu"}</code></p>
               <p>• <strong>Stock Check at Checkout:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/stock-check</code></p>
               <p>• <strong>Order Ingestion Webhook:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/order-placed</code></p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 border-t pt-4">
-            <div className="sm:col-span-2">
-              <h3 className="font-semibold text-base text-slate-900">
-                Licenses & Bank (print documents)
-              </h3>
-              <p className="text-xs text-slate-500">
-                Shown on Purchase Order and Debit Note prints.
-              </p>
-            </div>
-            <div>
-              <Label>Seed License</Label>
-              <Input name="seedLicense" defaultValue={settings.seedLicense} />
-            </div>
-            <div>
-              <Label>Fertilizer License</Label>
-              <Input name="fertLicense" defaultValue={settings.fertLicense} />
-            </div>
-            <div>
-              <Label>Bank Name</Label>
-              <Input name="bankName" defaultValue={settings.bankName} />
-            </div>
-            <div>
-              <Label>Bank Branch</Label>
-              <Input name="bankBranch" defaultValue={settings.bankBranch} />
-            </div>
-            <div>
-              <Label>Account No.</Label>
-              <Input name="bankAccountNo" defaultValue={settings.bankAccountNo} />
-            </div>
-            <div>
-              <Label>IFSC</Label>
-              <Input name="bankIfsc" defaultValue={settings.bankIfsc} />
             </div>
           </div>
 

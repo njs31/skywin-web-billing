@@ -17,25 +17,7 @@ export type GstBreakdown = {
   sgst: number;
   igst: number;
   grandTotal: number;
-  /** Delta applied so grandTotal is a whole rupee (can be negative). */
-  roundOff?: number;
 };
-
-/** Round to nearest rupee: ≥50 paise up, otherwise down. */
-export function roundToRupee(amount: number): number {
-  return Math.round(amount);
-}
-
-/** Apply nearest-rupee rounding to an existing GST breakdown (sales bills). */
-export function applyRupeeRounding(gst: GstBreakdown): GstBreakdown {
-  const before = Math.round(gst.grandTotal * 100) / 100;
-  const after = roundToRupee(before);
-  return {
-    ...gst,
-    grandTotal: after,
-    roundOff: Math.round((after - before) * 100) / 100,
-  };
-}
 
 export function calculateLineAmount(
   qty: number,

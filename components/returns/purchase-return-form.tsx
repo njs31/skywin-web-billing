@@ -1,19 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import { searchProductBatches } from "@/lib/actions/products";
 import { createPurchaseReturn } from "@/lib/actions/billing";
-import { searchPurchasesForReturn } from "@/lib/actions/purchases";
-import { calculateGstBreakdown, calculateLineAmount } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Supplier, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
-import type { PurchaseInvoiceOption } from "@/lib/queries/purchases";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -24,15 +21,7 @@ import {
 import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
 
-type LineItem = {
-  id: string;
-  product: Product | null;
-  name: string;
-  qty: number;
-  rate: number;
-  gstRate: number;
-  hsnCode?: string;
-};
+type LineItem = { id: string; product: Product | null; name: string; qty: number; rate: number; hsnCode?: string };
 
 export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
   const router = useRouter();
@@ -42,13 +31,6 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
   const [items, setItems] = useState<LineItem[]>([]);
   const [isPending, startTransition] = useTransition();
-  const [invoiceQuery, setInvoiceQuery] = useState("");
-  const [invoiceResults, setInvoiceResults] = useState<PurchaseInvoiceOption[]>(
-    []
-  );
-  const [selectedInvoice, setSelectedInvoice] =
-    useState<PurchaseInvoiceOption | null>(null);
-  const [isInvoiceDropdownOpen, setIsInvoiceDropdownOpen] = useState(false);
 
   // Custom Item Form State
   const [showCustom, setShowCustom] = useState(false);
@@ -56,7 +38,6 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
   const [customHsn, setCustomHsn] = useState("");
   const [customQty, setCustomQty] = useState("1");
   const [customRate, setCustomRate] = useState("");
-  const [customGstRate, setCustomGstRate] = useState("18");
 
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -67,41 +48,9 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
     return () => clearTimeout(t);
   }, [query]);
 
-  useEffect(() => {
-    if (selectedInvoice) return;
-    if (!supplierId) {
-      setInvoiceResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      const rows = await searchPurchasesForReturn(invoiceQuery, {
-        supplierId: parseInt(supplierId, 10),
-        limit: 15,
-      });
-      setInvoiceResults(rows);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [invoiceQuery, supplierId, selectedInvoice]);
-
-  const clearInvoice = () => {
-    setSelectedInvoice(null);
-    setInvoiceQuery("");
-    setInvoiceResults([]);
-    setIsInvoiceDropdownOpen(false);
-  };
-
-  const pickInvoice = (inv: PurchaseInvoiceOption) => {
-    setSelectedInvoice(inv);
-    setInvoiceQuery(inv.invoiceNo ?? "");
-    setIsInvoiceDropdownOpen(false);
-    setSupplierId(String(inv.supplierId));
-  };
-
   const addItem = (p: Product) => {
     if (!p.hsnCode || !p.hsnCode.trim()) {
-      alert(
-        `HSN code is mandatory. Product "${p.name}" lacks an HSN code. Please update the product in Inventory first.`
-      );
+      alert(`HSN code is mandatory. Product "${p.name}" lacks an HSN code. Please update the product in Inventory first.`);
       return;
     }
     const id = `p-${p.id}`;
@@ -114,7 +63,6 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
         name: p.name,
         qty: 1,
         rate: toNumber(p.purchaseRate),
-        gstRate: toNumber(p.gstRate),
       },
     ]);
     setQuery("");
@@ -147,7 +95,6 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
     }
     const qty = parseFloat(customQty) || 0;
     const rate = parseFloat(customRate) || 0;
-    const gstRate = parseFloat(customGstRate) || 0;
     if (qty <= 0 || rate < 0) return;
 
     setItems((prev) => [
@@ -158,7 +105,6 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
         name: customName.trim(),
         qty,
         rate,
-        gstRate,
         hsnCode: customHsn.trim(),
       },
     ]);
@@ -166,42 +112,28 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
     setCustomHsn("");
     setCustomQty("1");
     setCustomRate("");
-    setCustomGstRate("18");
     setShowCustom(false);
   };
 
-  const gst = useMemo(
-    () =>
-      calculateGstBreakdown(
-        items.map((i) => ({
-          qty: i.qty,
-          rate: i.rate,
-          gstRate: i.gstRate,
-        }))
-      ),
-    [items]
-  );
+  const total = items.reduce((s, i) => s + (i.qty * i.rate), 0);
 
   const submit = () => {
     if (!supplierId || items.length === 0) return;
     startTransition(async () => {
       await createPurchaseReturn({
-        purchaseId: selectedInvoice?.id,
         supplierId: parseInt(supplierId, 10),
         reason: reason || undefined,
         items: items.map((i) => ({
           productId: i.product ? i.product.id : undefined,
           customName: i.product ? undefined : i.name,
-          hsnCode: i.product ? i.product.hsnCode || null : i.hsnCode,
+          hsnCode: i.product ? (i.product.hsnCode || null) : i.hsnCode,
           qty: i.qty,
           rate: i.rate,
-          gstRate: i.gstRate,
         })),
       });
       setItems([]);
       setReason("");
       setSupplierId("");
-      clearInvoice();
       router.refresh();
     });
   };
@@ -211,15 +143,7 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label>Supplier</Label>
-          <Select
-            value={supplierId}
-            onValueChange={(value) => {
-              setSupplierId(value);
-              if (selectedInvoice && String(selectedInvoice.supplierId) !== value) {
-                clearInvoice();
-              }
-            }}
-          >
+          <Select value={supplierId} onValueChange={setSupplierId}>
             <SelectTrigger>
               <SelectValue placeholder="Select Supplier" />
             </SelectTrigger>
@@ -240,84 +164,6 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
             placeholder="Excess stock, damaged goods, rate dispute, etc."
           />
         </div>
-      </div>
-
-      <div>
-        <Label>Against Purchase (original bill)</Label>
-        <div className="relative mt-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            className="pl-9 pr-9"
-            placeholder={
-              supplierId
-                ? "Search purchase invoice no..."
-                : "Select a supplier first..."
-            }
-            disabled={!supplierId}
-            value={
-              selectedInvoice && !isInvoiceDropdownOpen
-                ? `${selectedInvoice.invoiceNo ?? "No invoice"} — ${selectedInvoice.supplierName}`
-                : invoiceQuery
-            }
-            onChange={(e) => {
-              setInvoiceQuery(e.target.value);
-              setSelectedInvoice(null);
-              setIsInvoiceDropdownOpen(true);
-            }}
-            onFocus={() => {
-              if (!supplierId) return;
-              setIsInvoiceDropdownOpen(true);
-              if (selectedInvoice) {
-                setInvoiceQuery(selectedInvoice.invoiceNo ?? "");
-              }
-            }}
-          />
-          {(selectedInvoice || invoiceQuery) && (
-            <button
-              type="button"
-              className="absolute right-2 top-2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              onClick={clearInvoice}
-              title="Clear purchase"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-          {isInvoiceDropdownOpen && supplierId && (
-            <div className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white p-1.5 shadow-lg">
-              {invoiceResults.length === 0 ? (
-                <p className="px-2 py-2 text-xs text-slate-400">
-                  No purchases found
-                </p>
-              ) : (
-                invoiceResults.map((inv) => (
-                  <button
-                    key={inv.id}
-                    type="button"
-                    onClick={() => pickInvoice(inv)}
-                    className="flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left text-sm hover:bg-emerald-50"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-slate-800">
-                        {inv.invoiceNo || "No invoice no."}
-                      </span>
-                      <span className="block truncate text-[11px] text-slate-500">
-                        {inv.supplierName} ·{" "}
-                        {new Date(inv.date).toLocaleDateString("en-IN")}
-                      </span>
-                    </span>
-                    <span className="shrink-0 font-semibold text-slate-700">
-                      {formatCurrency(inv.grandTotal)}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-slate-500">
-          Select the original purchase so the debit note print shows “Against
-          Invoice No”
-        </p>
       </div>
 
       <div className="relative">
@@ -393,24 +239,8 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
                 onChange={(e) => setCustomRate(e.target.value)}
               />
             </div>
-            <div>
-              <Label className="text-xs">GST %</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                className="h-9 bg-white"
-                value={customGstRate}
-                onChange={(e) => setCustomGstRate(e.target.value)}
-              />
-            </div>
             <div className="sm:col-span-2 flex items-end">
-              <Button
-                size="sm"
-                onClick={addCustomItem}
-                className="bg-emerald-600 hover:bg-emerald-700 h-9"
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" />
+              <Button size="sm" onClick={addCustomItem} className="bg-emerald-600 hover:bg-emerald-700 h-9">
                 Add Custom Item to Return
               </Button>
             </div>
@@ -430,9 +260,6 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
                 Manual {item.hsnCode ? `(HSN: ${item.hsnCode})` : ""}
               </span>
             )}
-            <span className="ml-1.5 text-[10px] text-slate-400">
-              GST {item.gstRate}%
-            </span>
           </span>
           <div className="flex items-center gap-2">
             <Label className="text-[10px] text-slate-400">Qty</Label>
@@ -471,7 +298,7 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
             />
           </div>
           <span className="w-24 text-right text-sm font-semibold text-slate-900">
-            {formatCurrency(calculateLineAmount(item.qty, item.rate))}
+            {formatCurrency(item.qty * item.rate)}
           </span>
           <Button
             size="icon"
@@ -486,40 +313,11 @@ export function PurchaseReturnForm({ suppliers }: { suppliers: Supplier[] }) {
       ))}
 
       {items.length > 0 && (
-        <div className="space-y-3 border-t pt-3">
-          <div className="ml-auto w-64 space-y-1 text-sm">
-            <div className="flex justify-between text-slate-600">
-              <span>Subtotal</span>
-              <span>{formatCurrency(gst.subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-slate-600">
-              <span>CGST</span>
-              <span>{formatCurrency(gst.cgst)}</span>
-            </div>
-            <div className="flex justify-between text-slate-600">
-              <span>SGST</span>
-              <span>{formatCurrency(gst.sgst)}</span>
-            </div>
-            {gst.igst > 0 && (
-              <div className="flex justify-between text-slate-600">
-                <span>IGST</span>
-                <span>{formatCurrency(gst.igst)}</span>
-              </div>
-            )}
-            <div className="flex justify-between border-t pt-2 font-semibold">
-              <span>Debit Note Total</span>
-              <span>{formatCurrency(gst.grandTotal)}</span>
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              disabled={isPending || !supplierId}
-              onClick={submit}
-              className="bg-emerald-600 hover:bg-emerald-700"
-            >
-              {isPending ? "Saving..." : "Save Debit Note"}
-            </Button>
-          </div>
+        <div className="flex items-center justify-between border-t pt-3 font-semibold text-sm">
+          <span>Debit Note Total: {formatCurrency(total)}</span>
+          <Button disabled={isPending || !supplierId} onClick={submit} className="bg-emerald-600 hover:bg-emerald-700">
+            {isPending ? "Saving..." : "Save Debit Note"}
+          </Button>
         </div>
       )}
     </div>
