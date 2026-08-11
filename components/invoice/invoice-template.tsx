@@ -9,6 +9,12 @@ type InvoiceSale = {
   customerPhone?: string | null;
   customerGstin?: string | null;
   customerAddress?: string | null;
+  customerAcre?: string | null;
+  customerCrop?: string | null;
+  customerPinCode?: string | null;
+  customerVillage?: string | null;
+  customerTaluk?: string | null;
+  customerDistrict?: string | null;
   paymentMode: string;
   operatorName?: string | null;
   subtotal: string;
@@ -17,9 +23,11 @@ type InvoiceSale = {
   sgst: string;
   igst: string;
   grandTotal: string;
+  roundOff?: string | null;
   paidAmount?: string | null;
   cashAmount?: string | null;
   upiAmount?: string | null;
+  poNumber?: string | null;
 };
 
 type InvoiceItem = {
@@ -53,6 +61,14 @@ type InvoiceTemplateProps = {
 export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps) {
   const customer =
     sale.customerRecordName ?? sale.customerName ?? null;
+  const agriBits = [
+    sale.customerAcre && `Acre: ${sale.customerAcre}`,
+    sale.customerCrop && `Crop: ${sale.customerCrop}`,
+    sale.customerVillage && `Village: ${sale.customerVillage}`,
+    sale.customerTaluk && `Taluk: ${sale.customerTaluk}`,
+    sale.customerDistrict && `District: ${sale.customerDistrict}`,
+    sale.customerPinCode && `PIN: ${sale.customerPinCode}`,
+  ].filter(Boolean);
 
   return (
     <div className="mx-auto max-w-3xl print-sheet bg-white p-8 text-sm text-slate-900 print:p-4">
@@ -79,6 +95,11 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
             <span className="font-semibold">Bill Type:</span>{" "}
             {(sale.billType ?? "retail").toUpperCase()}
           </p>
+          {sale.poNumber && (
+            <p>
+              <span className="font-semibold">PO No:</span> {sale.poNumber}
+            </p>
+          )}
           {customer && (
             <p>
               <span className="font-semibold">Customer:</span> {customer}
@@ -89,6 +110,12 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
             <p>
               <span className="font-semibold">Address:</span>{" "}
               {sale.customerAddress}
+            </p>
+          )}
+          {agriBits.length > 0 && (
+            <p>
+              <span className="font-semibold">Farm details:</span>{" "}
+              {agriBits.join(" · ")}
             </p>
           )}
           {sale.customerGstin && (
@@ -203,6 +230,15 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
             <div className="flex justify-between">
               <span>IGST</span>
               <span>{formatCurrency(sale.igst)}</span>
+            </div>
+          )}
+          {Math.abs(toNumber(sale.roundOff)) >= 0.005 && (
+            <div className="flex justify-between">
+              <span>Round Off</span>
+              <span>
+                {toNumber(sale.roundOff) > 0 ? "+" : ""}
+                {formatCurrency(sale.roundOff!)}
+              </span>
             </div>
           )}
           <div className="flex justify-between border-t border-slate-900 pt-2 text-base font-bold">

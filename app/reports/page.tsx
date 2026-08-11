@@ -9,6 +9,7 @@ import { getSales } from "@/lib/queries/sales";
 import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TallyExportButton } from "@/components/reports/tally-export-button";
+import { EwayExportButton } from "@/components/reports/eway-export-button";
 import {
   Table,
   TableBody,
@@ -41,8 +42,9 @@ export default async function ReportsPage() {
             Sale book, purchase book, product & party analysis — this month
           </p>
         </div>
-        <div className="w-full md:w-96">
+        <div className="grid w-full gap-4 md:w-[28rem]">
           <TallyExportButton />
+          <EwayExportButton />
         </div>
       </div>
 

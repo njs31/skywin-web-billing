@@ -1,0 +1,64 @@
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { getPurchaseReturnById } from "@/lib/queries/returns";
+import { getSettings } from "@/lib/settings";
+import { DebitNoteTemplate } from "@/components/returns/debit-note-template";
+import { PrintButton } from "@/components/invoice/print-button";
+import { Button } from "@/components/ui/button";
+
+export default async function DebitNoteDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ print?: string; size?: string }>;
+}) {
+  const { id } = await params;
+  const { print, size } = await searchParams;
+  const [debitNote, settings] = await Promise.all([
+    getPurchaseReturnById(parseInt(id, 10)),
+    getSettings(),
+  ]);
+
+  if (!debitNote) notFound();
+
+  const business = {
+    name: settings.businessName,
+    tagline: settings.tagline,
+    address: settings.address,
+    phone: settings.phone,
+    email: settings.email,
+    gstin: settings.gstin,
+    state: settings.state,
+    stateCode: settings.stateCode,
+  };
+
+  return (
+    <div className="p-6">
+      <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link href="/returns">Back to Purchase Returns</Link>
+          </Button>
+          {debitNote.purchaseId && (
+            <Button asChild variant="outline">
+              <Link href={`/purchases/${debitNote.purchaseId}`}>
+                Original Purchase
+              </Link>
+            </Button>
+          )}
+        </div>
+        <PrintButton
+          autoPrint={print === "1"}
+          initialSize={size}
+          buttonText="Print Debit Note"
+        />
+      </div>
+      <DebitNoteTemplate
+        business={business}
+        debitNote={debitNote}
+        items={debitNote.items}
+      />
+    </div>
+  );
+}

@@ -173,6 +173,7 @@ export function ReturnsContainer({
                       <TableHead>Original Invoice</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -187,6 +188,17 @@ export function ReturnsContainer({
                         <TableCell>{r.reason ?? "-"}</TableCell>
                         <TableCell className="text-right font-semibold text-red-600">
                           {formatCurrency(r.grandTotal)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button asChild variant="outline" size="sm">
+                              <Link href={`/returns/purchase/${r.id}`}>View</Link>
+                            </Button>
+                            <PrintSizeMenu
+                              href={`/returns/purchase/${r.id}`}
+                              label="Print Debit Note"
+                            />
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

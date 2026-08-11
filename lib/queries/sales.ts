@@ -9,8 +9,10 @@ import {
   calculateGstBreakdown,
   calculateLineAmount,
   isInterstateGst,
+  applyRupeeRounding,
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
+import { getIndianFinancialYearBounds } from "@/lib/financial-year";
 import { format } from "date-fns";
 import { desc, eq, gte, lte, sql, and, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -40,6 +42,8 @@ const createSaleSchema = z.object({
   cashAmount: z.number().min(0).optional(),
   upiAmount: z.number().min(0).optional(),
   notes: z.string().optional(),
+  poNumber: z.string().optional(),
+  purchaseOrderId: z.number().optional(),
   items: z.array(saleItemSchema).min(1),
 });
 
@@ -70,9 +74,13 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     sgst: String(row.sgst),
     igst: String(row.igst),
     grandTotal: String(row.grand_total),
+    roundOff: String(row.round_off ?? "0"),
     paidAmount: row.paid_amount == null ? null : String(row.paid_amount),
     cashAmount: String(row.cash_amount ?? "0"),
     upiAmount: String(row.upi_amount ?? "0"),
+    poNumber: (row.po_number as string | null) ?? null,
+    purchaseOrderId:
+      row.purchase_order_id == null ? null : Number(row.purchase_order_id),
     notes: (row.notes as string | null) ?? null,
     createdAt:
       row.created_at instanceof Date
@@ -153,16 +161,19 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     interstate = isInterstateGst(cust?.gstin, settings.stateCode);
   }
 
-  const gst = calculateGstBreakdown(
-    normalizedItems.map((i) => ({
-      qty: i.qty,
-      rate: i.rate,
-      gstRate: i.gstRate,
-      discountType: i.discountType,
-      discountValue: i.discountValue,
-    })),
-    { billDiscount: data.discountAmount ?? 0, interstate }
+  const gst = applyRupeeRounding(
+    calculateGstBreakdown(
+      normalizedItems.map((i) => ({
+        qty: i.qty,
+        rate: i.rate,
+        gstRate: i.gstRate,
+        discountType: i.discountType,
+        discountValue: i.discountValue,
+      })),
+      { billDiscount: data.discountAmount ?? 0, interstate }
+    )
   );
+  const roundOff = gst.roundOff ?? 0;
 
   let cashAmount = round2(data.cashAmount ?? 0);
   let upiAmount = round2(data.upiAmount ?? 0);
@@ -176,12 +187,31 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
 
   // Non-credit modes are settled immediately at the counter.
   // Prefer explicit cash/upi split when provided; otherwise mark fully paid.
-  const paidAmount =
+  let paidAmount =
     data.paymentMode === "credit"
       ? round2(data.paidAmount ?? 0)
       : cashAmount + upiAmount > 0
         ? round2(cashAmount + upiAmount)
         : round2(data.paidAmount ?? gst.grandTotal);
+
+  // After rupee rounding, re-align split payments that were computed pre-round on POS.
+  if (
+    data.paymentMode !== "credit" &&
+    cashAmount + upiAmount > 0 &&
+    Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01 &&
+    Math.abs(cashAmount + upiAmount - (gst.grandTotal - roundOff)) <= 0.02
+  ) {
+    const diff = round2(gst.grandTotal - (cashAmount + upiAmount));
+    if (upiAmount > 0) upiAmount = round2(upiAmount + diff);
+    else cashAmount = round2(cashAmount + diff);
+    paidAmount = round2(cashAmount + upiAmount);
+  } else if (
+    data.paymentMode !== "credit" &&
+    cashAmount + upiAmount === 0 &&
+    Math.abs(paidAmount - (gst.grandTotal - roundOff)) <= 0.02
+  ) {
+    paidAmount = gst.grandTotal;
+  }
 
   if (
     data.billType === "retail" &&
@@ -205,7 +235,11 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
 
   const typePrefix =
     data.billType === "wholesale" ? "WHL" : settings.invoicePrefix;
-  const prefix = `${typePrefix}-${format(new Date(), "yyyyMMdd")}-`;
+  const dayStamp = format(new Date(), "yyyyMMdd");
+  const prefix = `${typePrefix}-${dayStamp}-`;
+  const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
+  const poNumber = data.poNumber?.trim() || null;
+  const purchaseOrderId = data.purchaseOrderId ?? null;
 
   const executeSale = () =>
     db.transaction(async (tx) => {
@@ -487,14 +521,14 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
           )`
         : sql``;
 
-      // Invoice number is computed inside the INSERT so numbering stays atomic;
-      // the unique constraint on invoice_no plus a retry covers rare races.
+      // Invoice number: date stamp in the string, sequence continuous within FY.
       const createdRows = (await tx.execute(sql`
         with new_sale as (
           insert into sales (
             invoice_no, bill_type, customer_id, customer_name, payment_mode,
             operator_name, subtotal, discount_amount, cgst, sgst, igst,
-            grand_total, paid_amount, cash_amount, upi_amount, notes
+            grand_total, round_off, paid_amount, cash_amount, upi_amount,
+            po_number, purchase_order_id, notes
           )
           select
             ${prefix} || lpad((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text, greatest(4, length((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text)), '0'),
@@ -509,12 +543,17 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${gst.sgst.toFixed(2)}::numeric,
             ${gst.igst.toFixed(2)}::numeric,
             ${gst.grandTotal.toFixed(2)}::numeric,
+            ${roundOff.toFixed(2)}::numeric,
             ${paidAmount.toFixed(2)}::numeric,
             ${cashAmount.toFixed(2)}::numeric,
             ${upiAmount.toFixed(2)}::numeric,
+            ${poNumber}::text,
+            ${purchaseOrderId}::int,
             ${data.notes ?? null}::text
           from sales s
-          where s.invoice_no like ${prefix + "%"}
+          where s.invoice_no like ${typePrefix + "-%"}
+            and s.date >= ${fyStart}
+            and s.date <= ${fyEnd}
           returning *
         ),
         ins_items as (
@@ -726,12 +765,21 @@ export async function getSaleById(id: number) {
       sgst: sales.sgst,
       igst: sales.igst,
       grandTotal: sales.grandTotal,
+      roundOff: sales.roundOff,
       paidAmount: sales.paidAmount,
       notes: sales.notes,
+      poNumber: sales.poNumber,
+      purchaseOrderId: sales.purchaseOrderId,
       customerRecordName: customers.name,
       customerPhone: customers.phone,
       customerGstin: customers.gstin,
       customerAddress: customers.address,
+      customerAcre: customers.acre,
+      customerCrop: customers.crop,
+      customerPinCode: customers.pinCode,
+      customerVillage: customers.village,
+      customerTaluk: customers.taluk,
+      customerDistrict: customers.district,
       cashAmount: sales.cashAmount,
       upiAmount: sales.upiAmount,
     })
@@ -897,6 +945,8 @@ export type SalesReportInvoice = {
   igst: number;
   grandTotal: number;
   paidAmount: number;
+  cashAmount: number;
+  upiAmount: number;
 };
 
 export type SalesReportLineItem = {
@@ -931,6 +981,7 @@ export type SalesReportData = {
     grandTotal: number;
     paidAmount: number;
     byPaymentMode: Record<string, { count: number; amount: number }>;
+    receivedByMode: Record<string, number>;
   };
   invoices: SalesReportInvoice[];
   lineItems: SalesReportLineItem[];
@@ -984,6 +1035,7 @@ export async function getSalesReport(
           grandTotal: 0,
           paidAmount: 0,
           byPaymentMode: {},
+          receivedByMode: {},
         },
         invoices: [],
         lineItems: [],
@@ -1009,6 +1061,8 @@ export async function getSalesReport(
       igst: sales.igst,
       grandTotal: sales.grandTotal,
       paidAmount: sales.paidAmount,
+      cashAmount: sales.cashAmount,
+      upiAmount: sales.upiAmount,
     })
     .from(sales)
     .leftJoin(customers, eq(sales.customerId, customers.id))
@@ -1030,6 +1084,8 @@ export async function getSalesReport(
     igst: toNum(row.igst),
     grandTotal: toNum(row.grandTotal),
     paidAmount: toNum(row.paidAmount),
+    cashAmount: toNum(row.cashAmount),
+    upiAmount: toNum(row.upiAmount),
   }));
 
   const saleIds = invoices.map((inv) => inv.id);
@@ -1081,6 +1137,13 @@ export async function getSalesReport(
   }
 
   const byPaymentMode: Record<string, { count: number; amount: number }> = {};
+  const receivedByMode: Record<string, number> = {
+    cash: 0,
+    upi: 0,
+    card: 0,
+    cheque: 0,
+    credit: 0,
+  };
   let retailCount = 0;
   let wholesaleCount = 0;
   let subtotal = 0;
@@ -1105,6 +1168,19 @@ export async function getSalesReport(
     if (!byPaymentMode[mode]) byPaymentMode[mode] = { count: 0, amount: 0 };
     byPaymentMode[mode].count++;
     byPaymentMode[mode].amount += inv.grandTotal;
+
+    // Amounts actually received: prefer cash/upi split; otherwise mode bucket.
+    if (inv.cashAmount > 0 || inv.upiAmount > 0) {
+      receivedByMode.cash += inv.cashAmount;
+      receivedByMode.upi += inv.upiAmount;
+      if (mode === "credit") {
+        // remainder of paid on credit beyond cash/upi already counted
+      }
+    } else if (mode === "credit") {
+      receivedByMode.credit += inv.paidAmount;
+    } else if (mode in receivedByMode) {
+      receivedByMode[mode] += inv.paidAmount || inv.grandTotal;
+    }
   }
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -1124,6 +1200,9 @@ export async function getSalesReport(
       grandTotal: round2(grandTotal),
       paidAmount: round2(paidAmount),
       byPaymentMode,
+      receivedByMode: Object.fromEntries(
+        Object.entries(receivedByMode).map(([k, v]) => [k, round2(v)])
+      ),
     },
     invoices,
     lineItems,
