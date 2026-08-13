@@ -27,9 +27,14 @@ export default async function InvoiceDetailPage({
     address: settings.address,
     phone: settings.phone,
     email: settings.email,
+    website: settings.website,
     gstin: settings.gstin,
     state: settings.state,
     stateCode: settings.stateCode,
+    bankName: settings.bankName,
+    bankBranch: settings.bankBranch,
+    bankAccountNo: settings.bankAccountNo,
+    bankIfsc: settings.bankIfsc,
   };
 
   return (

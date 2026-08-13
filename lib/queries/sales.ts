@@ -44,6 +44,12 @@ const createSaleSchema = z.object({
   notes: z.string().optional(),
   poNumber: z.string().optional(),
   purchaseOrderId: z.number().optional(),
+  ewayBillNo: z.string().optional(),
+  vehicleNo: z.string().optional(),
+  dispatchedThrough: z.string().optional(),
+  destination: z.string().optional(),
+  deliveryNote: z.string().optional(),
+  paymentTerms: z.string().optional(),
   items: z.array(saleItemSchema).min(1),
 });
 
@@ -81,6 +87,12 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     poNumber: (row.po_number as string | null) ?? null,
     purchaseOrderId:
       row.purchase_order_id == null ? null : Number(row.purchase_order_id),
+    ewayBillNo: (row.eway_bill_no as string | null) ?? null,
+    vehicleNo: (row.vehicle_no as string | null) ?? null,
+    dispatchedThrough: (row.dispatched_through as string | null) ?? null,
+    destination: (row.destination as string | null) ?? null,
+    deliveryNote: (row.delivery_note as string | null) ?? null,
+    paymentTerms: (row.payment_terms as string | null) ?? null,
     notes: (row.notes as string | null) ?? null,
     createdAt:
       row.created_at instanceof Date
@@ -240,6 +252,12 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
   const poNumber = data.poNumber?.trim() || null;
   const purchaseOrderId = data.purchaseOrderId ?? null;
+  const ewayBillNo = data.ewayBillNo?.trim() || null;
+  const vehicleNo = data.vehicleNo?.trim() || null;
+  const dispatchedThrough = data.dispatchedThrough?.trim() || null;
+  const destination = data.destination?.trim() || null;
+  const deliveryNote = data.deliveryNote?.trim() || null;
+  const paymentTerms = data.paymentTerms?.trim() || null;
 
   const executeSale = () =>
     db.transaction(async (tx) => {
@@ -528,7 +546,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             invoice_no, bill_type, customer_id, customer_name, payment_mode,
             operator_name, subtotal, discount_amount, cgst, sgst, igst,
             grand_total, round_off, paid_amount, cash_amount, upi_amount,
-            po_number, purchase_order_id, notes
+            po_number, purchase_order_id, eway_bill_no, vehicle_no,
+            dispatched_through, destination, delivery_note, payment_terms, notes
           )
           select
             ${prefix} || lpad((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text, greatest(4, length((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text)), '0'),
@@ -549,6 +568,12 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${upiAmount.toFixed(2)}::numeric,
             ${poNumber}::text,
             ${purchaseOrderId}::int,
+            ${ewayBillNo}::text,
+            ${vehicleNo}::text,
+            ${dispatchedThrough}::text,
+            ${destination}::text,
+            ${deliveryNote}::text,
+            ${paymentTerms}::text,
             ${data.notes ?? null}::text
           from sales s
           where s.invoice_no like ${typePrefix + "-%"}
@@ -770,6 +795,12 @@ export async function getSaleById(id: number) {
       notes: sales.notes,
       poNumber: sales.poNumber,
       purchaseOrderId: sales.purchaseOrderId,
+      ewayBillNo: sales.ewayBillNo,
+      vehicleNo: sales.vehicleNo,
+      dispatchedThrough: sales.dispatchedThrough,
+      destination: sales.destination,
+      deliveryNote: sales.deliveryNote,
+      paymentTerms: sales.paymentTerms,
       customerRecordName: customers.name,
       customerPhone: customers.phone,
       customerGstin: customers.gstin,
@@ -811,6 +842,7 @@ export async function getSaleById(id: number) {
       discountValue: saleItems.discountValue,
       gstRate: saleItems.gstRate,
       amount: saleItems.amount,
+      unit: products.unit,
     })
     .from(saleItems)
     .leftJoin(products, eq(saleItems.productId, products.id))

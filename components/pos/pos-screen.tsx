@@ -107,6 +107,12 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [loadingOutstanding, setLoadingOutstanding] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [poNumber, setPoNumber] = useState("");
+  const [ewayBillNo, setEwayBillNo] = useState("");
+  const [vehicleNo, setVehicleNo] = useState("");
+  const [dispatchedThrough, setDispatchedThrough] = useState("");
+  const [destination, setDestination] = useState("");
+  const [deliveryNote, setDeliveryNote] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("");
 
   useEffect(() => {
     setCustomers(initialCustomers);
@@ -451,6 +457,12 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
           operatorName,
           discountAmount: parseFloat(billDiscount) || 0,
           poNumber: poNumber.trim() || undefined,
+          ewayBillNo: ewayBillNo.trim() || undefined,
+          vehicleNo: vehicleNo.trim() || undefined,
+          dispatchedThrough: dispatchedThrough.trim() || undefined,
+          destination: destination.trim() || undefined,
+          deliveryNote: deliveryNote.trim() || undefined,
+          paymentTerms: paymentTerms.trim() || undefined,
           items: cart.map((c) => ({
             productId: c.product ? c.product.id : undefined,
             customName: c.product ? undefined : c.name,
@@ -952,6 +964,62 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                     placeholder="Optional PO number"
                     className="mt-1 h-9"
                   />
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Payment Terms</Label>
+                    <Input
+                      value={paymentTerms}
+                      onChange={(e) => setPaymentTerms(e.target.value)}
+                      placeholder="e.g. 30 DAYS"
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Delivery Note</Label>
+                    <Input
+                      value={deliveryNote}
+                      onChange={(e) => setDeliveryNote(e.target.value)}
+                      placeholder="Optional"
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">e-Way Bill No.</Label>
+                    <Input
+                      value={ewayBillNo}
+                      onChange={(e) => setEwayBillNo(e.target.value)}
+                      placeholder="Optional"
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Vehicle No.</Label>
+                    <Input
+                      value={vehicleNo}
+                      onChange={(e) => setVehicleNo(e.target.value)}
+                      placeholder="Optional"
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Dispatched through</Label>
+                    <Input
+                      value={dispatchedThrough}
+                      onChange={(e) => setDispatchedThrough(e.target.value)}
+                      placeholder="e.g. ROAD"
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Destination</Label>
+                    <Input
+                      value={destination}
+                      onChange={(e) => setDestination(e.target.value)}
+                      placeholder="Optional"
+                      className="mt-1 h-9"
+                    />
+                  </div>
                 </div>
               {(!customerId || customerId === "none") && (
                 <div className="space-y-2">

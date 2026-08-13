@@ -11,6 +11,12 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS district text;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS round_off numeric(14,2) DEFAULT 0 NOT NULL;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS po_number text;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS purchase_order_id integer;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS eway_bill_no text;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS vehicle_no text;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS dispatched_through text;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS destination text;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS delivery_note text;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_terms text;
 
 ALTER TABLE purchase_returns ADD COLUMN IF NOT EXISTS cgst numeric(14,2) DEFAULT 0 NOT NULL;
 ALTER TABLE purchase_returns ADD COLUMN IF NOT EXISTS sgst numeric(14,2) DEFAULT 0 NOT NULL;
