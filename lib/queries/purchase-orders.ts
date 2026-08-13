@@ -34,13 +34,18 @@ type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 async function generatePoNumber(tx: DbOrTx) {
   const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
+  const fyStartIso = fyStart.toISOString();
+  const fyEndIso = fyEnd.toISOString();
+  // #region agent log
+  fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'36a287'},body:JSON.stringify({sessionId:'36a287',runId:'pre-fix',hypothesisId:'B',location:'lib/queries/purchase-orders.ts:generatePoNumber',message:'PO FY bounds as ISO',data:{fyStartIso,fyEndIso},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 
   const rows = (await tx.execute(sql`
     select coalesce(max(nullif(substring(po_number from '([0-9]+)$'), '')::int), 0) + 1 as next_seq
     from purchase_orders
     where po_number ~ '^OP[0-9]+$'
-      and date >= ${fyStart}
-      and date <= ${fyEnd}
+      and date >= ${fyStartIso}::timestamptz
+      and date <= ${fyEndIso}::timestamptz
   `)) as unknown as Array<{ next_seq: number | string }>;
 
   const seq = Number(rows[0]?.next_seq ?? 1);

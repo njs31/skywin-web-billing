@@ -250,6 +250,12 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const dayStamp = format(new Date(), "yyyyMMdd");
   const prefix = `${typePrefix}-${dayStamp}-`;
   const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
+  // postgres.js raw sql cannot bind JS Date — must pass ISO strings
+  const fyStartIso = fyStart.toISOString();
+  const fyEndIso = fyEnd.toISOString();
+  // #region agent log
+  fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'36a287'},body:JSON.stringify({sessionId:'36a287',runId:'pre-fix',hypothesisId:'A',location:'lib/queries/sales.ts:fy-bounds',message:'FY bounds for invoice seq',data:{fyStartIso,fyEndIso,startType:typeof fyStart,endType:typeof fyEnd},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   const poNumber = data.poNumber?.trim() || null;
   const purchaseOrderId = data.purchaseOrderId ?? null;
   const ewayBillNo = data.ewayBillNo?.trim() || null;
@@ -577,8 +583,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${data.notes ?? null}::text
           from sales s
           where s.invoice_no like ${typePrefix + "-%"}
-            and s.date >= ${fyStart}
-            and s.date <= ${fyEnd}
+            and s.date >= ${fyStartIso}::timestamptz
+            and s.date <= ${fyEndIso}::timestamptz
           returning *
         ),
         ins_items as (
@@ -599,9 +605,12 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
         select * from new_sale
       `)) as unknown as Array<Record<string, unknown>>;
 
-      const created = mapSaleRow(createdRows[0]);
+  const created = mapSaleRow(createdRows[0]);
+  // #region agent log
+  fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'36a287'},body:JSON.stringify({sessionId:'36a287',runId:'post-fix',hypothesisId:'A',location:'lib/queries/sales.ts:after-insert',message:'Sale created',data:{invoiceNo:created.invoiceNo,grandTotal:created.grandTotal,roundOff:created.roundOff,poNumber:created.poNumber,ewayBillNo:created.ewayBillNo},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 
-      // Apply all batch deductions and product stock/expiry updates in one statement.
+  // Apply all batch deductions and product stock/expiry updates in one statement.
       const batchTakes = new Map<number, number>();
       for (const deductions of itemDeductions) {
         for (const d of deductions) {
