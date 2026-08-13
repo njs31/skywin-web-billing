@@ -321,9 +321,6 @@ async function generateDebitReturnNo(tx: DbOrTx) {
   const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
   const fyStartIso = fyStart.toISOString();
   const fyEndIso = fyEnd.toISOString();
-  // #region agent log
-  fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'36a287'},body:JSON.stringify({sessionId:'36a287',runId:'pre-fix',hypothesisId:'B',location:'lib/queries/returns.ts:generateDebitReturnNo',message:'DN FY bounds as ISO',data:{fyStartIso,fyEndIso},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   const rows = (await tx.execute(sql`
     select coalesce(max(nullif(substring(return_no from '([0-9]+)$'), '')::int), 0) + 1 as next_seq
     from purchase_returns
