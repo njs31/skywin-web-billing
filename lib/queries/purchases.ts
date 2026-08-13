@@ -8,7 +8,7 @@ import {
   suppliers,
 } from "@/db/schema";
 import { calculateLineAmount } from "@/lib/gst";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 export const getPurchases = unstable_cache(
@@ -75,6 +75,52 @@ export async function getPurchasesBySupplier(supplierId: number) {
     .from(purchases)
     .where(eq(purchases.supplierId, supplierId))
     .orderBy(desc(purchases.date));
+}
+
+export type PurchaseInvoiceOption = {
+  id: number;
+  invoiceNo: string | null;
+  date: Date;
+  supplierId: number;
+  supplierName: string;
+  grandTotal: string;
+};
+
+/** Search purchases for purchase-return "against bill" picker. */
+export async function searchPurchasesForReturn(
+  query: string,
+  options?: { supplierId?: number; limit?: number }
+): Promise<PurchaseInvoiceOption[]> {
+  const q = query.trim();
+  const limit = options?.limit ?? 20;
+  const filters = [];
+
+  if (options?.supplierId) {
+    filters.push(eq(purchases.supplierId, options.supplierId));
+  }
+  if (q) {
+    filters.push(
+      sql`(
+        coalesce(${purchases.invoiceNo}, '') ilike ${"%" + q + "%"}
+        or ${suppliers.name} ilike ${"%" + q + "%"}
+      )`
+    );
+  }
+
+  return db
+    .select({
+      id: purchases.id,
+      invoiceNo: purchases.invoiceNo,
+      date: purchases.date,
+      supplierId: purchases.supplierId,
+      supplierName: suppliers.name,
+      grandTotal: purchases.grandTotal,
+    })
+    .from(purchases)
+    .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id))
+    .where(filters.length ? and(...filters) : undefined)
+    .orderBy(desc(purchases.date))
+    .limit(limit);
 }
 
 const purchaseItemSchema = z.object({

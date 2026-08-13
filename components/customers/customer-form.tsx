@@ -47,6 +47,12 @@ export function CustomerForm({
           gstin: (fd.get("gstin") as string) || undefined,
           address: (fd.get("address") as string) || undefined,
           membershipNo: (fd.get("membershipNo") as string) || undefined,
+          acre: (fd.get("acre") as string) || undefined,
+          crop: (fd.get("crop") as string) || undefined,
+          pinCode: (fd.get("pinCode") as string) || undefined,
+          village: (fd.get("village") as string) || undefined,
+          taluk: (fd.get("taluk") as string) || undefined,
+          district: (fd.get("district") as string) || undefined,
           type,
           creditLimit: parseFloat((fd.get("creditLimit") as string) || "0"),
         });
@@ -114,7 +120,7 @@ export function CustomerForm({
           className="text-xs font-medium text-emerald-700 hover:underline"
           onClick={() => setShowMore(true)}
         >
-          More details (address, membership)
+          More details (address, acre, crop, village…)
         </button>
       ) : (
         <>
@@ -125,6 +131,32 @@ export function CustomerForm({
           <div>
             <Label>Address</Label>
             <Input name="address" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label>Acre</Label>
+              <Input name="acre" placeholder="e.g. 2.5" />
+            </div>
+            <div>
+              <Label>Crop</Label>
+              <Input name="crop" placeholder="e.g. Paddy" />
+            </div>
+            <div>
+              <Label>PIN Code</Label>
+              <Input name="pinCode" />
+            </div>
+            <div>
+              <Label>Village</Label>
+              <Input name="village" />
+            </div>
+            <div>
+              <Label>Taluk</Label>
+              <Input name="taluk" />
+            </div>
+            <div>
+              <Label>District</Label>
+              <Input name="district" />
+            </div>
           </div>
         </>
       )}
