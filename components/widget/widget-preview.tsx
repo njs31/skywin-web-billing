@@ -39,7 +39,8 @@ export function WidgetPreview({ data }: { data: WidgetPayload }) {
   const max = Math.max(...data.trend.map((d) => d.total), 1);
   const pct = data.today.changePct;
   const up = pct >= 0;
-  const lowStock = data.lowStock.slice(0, 4);
+  const lowStock = data.lowStock.slice(0, 2);
+  const topSellers = data.topSellers.slice(0, 2);
 
   return (
     <div
@@ -92,27 +93,50 @@ export function WidgetPreview({ data }: { data: WidgetPayload }) {
         })}
       </div>
 
-      <div>
-        <p className="text-[10px] font-semibold tracking-wide text-white/55">
-          LOW STOCK
-        </p>
-        <div className="mt-1.5 space-y-1 overflow-hidden">
-          {lowStock.length === 0 ? (
-            <p className="text-xs text-white/75">All products well stocked</p>
-          ) : (
-            lowStock.map((item) => (
-              <div key={item.name} className="flex items-center gap-2 text-xs">
-                <span className="min-w-0 flex-1 truncate text-white/75">
-                  {item.name}
-                </span>
-                <span
-                  className={`shrink-0 font-semibold ${item.qty <= 0 ? "text-rose-200" : "text-amber-200"}`}
-                >
-                  {item.qty}
-                </span>
-              </div>
-            ))
-          )}
+      <div className="space-y-2.5">
+        <div>
+          <p className="text-[10px] font-semibold tracking-wide text-white/55">
+            LOW STOCK
+          </p>
+          <div className="mt-1.5 space-y-1 overflow-hidden">
+            {lowStock.length === 0 ? (
+              <p className="text-xs text-white/75">All products well stocked</p>
+            ) : (
+              lowStock.map((item) => (
+                <div key={item.name} className="flex items-center gap-2 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-white/75">
+                    {item.name}
+                  </span>
+                  <span
+                    className={`shrink-0 font-semibold ${item.qty <= 0 ? "text-rose-200" : "text-amber-200"}`}
+                  >
+                    {item.qty}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold tracking-wide text-white/55">
+            TOP SELLING
+          </p>
+          <div className="mt-1.5 space-y-1 overflow-hidden">
+            {topSellers.length === 0 ? (
+              <p className="text-xs text-white/75">No sales this week</p>
+            ) : (
+              topSellers.map((item) => (
+                <div key={item.name} className="flex items-center gap-2 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-white/75">
+                    {item.name}
+                  </span>
+                  <span className="shrink-0 font-semibold text-emerald-200">
+                    {compactInr(item.amount)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 

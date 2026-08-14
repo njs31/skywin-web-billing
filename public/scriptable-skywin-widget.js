@@ -204,10 +204,17 @@ function addMetaChip(stack, text, color) {
   t.minimumScaleFactor = 0.7;
 }
 
-function addLowStockRows(widget, items, limit) {
-  const rows = (items || []).slice(0, limit);
+function addSectionTitle(widget, title) {
+  const t = widget.addText(title);
+  t.font = Font.semiboldSystemFont(10);
+  t.textColor = C.faint;
+  t.lineLimit = 1;
+}
+
+function addNamedRows(widget, items, emptyText, valueFn, colorFn) {
+  const rows = items || [];
   if (rows.length === 0) {
-    const ok = widget.addText("All products well stocked");
+    const ok = widget.addText(emptyText);
     ok.font = Font.systemFont(12);
     ok.textColor = C.soft;
     ok.lineLimit = 1;
@@ -219,16 +226,16 @@ function addLowStockRows(widget, items, limit) {
     const row = widget.addStack();
     row.layoutHorizontally();
     row.centerAlignContent();
-    const name = row.addText(trunc(item.name || "Item", 26));
+    const name = row.addText(trunc(item.name || "Item", 22));
     name.font = Font.systemFont(12);
     name.textColor = C.soft;
     name.lineLimit = 1;
     name.minimumScaleFactor = 0.75;
     row.addSpacer();
-    const qty = row.addText(String(item.qty));
-    qty.font = Font.semiboldSystemFont(12);
-    qty.textColor = Number(item.qty) <= 0 ? tint(C.rose) : tint(C.amber);
-    qty.lineLimit = 1;
+    const val = row.addText(valueFn(item));
+    val.font = Font.semiboldSystemFont(12);
+    val.textColor = tint(colorFn(item));
+    val.lineLimit = 1;
   }
 }
 
@@ -288,12 +295,27 @@ function createLargeWidget(data) {
 
   w.addSpacer();
 
-  const ls = w.addText("LOW STOCK");
-  ls.font = Font.semiboldSystemFont(10);
-  ls.textColor = C.faint;
-  ls.lineLimit = 1;
+  addSectionTitle(w, "LOW STOCK");
   w.addSpacer(5);
-  addLowStockRows(w, data.lowStock, 4);
+  addNamedRows(
+    w,
+    (data.lowStock || []).slice(0, 2),
+    "All products well stocked",
+    (item) => String(item.qty),
+    (item) => (Number(item.qty) <= 0 ? C.rose : C.amber)
+  );
+
+  w.addSpacer(8);
+
+  addSectionTitle(w, "TOP SELLING");
+  w.addSpacer(5);
+  addNamedRows(
+    w,
+    (data.topSellers || []).slice(0, 2),
+    "No sales this week",
+    (item) => formatCompact(item.amount != null ? item.amount : item.qty),
+    () => C.mint
+  );
 
   w.addSpacer();
 

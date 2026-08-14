@@ -13,8 +13,8 @@ export default async function WidgetSetupPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Phone widget</h1>
         <p className="text-sm text-slate-500">
-          Large Scriptable widget for iPhone: today&apos;s sales, 7-day graph, and
-          low stock.
+          Large Scriptable widget for iPhone: today&apos;s sales, 7-day graph, low
+          stock, and top-selling items.
         </p>
       </div>
 

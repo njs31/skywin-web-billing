@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { sales, products } from "@/db/schema";
-import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
+import { sales, saleItems, products } from "@/db/schema";
+import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { format, startOfDay, subDays } from "date-fns";
 import { getSettings } from "@/lib/settings";
 
@@ -17,6 +17,12 @@ export type WidgetLowStockItem = {
   qty: number;
 };
 
+export type WidgetTopSellerItem = {
+  name: string;
+  qty: number;
+  amount: number;
+};
+
 export type WidgetPayload = {
   business: string;
   updatedAt: string;
@@ -30,6 +36,7 @@ export type WidgetPayload = {
   };
   trend: WidgetTrendPoint[];
   lowStock: WidgetLowStockItem[];
+  topSellers: WidgetTopSellerItem[];
 };
 
 function emptyTrend(days: number): WidgetTrendPoint[] {
@@ -58,8 +65,14 @@ export async function getWidgetPayload(): Promise<WidgetPayload> {
   const yesterdayStart = subDays(todayStart, 1);
   const trendFrom = subDays(todayStart, 6);
 
-  const [settings, [todayRow], [yesterdayRow], trendRows, lowStockRows] =
-    await Promise.all([
+  const [
+    settings,
+    [todayRow],
+    [yesterdayRow],
+    trendRows,
+    lowStockRows,
+    topSellerRows,
+  ] = await Promise.all([
     getSettings(),
     db
       .select({
@@ -99,7 +112,20 @@ export async function getWidgetPayload(): Promise<WidgetPayload> {
         )
       )
       .orderBy(asc(products.stockQty))
-      .limit(8),
+      .limit(2),
+    db
+      .select({
+        name: products.name,
+        qty: sql<string>`coalesce(sum(${saleItems.qty}::numeric), 0)`,
+        amount: sql<string>`coalesce(sum(${saleItems.amount}::numeric), 0)`,
+      })
+      .from(saleItems)
+      .innerJoin(products, eq(saleItems.productId, products.id))
+      .innerJoin(sales, eq(saleItems.saleId, sales.id))
+      .where(gte(sales.date, trendFrom))
+      .groupBy(products.id, products.name)
+      .orderBy(desc(sql`sum(${saleItems.qty}::numeric)`))
+      .limit(2),
   ]);
 
   const todayTotal = parseFloat(todayRow?.todayTotal ?? "0");
@@ -130,6 +156,11 @@ export async function getWidgetPayload(): Promise<WidgetPayload> {
     lowStock: lowStockRows.map((r) => ({
       name: r.name,
       qty: parseFloat(r.qty ?? "0"),
+    })),
+    topSellers: topSellerRows.map((r) => ({
+      name: r.name,
+      qty: parseFloat(r.qty ?? "0"),
+      amount: parseFloat(r.amount ?? "0"),
     })),
   };
 }
