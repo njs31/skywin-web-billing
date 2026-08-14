@@ -29,7 +29,7 @@ export function proxy(request: NextRequest) {
     // Role-based route protection
     if (role !== "admin") {
       // Non-admins cannot access user management and global settings
-      if (pathname.startsWith("/users") || pathname.startsWith("/settings")) {
+      if (pathname.startsWith("/users") || pathname.startsWith("/settings") || pathname.startsWith("/widget")) {
         return NextResponse.redirect(new URL("/", request.url));
       }
 

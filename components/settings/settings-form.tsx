@@ -36,6 +36,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             inventoryAdminPin: fd.get("inventoryAdminPin") as string,
             qwicksMerchantId: fd.get("qwicksMerchantId") as string,
             qwicksApiKey: fd.get("qwicksApiKey") as string,
+            widgetApiKey: fd.get("widgetApiKey") as string,
             qwicksHost: fd.get("qwicksHost") as string,
             seedLicense: fd.get("seedLicense") as string,
             fertLicense: fd.get("fertLicense") as string,
@@ -138,6 +139,27 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
               <p>• <strong>Live Inventory Pull:</strong> <code className="bg-slate-200 px-1 rounded">GET /api/qwicks/inventory</code> or <code className="bg-slate-200 px-1 rounded">GET /api/updateInventory/{settings.qwicksMerchantId || "SkywinKmu"}</code></p>
               <p>• <strong>Stock Check at Checkout:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/stock-check</code></p>
               <p>• <strong>Order Ingestion Webhook:</strong> <code className="bg-slate-200 px-1 rounded">POST /api/qwicks/order-placed</code></p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 border-t pt-4">
+            <div className="sm:col-span-2">
+              <h3 className="font-semibold text-base text-slate-900">iPhone widget</h3>
+              <p className="text-xs text-slate-500">
+                Optional dedicated key for the Scriptable home-screen widget. Default is already set. Setup:{" "}
+                <a href="/widget" className="font-medium text-emerald-700 hover:underline">
+                  Phone widget
+                </a>
+                .
+              </p>
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Widget API Key (x-api-key)</Label>
+              <Input
+                name="widgetApiKey"
+                defaultValue={settings.widgetApiKey}
+                placeholder="skywin_widget_8f3c2a91e6b04d7a"
+              />
             </div>
           </div>
 

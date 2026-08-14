@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   inventoryAdminPinRequired: "false",
   inventoryAdminPin: "1234",
   qwicksApiKey: "skywin_qwicks_api_key_7596",
+  widgetApiKey: "skywin_widget_8f3c2a91e6b04d7a",
   qwicksMerchantId: "SkywinKmu",
   qwicksHost: "qwicks.app",
   seedLicense: "4300/TNJ/2026",
@@ -69,6 +70,7 @@ export async function updateSettings(data: Partial<AppSettings>) {
   }
   revalidateTag("settings", "max");
   revalidatePath("/settings");
+  revalidatePath("/widget");
   revalidatePath("/products");
   revalidatePath("/stock");
 }

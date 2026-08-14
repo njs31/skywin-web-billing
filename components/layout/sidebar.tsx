@@ -16,6 +16,7 @@ import {
   Wallet,
   BarChart3,
   Settings,
+  Smartphone,
   ChevronDown,
   X,
 } from "lucide-react";
@@ -93,6 +94,7 @@ const navGroups: NavGroup[] = [
     label: "System",
     items: [
       { href: "/users", label: "User Management", icon: Users },
+      { href: "/widget", label: "Phone widget", icon: Smartphone },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -143,7 +145,7 @@ export function Sidebar({
         if (role === "admin") return true;
 
         if (role === "regional_manager" || role === "sales_officer") {
-          if (item.href === "/users" || item.href === "/settings") return false;
+          if (item.href === "/users" || item.href === "/settings" || item.href === "/widget") return false;
           if (role === "sales_officer" && isPurchaseNavItem(item.href)) {
             return false;
           }
