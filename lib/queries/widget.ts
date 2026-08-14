@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { sales, products } from "@/db/schema";
-import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
 import { format, startOfDay, subDays } from "date-fns";
 import { getSettings } from "@/lib/settings";
 
@@ -58,18 +58,24 @@ export async function getWidgetPayload(): Promise<WidgetPayload> {
   const yesterdayStart = subDays(todayStart, 1);
   const trendFrom = subDays(todayStart, 6);
 
-  const [settings, [todayRow], trendRows, lowStockRows] = await Promise.all([
+  const [settings, [todayRow], [yesterdayRow], trendRows, lowStockRows] =
+    await Promise.all([
     getSettings(),
     db
       .select({
-        todayTotal: sql<string>`coalesce(sum(case when ${sales.date} >= ${todayStart} then ${sales.grandTotal}::numeric else 0 end), 0)`,
-        todayCount: sql<number>`coalesce(count(*) filter (where ${sales.date} >= ${todayStart}), 0)::int`,
-        cash: sql<string>`coalesce(sum(case when ${sales.date} >= ${todayStart} then ${sales.cashAmount}::numeric else 0 end), 0)`,
-        upi: sql<string>`coalesce(sum(case when ${sales.date} >= ${todayStart} then ${sales.upiAmount}::numeric else 0 end), 0)`,
-        yesterdayTotal: sql<string>`coalesce(sum(case when ${sales.date} >= ${yesterdayStart} and ${sales.date} < ${todayStart} then ${sales.grandTotal}::numeric else 0 end), 0)`,
+        todayTotal: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
+        todayCount: sql<number>`count(*)::int`,
+        cash: sql<string>`coalesce(sum(${sales.cashAmount}::numeric), 0)`,
+        upi: sql<string>`coalesce(sum(${sales.upiAmount}::numeric), 0)`,
       })
       .from(sales)
-      .where(gte(sales.date, yesterdayStart)),
+      .where(gte(sales.date, todayStart)),
+    db
+      .select({
+        yesterdayTotal: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
+      })
+      .from(sales)
+      .where(and(gte(sales.date, yesterdayStart), lt(sales.date, todayStart))),
     db
       .select({
         day: sql<string>`to_char(${sales.date}, 'YYYY-MM-DD')`,
@@ -97,7 +103,7 @@ export async function getWidgetPayload(): Promise<WidgetPayload> {
   ]);
 
   const todayTotal = parseFloat(todayRow?.todayTotal ?? "0");
-  const yesterdayTotal = parseFloat(todayRow?.yesterdayTotal ?? "0");
+  const yesterdayTotal = parseFloat(yesterdayRow?.yesterdayTotal ?? "0");
 
   const trendMap = new Map(
     trendRows.map((r) => [
