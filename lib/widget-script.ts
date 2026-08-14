@@ -10,16 +10,15 @@ export function buildScriptableWidgetScript(_opts?: {
 }) {
   const apiUrl = JSON.stringify(DEFAULT_WIDGET_API_URL);
   const apiKey = JSON.stringify(DEFAULT_WIDGET_API_KEY);
-  const appUrl = JSON.stringify(DEFAULT_WIDGET_APP_URL);
 
   return `// Variables used by Scriptable.
 // icon-color: green; icon-glyph: chart-bar;
 // Skywin Bill — Large home-screen widget
 // Paste into Scriptable → Save → Home Screen → Scriptable → Large
+// Tap the widget to refresh (do not set a URL on the widget).
 
 const API_URL = ${apiUrl};
 const API_KEY = ${apiKey};
-const APP_URL = ${appUrl};
 const CACHE_FILE = "skywin-widget-cache.json";
 
 // Light-on-emerald palette
@@ -257,7 +256,6 @@ function applyRefresh(widget) {
   const next = new Date();
   next.setMinutes(next.getMinutes() + 5);
   widget.refreshAfterDate = next;
-  widget.url = APP_URL;
 }
 
 function createLargeWidget(data) {
@@ -465,9 +463,8 @@ try {
   }
 }
 
-if (config.runsInWidget) {
-  Script.setWidget(widget);
-} else {
+Script.setWidget(widget);
+if (!config.runsInWidget) {
   await widget.presentLarge();
 }
 Script.complete();

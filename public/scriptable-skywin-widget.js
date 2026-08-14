@@ -2,10 +2,10 @@
 // icon-color: green; icon-glyph: chart-bar;
 // Skywin Bill — Large home-screen widget
 // Paste into Scriptable → Save → Home Screen → Scriptable → Large
+// Tap the widget to refresh (do not set a URL on the widget).
 
 const API_URL = "https://skywin.qwicksapp.com/api/widget";
 const API_KEY = "skywin_widget_8f3c2a91e6b04d7a";
-const APP_URL = "https://skywin.qwicksapp.com";
 const CACHE_FILE = "skywin-widget-cache.json";
 
 // Light-on-emerald palette
@@ -243,7 +243,6 @@ function applyRefresh(widget) {
   const next = new Date();
   next.setMinutes(next.getMinutes() + 5);
   widget.refreshAfterDate = next;
-  widget.url = APP_URL;
 }
 
 function createLargeWidget(data) {
@@ -451,9 +450,8 @@ try {
   }
 }
 
-if (config.runsInWidget) {
-  Script.setWidget(widget);
-} else {
+Script.setWidget(widget);
+if (!config.runsInWidget) {
   await widget.presentLarge();
 }
 Script.complete();

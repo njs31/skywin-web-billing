@@ -36,7 +36,10 @@ export function WidgetSetup({ script }: { script: string }) {
           Long-press the Home Screen → Add Widget → Scriptable → choose{" "}
           <strong>Large</strong> → pick “Skywin Sales”.
         </li>
-        <li>iOS refreshes widgets about every 15 minutes, not live.</li>
+        <li>
+          iOS refreshes on its own every few minutes. Tap the widget anytime to
+          refresh immediately — it opens Scriptable, updates, and shows a preview.
+        </li>
       </ol>
 
       <div className="space-y-1.5">
