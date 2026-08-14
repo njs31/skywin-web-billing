@@ -107,6 +107,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [loadingOutstanding, setLoadingOutstanding] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [poNumber, setPoNumber] = useState("");
+  const [quotationNumber, setQuotationNumber] = useState("");
   const [ewayBillNo, setEwayBillNo] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
   const [dispatchedThrough, setDispatchedThrough] = useState("");
@@ -457,6 +458,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
           operatorName,
           discountAmount: parseFloat(billDiscount) || 0,
           poNumber: poNumber.trim() || undefined,
+          quotationNumber: quotationNumber.trim() || undefined,
           ewayBillNo: ewayBillNo.trim() || undefined,
           vehicleNo: vehicleNo.trim() || undefined,
           dispatchedThrough: dispatchedThrough.trim() || undefined,
@@ -962,6 +964,15 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                     value={poNumber}
                     onChange={(e) => setPoNumber(e.target.value)}
                     placeholder="Optional PO number"
+                    className="mt-1 h-9"
+                  />
+                </div>
+                <div className="mt-2">
+                  <Label className="text-xs">Quotation No.</Label>
+                  <Input
+                    value={quotationNumber}
+                    onChange={(e) => setQuotationNumber(e.target.value)}
+                    placeholder="Optional quotation number"
                     className="mt-1 h-9"
                   />
                 </div>

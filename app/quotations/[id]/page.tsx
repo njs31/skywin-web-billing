@@ -1,13 +1,12 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getPurchaseOrderById } from "@/lib/queries/purchase-orders";
+import { getQuotationById } from "@/lib/queries/quotations";
 import { getSettings } from "@/lib/settings";
-import { PurchaseOrderTemplate } from "@/components/purchase-orders/purchase-order-template";
-import { PurchaseOrderAmountEditor } from "@/components/purchase-orders/purchase-order-amount-editor";
+import { QuotationTemplate } from "@/components/quotations/quotation-template";
 import { PrintButton } from "@/components/invoice/print-button";
 import { Button } from "@/components/ui/button";
 
-export default async function PurchaseOrderDetailPage({
+export default async function QuotationDetailPage({
   params,
   searchParams,
 }: {
@@ -16,12 +15,11 @@ export default async function PurchaseOrderDetailPage({
 }) {
   const { id } = await params;
   const { print, size } = await searchParams;
-  const [purchaseOrder, settings] = await Promise.all([
-    getPurchaseOrderById(parseInt(id, 10)),
+  const [quotation, settings] = await Promise.all([
+    getQuotationById(parseInt(id, 10)),
     getSettings(),
   ]);
-
-  if (!purchaseOrder) notFound();
+  if (!quotation) notFound();
 
   const business = {
     name: settings.businessName,
@@ -29,12 +27,9 @@ export default async function PurchaseOrderDetailPage({
     address: settings.address,
     phone: settings.phone,
     email: settings.email,
-    website: settings.website,
     gstin: settings.gstin,
     state: settings.state,
     stateCode: settings.stateCode,
-    seedLicense: settings.seedLicense,
-    fertLicense: settings.fertLicense,
     bankName: settings.bankName,
     bankBranch: settings.bankBranch,
     bankAccountNo: settings.bankAccountNo,
@@ -45,22 +40,18 @@ export default async function PurchaseOrderDetailPage({
     <div className="p-6">
       <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3">
         <Button asChild variant="outline">
-          <Link href="/purchase-orders">Back to Purchase Orders</Link>
+          <Link href="/quotations">Back to Quotations</Link>
         </Button>
         <PrintButton
           autoPrint={print === "1"}
           initialSize={size}
-          buttonText="Print Purchase Order"
+          buttonText="Print Quotation"
         />
       </div>
-      <PurchaseOrderAmountEditor
-        purchaseOrderId={purchaseOrder.id}
-        items={purchaseOrder.items}
-      />
-      <PurchaseOrderTemplate
+      <QuotationTemplate
         business={business}
-        purchaseOrder={purchaseOrder}
-        items={purchaseOrder.items}
+        quotation={quotation}
+        items={quotation.items}
       />
     </div>
   );

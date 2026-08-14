@@ -233,6 +233,7 @@ export const sales = pgTable(
       .notNull(),
     poNumber: text("po_number"),
     purchaseOrderId: integer("purchase_order_id"),
+    quotationNumber: text("quotation_number"),
     ewayBillNo: text("eway_bill_no"),
     vehicleNo: text("vehicle_no"),
     dispatchedThrough: text("dispatched_through"),
@@ -371,6 +372,44 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   customName: text("custom_name"),
   qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  hsnCode: text("hsn_code"),
+});
+
+export const quotations = pgTable("quotations", {
+  id: serial("id").primaryKey(),
+  quotationNo: text("quotation_no").notNull().unique(),
+  customerId: integer("customer_id").references(() => customers.id),
+  customerName: text("customer_name"),
+  customerPhone: text("customer_phone"),
+  date: timestamp("date").defaultNow().notNull(),
+  paymentTerms: text("payment_terms"),
+  dispatchedThrough: text("dispatched_through"),
+  destination: text("destination"),
+  notes: text("notes"),
+  subtotal: numeric("subtotal", { precision: 14, scale: 2 }).default("0").notNull(),
+  cgst: numeric("cgst", { precision: 14, scale: 2 }).default("0").notNull(),
+  sgst: numeric("sgst", { precision: 14, scale: 2 }).default("0").notNull(),
+  igst: numeric("igst", { precision: 14, scale: 2 }).default("0").notNull(),
+  roundOff: numeric("round_off", { precision: 14, scale: 2 }).default("0").notNull(),
+  grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).default("0").notNull(),
+  status: text("status").default("open").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const quotationItems = pgTable("quotation_items", {
+  id: serial("id").primaryKey(),
+  quotationId: integer("quotation_id")
+    .references(() => quotations.id, { onDelete: "cascade" })
+    .notNull(),
+  productId: integer("product_id").references(() => products.id),
+  customName: text("custom_name"),
+  qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
+  rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
+  gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).default("0").notNull(),
+  discountPercent: numeric("discount_percent", { precision: 5, scale: 2 })
+    .default("0")
+    .notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
   hsnCode: text("hsn_code"),
 });

@@ -34,6 +34,7 @@ type InvoiceSale = {
   cashAmount?: string | null;
   upiAmount?: string | null;
   poNumber?: string | null;
+  quotationNumber?: string | null;
   ewayBillNo?: string | null;
   vehicleNo?: string | null;
   dispatchedThrough?: string | null;
@@ -260,6 +261,10 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
             />
             <MetaCell label="Buyer's Order No." value={sale.poNumber} />
             <MetaCell label="Dated" value={sale.poNumber ? invoiceDate : ""} />
+            <MetaCell
+              label="Buyer's Ref. / Quotation No."
+              value={sale.quotationNumber}
+            />
             <MetaCell
               label="Dispatched through"
               value={sale.dispatchedThrough}

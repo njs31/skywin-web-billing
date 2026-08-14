@@ -44,6 +44,7 @@ const createSaleSchema = z.object({
   notes: z.string().optional(),
   poNumber: z.string().optional(),
   purchaseOrderId: z.number().optional(),
+  quotationNumber: z.string().optional(),
   ewayBillNo: z.string().optional(),
   vehicleNo: z.string().optional(),
   dispatchedThrough: z.string().optional(),
@@ -87,6 +88,7 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     poNumber: (row.po_number as string | null) ?? null,
     purchaseOrderId:
       row.purchase_order_id == null ? null : Number(row.purchase_order_id),
+    quotationNumber: (row.quotation_number as string | null) ?? null,
     ewayBillNo: (row.eway_bill_no as string | null) ?? null,
     vehicleNo: (row.vehicle_no as string | null) ?? null,
     dispatchedThrough: (row.dispatched_through as string | null) ?? null,
@@ -255,6 +257,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const fyEndIso = fyEnd.toISOString();
   const poNumber = data.poNumber?.trim() || null;
   const purchaseOrderId = data.purchaseOrderId ?? null;
+  const quotationNumber = data.quotationNumber?.trim() || null;
   const ewayBillNo = data.ewayBillNo?.trim() || null;
   const vehicleNo = data.vehicleNo?.trim() || null;
   const dispatchedThrough = data.dispatchedThrough?.trim() || null;
@@ -549,7 +552,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             invoice_no, bill_type, customer_id, customer_name, payment_mode,
             operator_name, subtotal, discount_amount, cgst, sgst, igst,
             grand_total, round_off, paid_amount, cash_amount, upi_amount,
-            po_number, purchase_order_id, eway_bill_no, vehicle_no,
+            po_number, purchase_order_id, quotation_number, eway_bill_no, vehicle_no,
             dispatched_through, destination, delivery_note, payment_terms, notes
           )
           select
@@ -571,6 +574,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${upiAmount.toFixed(2)}::numeric,
             ${poNumber}::text,
             ${purchaseOrderId}::int,
+            ${quotationNumber}::text,
             ${ewayBillNo}::text,
             ${vehicleNo}::text,
             ${dispatchedThrough}::text,
@@ -798,6 +802,7 @@ export async function getSaleById(id: number) {
       notes: sales.notes,
       poNumber: sales.poNumber,
       purchaseOrderId: sales.purchaseOrderId,
+      quotationNumber: sales.quotationNumber,
       ewayBillNo: sales.ewayBillNo,
       vehicleNo: sales.vehicleNo,
       dispatchedThrough: sales.dispatchedThrough,
@@ -827,7 +832,7 @@ export async function getSaleById(id: number) {
   // Check visibility scoping
   if (customerIds !== null) {
     if (!sale.customerId || !customerIds.includes(sale.customerId)) {
-      throw new Error("Unauthorized access to this invoice.");
+      return null;
     }
   }
 

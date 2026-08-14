@@ -170,6 +170,20 @@ function exportExcel(data: SalesReportData) {
       "Received by Mode"
     );
   }
+  const paymentModeRows = Object.entries(data.summary.byPaymentMode || {}).map(
+    ([mode, info]) => ({
+      Mode: mode.toUpperCase(),
+      Bills: info.count,
+      Amount: info.amount,
+    })
+  );
+  if (paymentModeRows.length > 0) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(paymentModeRows),
+      "Payment Mode Summary"
+    );
+  }
   XLSX.writeFile(
     wb,
     `Skywin-Sales-Report-${data.fromDate}-to-${data.toDate}.xlsx`
@@ -302,6 +316,30 @@ function exportPdf(data: SalesReportData) {
       footStyles: { fillColor: [226, 232, 240], textColor: 20, fontStyle: "bold" },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       margin: { left: 10, right: 10 },
+    });
+  }
+
+  const paymentEntries = Object.entries(summary.byPaymentMode || {}).filter(
+    ([, info]) => info.amount > 0 || info.count > 0
+  );
+  if (paymentEntries.length > 0) {
+    doc.addPage();
+    doc.setFontSize(12);
+    doc.text("Amounts received by payment mode", 14, 14);
+    doc.setFontSize(9);
+    doc.text(`Sales Report: ${data.fromDate} to ${data.toDate}`, 14, 20);
+    autoTable(doc, {
+      startY: 26,
+      head: [["Payment Mode", "Bills", "Amount Received"]],
+      body: paymentEntries.map(([mode, info]) => [
+        mode.toUpperCase(),
+        String(info.count),
+        info.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 }),
+      ]),
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: [15, 81, 50], textColor: 255 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 },
     });
   }
 

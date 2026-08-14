@@ -4,6 +4,7 @@ import {
   createPurchaseOrder as createPurchaseOrderMutation,
   getPurchaseOrders as getPurchaseOrdersQuery,
   getPurchaseOrderById as getPurchaseOrderByIdQuery,
+  updatePurchaseOrderAmounts as updatePurchaseOrderAmountsMutation,
 } from "@/lib/queries/purchase-orders";
 
 export async function createPurchaseOrder(
@@ -18,4 +19,10 @@ export async function getPurchaseOrders() {
 
 export async function getPurchaseOrderById(id: number) {
   return getPurchaseOrderByIdQuery(id);
+}
+
+export async function updatePurchaseOrderAmounts(
+  input: Parameters<typeof updatePurchaseOrderAmountsMutation>[0]
+) {
+  return updatePurchaseOrderAmountsMutation(input);
 }

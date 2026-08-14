@@ -55,6 +55,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/invoices", label: "Sale Book", icon: Receipt },
       { href: "/purchase-orders", label: "Purchase Orders", icon: FileText },
+      { href: "/quotations", label: "Quotations", icon: FileText },
       { href: "/returns", label: "Sales Return", icon: RotateCcw },
       { href: "/customers", label: "Customers", icon: Users },
     ],

@@ -7,7 +7,7 @@ import {
 } from "@/db/schema";
 import { calculateLineAmount } from "@/lib/gst";
 import { getIndianFinancialYearBounds } from "@/lib/financial-year";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql, and } from "drizzle-orm";
 import { z } from "zod";
 
 const poItemSchema = z.object({
@@ -183,4 +183,69 @@ export async function getPurchaseOrderById(id: number) {
     .where(eq(purchaseOrderItems.purchaseOrderId, id));
 
   return { ...po, items };
+}
+
+const updatePurchaseOrderSchema = z.object({
+  id: z.number(),
+  items: z
+    .array(
+      z.object({
+        id: z.number(),
+        qty: z.number().positive(),
+        rate: z.number().nonnegative(),
+      })
+    )
+    .min(1),
+});
+
+export async function updatePurchaseOrderAmounts(
+  input: z.infer<typeof updatePurchaseOrderSchema>
+) {
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } =
+    await import("@/lib/revalidate");
+  const data = updatePurchaseOrderSchema.parse(input);
+
+  const [existing] = await db
+    .select()
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, data.id))
+    .limit(1);
+  if (!existing) throw new Error("Purchase order not found.");
+
+  const lineAmounts = data.items.map((item) =>
+    round2(calculateLineAmount(item.qty, item.rate))
+  );
+  const subtotal = round2(lineAmounts.reduce((s, a) => s + a, 0));
+
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < data.items.length; i++) {
+      const item = data.items[i];
+      await tx
+        .update(purchaseOrderItems)
+        .set({
+          qty: item.qty.toFixed(2),
+          rate: item.rate.toFixed(2),
+          amount: lineAmounts[i].toFixed(2),
+        })
+        .where(
+          and(
+            eq(purchaseOrderItems.id, item.id),
+            eq(purchaseOrderItems.purchaseOrderId, data.id)
+          )
+        );
+    }
+    await tx
+      .update(purchaseOrders)
+      .set({
+        subtotal: subtotal.toFixed(2),
+        grandTotal: subtotal.toFixed(2),
+      })
+      .where(eq(purchaseOrders.id, data.id));
+  });
+
+  revalidateTag("purchase-orders", "max");
+  revalidatePath("/purchase-orders");
+  revalidatePath(`/purchase-orders/${data.id}`);
+
+  return getPurchaseOrderById(data.id);
 }
