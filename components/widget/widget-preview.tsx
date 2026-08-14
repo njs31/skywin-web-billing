@@ -39,7 +39,7 @@ export function WidgetPreview({ data }: { data: WidgetPayload }) {
   const max = Math.max(...data.trend.map((d) => d.total), 1);
   const pct = data.today.changePct;
   const up = pct >= 0;
-  const lowStock = data.lowStock.slice(0, 5);
+  const lowStock = data.lowStock.slice(0, 3);
 
   return (
     <div
@@ -55,25 +55,25 @@ export function WidgetPreview({ data }: { data: WidgetPayload }) {
         </p>
       </div>
 
-      <p className="mt-1 truncate text-[30px] font-bold leading-none tracking-tight text-slate-900">
+      <p className="mt-1 truncate text-[26px] font-bold leading-none tracking-tight text-slate-900">
         {formatInr(data.today.total)}
       </p>
 
-      <p className="mt-2 text-[11px] font-medium text-slate-600">
+      <p className="mt-1.5 truncate text-[11px] font-medium text-slate-600">
         {data.today.count} bills{" "}
         <span className={up ? "text-emerald-600" : "text-rose-600"}>
-          {up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}% vs yday
+          {up ? "+" : ""}
+          {pct.toFixed(0)}%
         </span>
-      </p>
-      <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+        <span className="mx-1.5 text-slate-300">·</span>
         <span className="text-emerald-600">Cash {compactInr(data.today.cash)}</span>
-        <span className="mx-2 text-slate-300">·</span>
+        <span className="mx-1.5 text-slate-300">·</span>
         <span className="text-sky-600">UPI {compactInr(data.today.upi)}</span>
       </p>
 
-      <div className="mt-3 flex h-[72px] items-end gap-1.5">
+      <div className="mt-2 flex h-[56px] items-end gap-1">
         {data.trend.map((d, i) => {
-          const h = Math.max(d.total > 0 ? 8 : 3, (d.total / max) * 52);
+          const h = Math.max(d.total > 0 ? 6 : 3, (d.total / max) * 40);
           const isToday = i === data.trend.length - 1;
           return (
             <div key={d.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
@@ -91,7 +91,7 @@ export function WidgetPreview({ data }: { data: WidgetPayload }) {
         })}
       </div>
 
-      <p className="mt-3 text-[10px] font-semibold tracking-wide text-slate-400">
+      <p className="mt-2 text-[10px] font-semibold tracking-wide text-slate-400">
         LOW STOCK
       </p>
       <div className="mt-1 min-h-0 flex-1 space-y-1 overflow-hidden">

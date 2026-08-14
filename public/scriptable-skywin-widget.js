@@ -56,8 +56,18 @@ async function loadData() {
   return data;
 }
 
+function trunc(s, n) {
+  s = String(s || "");
+  if (s.length <= n) return s;
+  return s.slice(0, Math.max(1, n - 1)) + "…";
+}
+
 function formatINR(n) {
   const num = Math.round(Number(n) || 0);
+  if (num >= 100000) {
+    const lakhs = num / 100000;
+    return "Rs " + lakhs.toFixed(lakhs >= 10 ? 1 : 2) + "L";
+  }
   try {
     return "Rs " + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(num);
   } catch (e) {
@@ -81,7 +91,6 @@ function formatDateLabel(iso) {
   const d = iso ? new Date(iso) : new Date();
   try {
     return d.toLocaleDateString("en-IN", {
-      weekday: "short",
       day: "numeric",
       month: "short",
       timeZone: "Asia/Kolkata",
@@ -119,10 +128,10 @@ function drawTrendChart(trend, width, height) {
   const values = (trend || []).map((d) => Number(d.total) || 0);
   const count = Math.max(values.length, 1);
   const max = Math.max.apply(null, values.concat([1]));
-  const labelH = 22;
-  const topPad = 4;
+  const labelH = 14;
+  const topPad = 2;
   const chartH = Math.max(8, height - labelH - topPad);
-  const gap = Math.max(6, width * 0.02);
+  const gap = 5;
   const barWidth = (width - gap * (count + 1)) / count;
 
   ctx.setFillColor(new Color("#e2e8f0", 0.7));
@@ -130,18 +139,18 @@ function drawTrendChart(trend, width, height) {
 
   for (let i = 0; i < count; i++) {
     const v = values[i] || 0;
-    const h = Math.max(v > 0 ? 6 : 2, (v / max) * chartH);
+    const h = Math.max(v > 0 ? 4 : 2, (v / max) * chartH);
     const x = gap + i * (barWidth + gap);
     const y = topPad + chartH - h;
     const isToday = i === count - 1;
     ctx.setFillColor(isToday ? tint("#059669") : tint("#6ee7b7"));
     ctx.fill(new Rect(x, y, barWidth, h));
 
-    const label = ((trend[i] && (trend[i].short || trend[i].label)) || "").slice(0, 3);
+    const label = ((trend[i] && (trend[i].short || trend[i].label)) || "").slice(0, 2);
     ctx.setTextColor(isToday ? tint("#047857") : tint("#64748b"));
-    ctx.setFont(Font.mediumSystemFont(9));
+    ctx.setFont(Font.mediumSystemFont(8));
     ctx.setTextAlignedCenter();
-    ctx.drawTextInRect(label, new Rect(x - 4, topPad + chartH + 2, barWidth + 8, labelH));
+    ctx.drawTextInRect(label, new Rect(x - 2, topPad + chartH + 1, barWidth + 4, labelH));
   }
 
   return ctx.getImage();
@@ -150,39 +159,44 @@ function drawTrendChart(trend, width, height) {
 function addTrendChart(widget, trend, width, height) {
   try {
     const chart = widget.addImage(drawTrendChart(trend || [], width, height));
-    chart.applyFillingContentMode();
+    chart.imageSize = new Size(width, height);
+    chart.resizable = false;
+    chart.centerAlignImage();
   } catch (e) {}
 }
 
 function addMetaChip(stack, text, color) {
   const t = stack.addText(text);
-  t.font = Font.mediumSystemFont(11);
+  t.font = Font.mediumSystemFont(10);
   t.textColor = tint(color);
   t.lineLimit = 1;
+  t.minimumScaleFactor = 0.7;
 }
 
 function addLowStockRows(widget, items, limit) {
   const rows = (items || []).slice(0, limit);
   if (rows.length === 0) {
     const ok = widget.addText("All products well stocked");
-    ok.font = Font.systemFont(12);
+    ok.font = Font.systemFont(11);
     ok.textColor = tint("#64748b");
+    ok.lineLimit = 1;
     return;
   }
   for (const item of rows) {
     const row = widget.addStack();
     row.layoutHorizontally();
     row.centerAlignContent();
-    const name = row.addText(item.name || "Item");
-    name.font = Font.systemFont(12);
+    const name = row.addText(trunc(item.name || "Item", 22));
+    name.font = Font.systemFont(11);
     name.textColor = tint("#334155");
     name.lineLimit = 1;
-    name.minimumScaleFactor = 0.8;
+    name.minimumScaleFactor = 0.75;
     row.addSpacer();
     const qty = row.addText(String(item.qty));
-    qty.font = Font.semiboldSystemFont(12);
+    qty.font = Font.semiboldSystemFont(11);
     qty.textColor = Number(item.qty) <= 0 ? tint("#e11d48") : tint("#d97706");
-    widget.addSpacer(3);
+    qty.lineLimit = 1;
+    qty.rightAlignText();
   }
 }
 
@@ -196,71 +210,67 @@ function applyRefresh(widget) {
 function createLargeWidget(data) {
   const w = new ListWidget();
   w.backgroundColor = tint("#f8fafc");
-  w.setPadding(14, 16, 12, 16);
+  w.setPadding(10, 12, 10, 12);
+  w.spacing = 3;
   applyRefresh(w);
 
   const header = w.addStack();
   header.layoutHorizontally();
   header.centerAlignContent();
-  const todayLbl = header.addText("TODAY'S SALES");
-  todayLbl.font = Font.semiboldSystemFont(11);
+  const todayLbl = header.addText("TODAY");
+  todayLbl.font = Font.semiboldSystemFont(10);
   todayLbl.textColor = tint("#64748b");
+  todayLbl.lineLimit = 1;
   header.addSpacer();
   const dateLbl = header.addText(formatDateLabel(data.updatedAt));
-  dateLbl.font = Font.mediumSystemFont(11);
+  dateLbl.font = Font.mediumSystemFont(10);
   dateLbl.textColor = tint("#94a3b8");
-
-  w.addSpacer(4);
+  dateLbl.lineLimit = 1;
+  dateLbl.minimumScaleFactor = 0.7;
 
   const total = w.addText(formatINR(data.today.total));
-  total.font = Font.boldSystemFont(30);
+  total.font = Font.boldSystemFont(26);
   total.textColor = tint("#0f172a");
-  total.minimumScaleFactor = 0.55;
+  total.minimumScaleFactor = 0.5;
   total.lineLimit = 1;
 
+  const pct = Number(data.today.changePct) || 0;
+  const up = pct >= 0;
   const meta = w.addStack();
   meta.layoutHorizontally();
   meta.centerAlignContent();
   addMetaChip(meta, (data.today.count || 0) + " bills", "#475569");
-  meta.addSpacer(8);
-  const pct = Number(data.today.changePct) || 0;
-  const up = pct >= 0;
+  meta.addSpacer(6);
   addMetaChip(
     meta,
-    (up ? "+ " : "- ") + Math.abs(pct).toFixed(1) + "% vs yday",
+    (up ? "+" : "") + pct.toFixed(0) + "%",
     up ? "#059669" : "#e11d48"
   );
-  w.addSpacer(3);
-  const pay = w.addStack();
-  pay.layoutHorizontally();
-  addMetaChip(pay, "Cash " + formatCompact(data.today.cash), "#059669");
-  pay.addSpacer(10);
-  addMetaChip(pay, "UPI " + formatCompact(data.today.upi), "#0284c8");
+  meta.addSpacer(6);
+  addMetaChip(meta, "Cash " + formatCompact(data.today.cash), "#059669");
+  meta.addSpacer(6);
+  addMetaChip(meta, "UPI " + formatCompact(data.today.upi), "#0284c8");
 
-  w.addSpacer(8);
-  const family = config.widgetFamily;
-  const chartW = family === "extraLarge" ? 720 : 620;
-  const chartH = family === "extraLarge" ? 160 : 130;
-  addTrendChart(w, data.trend, chartW, chartH);
+  addTrendChart(w, data.trend, 300, 56);
 
-  w.addSpacer(8);
   const ls = w.addText("LOW STOCK");
-  ls.font = Font.semiboldSystemFont(10);
+  ls.font = Font.semiboldSystemFont(9);
   ls.textColor = tint("#94a3b8");
-  w.addSpacer(4);
-  addLowStockRows(w, data.lowStock, family === "extraLarge" ? 8 : 5);
+  ls.lineLimit = 1;
+  addLowStockRows(w, data.lowStock, 3);
 
-  w.addSpacer();
   const footer = w.addStack();
   footer.layoutHorizontally();
-  const biz = footer.addText(data.business || "SKYWIN BIOTECH");
-  biz.font = Font.mediumSystemFont(10);
+  footer.centerAlignContent();
+  const biz = footer.addText(trunc(data.business || "SKYWIN BIOTECH", 18));
+  biz.font = Font.mediumSystemFont(9);
   biz.textColor = tint("#94a3b8");
   biz.lineLimit = 1;
   footer.addSpacer();
   const upd = footer.addText(formatTimeLabel(data.updatedAt));
-  upd.font = Font.systemFont(10);
+  upd.font = Font.systemFont(9);
   upd.textColor = tint("#94a3b8");
+  upd.lineLimit = 1;
 
   return w;
 }
@@ -268,18 +278,23 @@ function createLargeWidget(data) {
 function createMediumWidget(data) {
   const w = new ListWidget();
   w.backgroundColor = tint("#f8fafc");
-  w.setPadding(12, 16, 12, 16);
+  w.setPadding(10, 12, 10, 12);
+  w.spacing = 4;
   applyRefresh(w);
 
   const header = w.addStack();
   header.layoutHorizontally();
+  header.centerAlignContent();
   const todayLbl = header.addText("TODAY");
-  todayLbl.font = Font.semiboldSystemFont(11);
+  todayLbl.font = Font.semiboldSystemFont(10);
   todayLbl.textColor = tint("#64748b");
+  todayLbl.lineLimit = 1;
   header.addSpacer();
   const dateLbl = header.addText(formatDateLabel(data.updatedAt));
-  dateLbl.font = Font.mediumSystemFont(11);
+  dateLbl.font = Font.mediumSystemFont(10);
   dateLbl.textColor = tint("#94a3b8");
+  dateLbl.lineLimit = 1;
+  dateLbl.minimumScaleFactor = 0.7;
 
   const body = w.addStack();
   body.layoutHorizontally();
@@ -287,18 +302,19 @@ function createMediumWidget(data) {
 
   const left = body.addStack();
   left.layoutVertically();
-  left.size = new Size(150, 0);
+  left.size = new Size(120, 0);
   const total = left.addText(formatINR(data.today.total));
-  total.font = Font.boldSystemFont(22);
+  total.font = Font.boldSystemFont(20);
   total.textColor = tint("#0f172a");
   total.minimumScaleFactor = 0.5;
   total.lineLimit = 1;
   const meta = left.addText((data.today.count || 0) + " bills");
-  meta.font = Font.mediumSystemFont(11);
+  meta.font = Font.mediumSystemFont(10);
   meta.textColor = tint("#64748b");
+  meta.lineLimit = 1;
 
   body.addSpacer(8);
-  addTrendChart(body, data.trend, 360, 120);
+  addTrendChart(body, data.trend, 180, 64);
 
   return w;
 }
@@ -306,15 +322,16 @@ function createMediumWidget(data) {
 function createSmallWidget(data) {
   const w = new ListWidget();
   w.backgroundColor = tint("#f8fafc");
-  w.setPadding(12, 12, 12, 12);
+  w.setPadding(10, 10, 10, 10);
+  w.spacing = 3;
   applyRefresh(w);
 
   const todayLbl = w.addText("TODAY");
-  todayLbl.font = Font.semiboldSystemFont(11);
+  todayLbl.font = Font.semiboldSystemFont(10);
   todayLbl.textColor = tint("#64748b");
-  w.addSpacer(4);
+  todayLbl.lineLimit = 1;
   const total = w.addText(formatINR(data.today.total));
-  total.font = Font.boldSystemFont(22);
+  total.font = Font.boldSystemFont(20);
   total.textColor = tint("#0f172a");
   total.minimumScaleFactor = 0.45;
   total.lineLimit = 1;
