@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { BUSINESS } from "@/lib/business";
 import { toNumber } from "@/lib/utils";
@@ -15,6 +15,11 @@ export type LabelProduct = {
   expiryDate: string | null;
 };
 
+/** Avery L7651 / Oddy ST-65 — the usual Indian A4 barcode sticker sheet. */
+const LABEL_COLS = 5;
+const LABEL_ROWS = 13;
+const LABELS_PER_SHEET = LABEL_COLS * LABEL_ROWS;
+
 function inclusiveRate(saleRate: string | number, gstRate: string | number) {
   const rate = toNumber(saleRate);
   const gst = toNumber(gstRate);
@@ -28,26 +33,31 @@ function formatExp(value: string | null) {
   return `${d}/${m}/${y}`;
 }
 
+function productCode(product: LabelProduct) {
+  return (
+    product.barcode?.trim() ||
+    product.sku?.trim() ||
+    `SW${String(product.id).padStart(6, "0")}`
+  );
+}
+
 function LabelCard({
   product,
   qrDataUrl,
-  isLast,
 }: {
-  product: LabelProduct;
+  product: LabelProduct | null;
   qrDataUrl: string;
-  isLast: boolean;
 }) {
-  const code =
-    product.barcode?.trim() ||
-    product.sku?.trim() ||
-    `SW${String(product.id).padStart(6, "0")}`;
+  if (!product) {
+    return <div className="product-label product-label-empty" />;
+  }
+
+  const code = productCode(product);
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   const exp = formatExp(product.expiryDate);
 
   return (
-    <div
-      className={`product-label${isLast ? " product-label-last" : ""}`}
-    >
+    <div className="product-label">
       <div className="product-label-inner">
         <p className="label-brand">{BUSINESS.name}</p>
         <p className="label-tagline">({BUSINESS.tagline})</p>
@@ -68,21 +78,43 @@ function LabelCard({
   );
 }
 
+function printA4Sheet() {
+  let style = document.getElementById(
+    "skywin-print-page-size"
+  ) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "skywin-print-page-size";
+    document.head.appendChild(style);
+  }
+  style.textContent = "@page { size: A4 portrait; margin: 0; }";
+  document.documentElement.dataset.printSize = "A4";
+  window.print();
+}
+
+function chunkPages(slots: (LabelProduct | null)[]) {
+  const pages: (LabelProduct | null)[][] = [];
+  for (let i = 0; i < Math.max(slots.length, 1); i += LABELS_PER_SHEET) {
+    const page = slots.slice(i, i + LABELS_PER_SHEET);
+    while (page.length < LABELS_PER_SHEET) page.push(null);
+    pages.push(page);
+  }
+  return pages;
+}
+
 export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const [qrMap, setQrMap] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
+  const [startAt, setStartAt] = useState(1);
+  const [copies, setCopies] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const entries: Record<number, string> = {};
       for (const p of products) {
-        const code =
-          p.barcode?.trim() ||
-          p.sku?.trim() ||
-          `SW${String(p.id).padStart(6, "0")}`;
         try {
-          entries[p.id] = await QRCode.toDataURL(code, {
+          entries[p.id] = await QRCode.toDataURL(productCode(p), {
             margin: 0,
             width: 128,
             errorCorrectionLevel: "M",
@@ -102,6 +134,16 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     };
   }, [products]);
 
+  const pages = useMemo(() => {
+    const skip = Math.max(0, Math.min(LABELS_PER_SHEET - 1, startAt - 1));
+    const qty = Math.max(1, Math.min(LABELS_PER_SHEET, copies));
+    const printed: LabelProduct[] = [];
+    for (const p of products) {
+      for (let i = 0; i < qty; i++) printed.push(p);
+    }
+    return chunkPages([...Array(skip).fill(null), ...printed]);
+  }, [products, startAt, copies]);
+
   if (products.length === 0) {
     return (
       <p className="p-6 text-sm text-slate-500">
@@ -110,6 +152,8 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     );
   }
 
+  const labelCount = products.length * Math.max(1, copies);
+
   return (
     <div className="label-print-root">
       <div className="no-print label-toolbar">
@@ -117,27 +161,51 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           type="button"
           className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
           disabled={!ready}
-          onClick={() => window.print()}
+          onClick={printA4Sheet}
         >
-          {ready ? "Print Labels (35×22 mm)" : "Preparing QR…"}
+          {ready ? "Print A4 sheet" : "Preparing QR…"}
         </button>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          Start at
+          <input
+            type="number"
+            min={1}
+            max={LABELS_PER_SHEET}
+            value={startAt}
+            onChange={(e) => setStartAt(Number(e.target.value) || 1)}
+            className="h-8 w-14 rounded border border-slate-300 px-2 text-sm"
+          />
+          <span className="text-slate-400">(1 = top-left)</span>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          Copies
+          <input
+            type="number"
+            min={1}
+            max={LABELS_PER_SHEET}
+            value={copies}
+            onChange={(e) => setCopies(Number(e.target.value) || 1)}
+            className="h-8 w-14 rounded border border-slate-300 px-2 text-sm"
+          />
+        </label>
         <p className="text-xs text-slate-500">
-          {products.length} label{products.length === 1 ? "" : "s"}. In the print
-          dialog set paper/margins to <strong>None</strong> and paper size{" "}
-          <strong>35 × 22 mm</strong> (or custom). Enable{" "}
-          <strong>Background graphics</strong> if QR is missing.
+          {labelCount} label{labelCount === 1 ? "" : "s"} on A4 sticker paper
+          (65-up). Print dialog: paper <strong>A4</strong>, margins{" "}
+          <strong>None</strong>, scale <strong>100%</strong>. Enable{" "}
+          <strong>Background graphics</strong> if the QR is missing.
         </p>
       </div>
-      <div className="product-label-sheet">
-        {products.map((p, idx) => (
-          <LabelCard
-            key={p.id}
-            product={p}
-            qrDataUrl={qrMap[p.id] || ""}
-            isLast={idx === products.length - 1}
-          />
-        ))}
-      </div>
+      {pages.map((page, pageIdx) => (
+        <div key={pageIdx} className="product-label-sheet">
+          {page.map((p, idx) => (
+            <LabelCard
+              key={`${pageIdx}-${idx}-${p?.id ?? "empty"}`}
+              product={p}
+              qrDataUrl={p ? qrMap[p.id] || "" : ""}
+            />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

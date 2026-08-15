@@ -172,7 +172,7 @@ body {
   }
 }
 
-/* Product barcode labels 35×22 mm */
+/* Product barcode labels — A4 65-up (Avery L7651 / Oddy ST-65, ~35×22 mm) */
 .label-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -184,34 +184,50 @@ body {
 }
 
 .product-label-sheet {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 16px;
+  box-sizing: border-box;
+  width: 210mm;
+  height: 297mm;
+  margin: 16px;
+  padding-top: 10.7mm;
+  padding-right: 4.75mm;
+  padding-bottom: 10.7mm;
+  padding-left: 4.75mm;
+  display: grid;
+  grid-template-columns: repeat(5, 38.1mm);
+  grid-template-rows: repeat(13, 21.2mm);
+  column-gap: 2.5mm;
+  row-gap: 0;
+  background: #fff;
+  box-shadow: 0 0 0 1px #e2e8f0;
 }
 
 .product-label {
   box-sizing: border-box;
-  width: 35mm;
-  height: 22mm;
+  width: 38.1mm;
+  height: 21.2mm;
   overflow: hidden;
-  border: 1px solid #0f172a;
+  border: 1px dashed #cbd5e1;
   background: #fff;
   color: #000;
+}
+
+.product-label-empty {
+  border-color: #e2e8f0;
+  background: transparent;
 }
 
 .product-label-inner {
   box-sizing: border-box;
   height: 100%;
-  padding: 1mm 1.2mm;
+  padding: 0.7mm 1.1mm;
   font-family: Arial, Helvetica, sans-serif;
 }
 
 .label-brand {
   margin: 0;
-  font-size: 7px;
+  font-size: 6.5px;
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.05;
   letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;
@@ -220,27 +236,27 @@ body {
 
 .label-tagline {
   margin: 0;
-  font-size: 5.5px;
-  line-height: 1.1;
+  font-size: 5px;
+  line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .label-name {
-  margin: 0.6mm 0 0;
-  font-size: 6.5px;
+  margin: 0.4mm 0 0;
+  font-size: 6px;
   font-weight: 600;
-  line-height: 1.15;
-  max-height: 2.4em;
+  line-height: 1.1;
+  max-height: 2.2em;
   overflow: hidden;
 }
 
 .label-code,
 .label-exp {
   margin: 0;
-  font-size: 6px;
-  line-height: 1.15;
+  font-size: 5.5px;
+  line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -251,19 +267,19 @@ body {
   align-items: flex-end;
   justify-content: space-between;
   gap: 1mm;
-  margin-top: 0.4mm;
+  margin-top: 0.3mm;
 }
 
 .label-rate {
   margin: 0;
-  font-size: 7px;
+  font-size: 6.5px;
   font-weight: 700;
   line-height: 1;
 }
 
 .label-qr {
-  width: 8.5mm;
-  height: 8.5mm;
+  width: 8mm;
+  height: 8mm;
   flex-shrink: 0;
   object-fit: contain;
   -webkit-print-color-adjust: exact;
@@ -275,34 +291,38 @@ body {
 }
 
 @media print {
-  .label-print-root {
+  .label-print-page {
     margin: 0 !important;
     padding: 0 !important;
   }
 
-  .product-label-sheet {
-    display: block !important;
-    gap: 0 !important;
+  .label-print-root {
+    margin: 0 !important;
     padding: 0 !important;
+    background: #fff !important;
   }
 
-  .product-label {
-    width: 35mm;
-    height: 22mm;
-    border: none;
-    box-shadow: none;
+  .product-label-sheet {
+    margin: 0 !important;
+    box-shadow: none !important;
     page-break-after: always;
     break-after: page;
   }
 
-  .product-label-last {
+  .product-label-sheet:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .product-label {
+    border: none !important;
+    box-shadow: none !important;
     page-break-after: auto !important;
     break-after: auto !important;
   }
 
-  @page {
-    size: 35mm 22mm;
-    margin: 0;
+  .product-label-empty {
+    visibility: hidden;
   }
 }
 

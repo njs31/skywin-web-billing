@@ -34,7 +34,7 @@ export default async function ProductLabelsPage({
           .where(inArray(products.id, idList));
 
   return (
-    <div>
+    <div className="label-print-page">
       <div className="no-print border-b bg-slate-50 px-4 py-2">
         <Button asChild variant="outline" size="sm">
           <Link href="/products">Back to Products</Link>
