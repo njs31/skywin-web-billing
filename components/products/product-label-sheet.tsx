@@ -15,8 +15,8 @@ export type LabelProduct = {
   expiryDate: string | null;
 };
 
-/** 35×22 mm stickers on portrait A4 — 6 across, 10 down. */
-const LABEL_COLS = 6;
+/** 35×22 mm stickers on a vertical A4-half sheet (105×297 mm) — 3 across, 10 down. */
+const LABEL_COLS = 3;
 const LABEL_ROWS = 10;
 const LABELS_PER_SHEET = LABEL_COLS * LABEL_ROWS;
 
@@ -87,7 +87,7 @@ function printA4Sheet() {
     style.id = "skywin-print-page-size";
     document.head.appendChild(style);
   }
-  style.textContent = "@page { size: A4 portrait; margin: 0; }";
+  style.textContent = "@page { size: 105mm 297mm; margin: 0; }";
   document.documentElement.dataset.printSize = "A4";
   window.print();
 }
@@ -163,7 +163,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           disabled={!ready}
           onClick={printA4Sheet}
         >
-          {ready ? "Print A4 sheet" : "Preparing QR…"}
+          {ready ? "Print half-A4 sheet" : "Preparing QR…"}
         </button>
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
           Start at
@@ -189,10 +189,12 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           />
         </label>
         <p className="text-xs text-slate-500">
-          {labelCount} label{labelCount === 1 ? "" : "s"} on A4 sticker paper
-          (6 × 10). Print dialog: paper <strong>A4</strong>, margins{" "}
-          <strong>None</strong>, scale <strong>100%</strong>. Enable{" "}
-          <strong>Background graphics</strong> if the QR is missing.
+          {labelCount} label{labelCount === 1 ? "" : "s"} on a vertical half
+          A4 sheet (105×297 mm, 3 × 10 of 35×22 mm). Print dialog: paper{" "}
+          <strong>105 × 297 mm</strong> if listed, otherwise A4, feed the half
+          sheet on the <strong>left</strong>, margins <strong>None</strong>,
+          scale <strong>100%</strong>. Enable <strong>Background graphics</strong>{" "}
+          if the QR is missing.
         </p>
       </div>
       {pages.map((page, pageIdx) => (

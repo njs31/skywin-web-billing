@@ -172,7 +172,7 @@ body {
   }
 }
 
-/* Product barcode labels — A4, 6×10 of 35×22 mm */
+/* Product barcode labels — vertical A4-half (105×297 mm), 3×10 of 35×22 mm */
 .label-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -185,7 +185,7 @@ body {
 
 .product-label-sheet {
   box-sizing: border-box;
-  width: 210mm;
+  width: 105mm;
   height: 297mm;
   margin: 16px;
   padding-top: 5.5mm;
@@ -193,7 +193,7 @@ body {
   padding-bottom: 5.5mm;
   padding-left: 0;
   display: grid;
-  grid-template-columns: repeat(6, 35mm);
+  grid-template-columns: repeat(3, 35mm);
   grid-template-rows: repeat(10, 22mm);
   column-gap: 0;
   row-gap: 7.33mm;
@@ -303,6 +303,8 @@ body {
   }
 
   .product-label-sheet {
+    width: 105mm !important;
+    height: 297mm !important;
     margin: 0 !important;
     box-shadow: none !important;
     page-break-after: always;
