@@ -686,13 +686,9 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
 }
 
 export async function getSales() {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const customerIds = await getScopedCustomerIds();
 
   const query = db
     .select({
@@ -737,12 +733,26 @@ export async function searchSalesForReturn(
   query: string,
   options?: { customerId?: number; limit?: number }
 ): Promise<SaleInvoiceOption[]> {
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const customerIds = await getScopedCustomerIds();
+  if (customerIds !== null && customerIds.length === 0) return [];
+  if (
+    options?.customerId &&
+    customerIds !== null &&
+    !customerIds.includes(options.customerId)
+  ) {
+    return [];
+  }
+
   const q = query.trim();
   const limit = options?.limit ?? 20;
   const filters = [];
 
   if (options?.customerId) {
     filters.push(eq(sales.customerId, options.customerId));
+  } else if (customerIds !== null) {
+    filters.push(inArray(sales.customerId, customerIds));
   }
   if (q) {
     filters.push(
@@ -774,12 +784,8 @@ export async function searchSalesForReturn(
 }
 
 export async function getSaleById(id: number) {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const customerIds = await getScopedCustomerIds();
 
   const [sale] = await db
     .select({
@@ -860,13 +866,9 @@ export async function getSaleById(id: number) {
 }
 
 export async function getTodaySalesTotal() {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const customerIds = await getScopedCustomerIds();
 
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -905,13 +907,9 @@ export async function getTodaySalesTotal() {
 }
 
 export async function getRecentSales(limit = 5) {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const customerIds = await getScopedCustomerIds();
 
   const query = db.select().from(sales);
 
@@ -927,13 +925,9 @@ export async function getRecentSales(limit = 5) {
 }
 
 export async function getTopSellingProducts(limit = 5) {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const customerIds = await getScopedCustomerIds();
 
   const query = db
     .select({
@@ -1037,14 +1031,8 @@ export async function getSalesReport(
   fromDate: string,
   toDate: string
 ): Promise<SalesReportData> {
-  const { getCurrentUser, getVisibleCustomerIds } = await import(
-    "@/lib/actions/auth"
-  );
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const customerIds = await getScopedCustomerIds();
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
     throw new Error("Invalid date format. Use YYYY-MM-DD.");

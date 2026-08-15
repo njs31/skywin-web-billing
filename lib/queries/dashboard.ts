@@ -4,12 +4,8 @@ import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { format, subDays, startOfDay } from "date-fns";
 
 async function visibleCustomerFilter() {
-  const { getCurrentUser, getVisibleCustomerIds } = await import(
-    "@/lib/actions/auth"
-  );
-  const user = await getCurrentUser();
-  if (!user) return null;
-  return getVisibleCustomerIds(user);
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  return getScopedCustomerIds();
 }
 
 function emptyDailySeries(days: number) {

@@ -4,13 +4,10 @@ import { db } from "@/db";
 import { users, reportingLines, dealerMappings, customers } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { getCurrentUser } from "./auth";
+import { requireAdmin } from "./auth";
 
 async function verifyAdmin() {
-  const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "admin") {
-    throw new Error("Unauthorized. Only administrators can perform this action.");
-  }
+  await requireAdmin();
 }
 
 export async function getUsers() {

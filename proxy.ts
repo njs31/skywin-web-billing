@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Skip static files, api routes, and icons
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/") ||
@@ -13,49 +13,44 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = request.cookies.get("skywin_session")?.value;
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = await verifySessionToken(token);
 
-  // Always allow access to /login so users can sign in or switch accounts
   if (pathname === "/login") {
     return NextResponse.next();
   }
 
-  // If no session exists, redirect any protected route to /login
   if (!session) {
     return NextResponse.redirect(new URL("/login", request.url));
-  } else {
-    const [, role] = session.split(":");
+  }
 
-    // Role-based route protection
-    if (role !== "admin") {
-      // Non-admins cannot access user management and global settings
-      if (pathname.startsWith("/users") || pathname.startsWith("/settings") || pathname.startsWith("/widget")) {
+  const role = session.role;
+
+  if (role !== "admin") {
+    if (
+      pathname.startsWith("/users") ||
+      pathname.startsWith("/settings") ||
+      pathname.startsWith("/widget")
+    ) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    if (role === "dealer") {
+      const allowedPaths = ["/", "/pos", "/invoices", "/accounts/outstanding"];
+      const isAllowed = allowedPaths.some(
+        (path) => pathname === path || pathname.startsWith(path + "/")
+      );
+      if (!isAllowed) {
         return NextResponse.redirect(new URL("/", request.url));
       }
+    }
 
-      if (role === "dealer") {
-        // Dealers are highly restricted. They can only see:
-        // - Dashboard (/)
-        // - Invoices (/invoices and /invoices/[id])
-        // - Outstanding (/accounts/outstanding)
-        // - POS (to view/order, though standard POS might be disabled or filtered, let's keep it allowed but filtered)
-        const allowedPaths = ["/", "/pos", "/invoices", "/accounts/outstanding"];
-        const isAllowed = allowedPaths.some(
-          (path) => pathname === path || pathname.startsWith(path + "/")
-        );
-        if (!isAllowed) {
-          return NextResponse.redirect(new URL("/", request.url));
-        }
-      }
-
-      if (role === "sales_officer") {
-        // Sales Officers cannot access purchases/entry or suppliers
-        if (
-          pathname.startsWith("/purchases") ||
-          pathname.startsWith("/suppliers")
-        ) {
-          return NextResponse.redirect(new URL("/", request.url));
-        }
+    if (role === "sales_officer") {
+      if (
+        pathname.startsWith("/purchases") ||
+        pathname.startsWith("/suppliers")
+      ) {
+        return NextResponse.redirect(new URL("/", request.url));
       }
     }
   }

@@ -18,6 +18,7 @@ import {
 } from "@/db/schema";
 import { and, gte, lte, eq, sql } from "drizzle-orm";
 import { format } from "date-fns";
+import { requireNonDealer } from "@/lib/actions/auth";
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
@@ -33,6 +34,7 @@ function ledgerLabel(kind: "sales" | "purchase", rate: number) {
 }
 
 export async function getTallyExportData(startDateStr: string, endDateStr: string) {
+  await requireNonDealer();
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
   end.setHours(23, 59, 59, 999);

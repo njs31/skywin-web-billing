@@ -1,11 +1,17 @@
 "use server";
 
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { db } from "@/db";
 import { users, reportingLines, dealerMappings } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { sendWhatsAppOtp } from "@/lib/services/interakt";
+import {
+  SESSION_COOKIE,
+  SESSION_MAX_AGE_SEC,
+  createSessionToken,
+  verifySessionToken,
+} from "@/lib/session";
 
 const ADMIN_PHONE = "9999999999";
 
@@ -35,13 +41,34 @@ function passwordsMatch(provided: string, expected: string) {
   return timingSafeEqual(a, b);
 }
 
+function otpMatches(provided: string, expected: string) {
+  const a = createHash("sha256").update(provided).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
+
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function tooManyAttempts(key: string) {
+  const now = Date.now();
+  const row = loginAttempts.get(key);
+  if (!row || now > row.resetAt) {
+    loginAttempts.set(key, { count: 1, resetAt: now + 10 * 60 * 1000 });
+    return false;
+  }
+  row.count += 1;
+  return row.count > 8;
+}
+
 async function setSession(user: { id: number; role: string }) {
   const cookieStore = await cookies();
-  cookieStore.set("skywin_session", `${user.id}:${user.role}`, {
+  const token = await createSessionToken(user.id, user.role);
+  cookieStore.set(SESSION_COOKIE, token, {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    maxAge: 7 * 24 * 60 * 60,
+    sameSite: "lax",
+    maxAge: SESSION_MAX_AGE_SEC,
   });
 }
 
@@ -50,6 +77,10 @@ export async function loginWithAdminPassword(phone: string, password: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
   if (cleanPhone !== ADMIN_PHONE) {
     return { success: false as const, error: "Password login is only for the admin account." };
+  }
+
+  if (tooManyAttempts(`admin:${cleanPhone}`)) {
+    return { success: false as const, error: "Too many attempts. Try again later." };
   }
 
   const expected = process.env.ADMIN_PASSWORD;
@@ -73,6 +104,10 @@ export async function sendOtp(phone: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
   if (!cleanPhone || cleanPhone.length < 10) {
     return { success: false as const, error: "Please enter a valid 10-digit phone number" };
+  }
+
+  if (tooManyAttempts(`otp:${cleanPhone}`)) {
+    return { success: false as const, error: "Too many attempts. Try again later." };
   }
 
   if (cleanPhone === ADMIN_PHONE) {
@@ -131,6 +166,10 @@ export async function verifyOtpAndLogin(phone: string, otpInput: string) {
     return { success: false as const, error: "Please enter the 6-digit OTP" };
   }
 
+  if (tooManyAttempts(`otp-verify:${cleanPhone}`)) {
+    return { success: false as const, error: "Too many attempts. Try again later." };
+  }
+
   if (cleanPhone === ADMIN_PHONE) {
     return {
       success: false as const,
@@ -152,7 +191,7 @@ export async function verifyOtpAndLogin(phone: string, otpInput: string) {
     process.env.NODE_ENV === "development" && cleanOtp === "000000";
 
   if (!isMasterBypass) {
-    if (!user.otp || user.otp !== cleanOtp) {
+    if (!user.otp || !otpMatches(cleanOtp, user.otp)) {
       return { success: false as const, error: "Invalid OTP code. Please try again." };
     }
 
@@ -210,21 +249,76 @@ export async function loginWithPhone(phone: string) {
 export async function getCurrentUser() {
   try {
     const cookieStore = await cookies();
-    const session = cookieStore.get("skywin_session")?.value;
-    if (!session) return null;
-
-    const [userIdStr] = session.split(":");
-    const userId = parseInt(userIdStr, 10);
-    if (isNaN(userId)) return null;
+    const session = cookieStore.get(SESSION_COOKIE)?.value;
+    const parsed = await verifySessionToken(session);
+    if (!parsed) return null;
 
     const [user] = await db
       .select()
       .from(users)
-      .where(eq(users.id, userId))
+      .where(eq(users.id, parsed.userId))
       .limit(1);
     return user ?? null;
   } catch {
     return null;
+  }
+}
+
+export async function requireUser() {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error("Unauthorized");
+  }
+  return user;
+}
+
+export async function requireAdmin() {
+  const user = await requireUser();
+  if (user.role !== "admin") {
+    throw new Error("Unauthorized. Only administrators can perform this action.");
+  }
+  return user;
+}
+
+/** Matches UI: dealers cannot manage products, stock, quotations, or POs. */
+export async function requireNonDealer() {
+  const user = await requireUser();
+  if (user.role === "dealer") {
+    throw new Error("Unauthorized");
+  }
+  return user;
+}
+
+/** Matches UI: only admin and regional managers manage purchases/suppliers. */
+export async function requirePurchasingAccess() {
+  const user = await requireUser();
+  if (user.role === "dealer" || user.role === "sales_officer") {
+    throw new Error("Unauthorized");
+  }
+  return user;
+}
+
+/**
+ * Admin → null (unscoped). Other roles → visible customer ids.
+ * Unauthenticated HTTP requests → []. CLI/scripts (no request cookies) → null.
+ */
+export async function getScopedCustomerIds(): Promise<number[] | null> {
+  const user = await getCurrentUser();
+  if (user) return getVisibleCustomerIds(user);
+  try {
+    await cookies();
+    return [];
+  } catch {
+    return null;
+  }
+}
+
+export async function assertCustomerAccess(customerId?: number | null) {
+  if (customerId == null) return;
+  const ids = await getScopedCustomerIds();
+  if (ids === null) return;
+  if (!ids.includes(customerId)) {
+    throw new Error("Unauthorized");
   }
 }
 
@@ -273,6 +367,6 @@ export async function getVisibleCustomerIds(user: {
 
 export async function logout() {
   const cookieStore = await cookies();
-  cookieStore.delete("skywin_session");
+  cookieStore.delete(SESSION_COOKIE);
   return { success: true };
 }

@@ -6,6 +6,7 @@ import { isInterstateGst } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { and, gte, lte, eq, sql, isNotNull, ne } from "drizzle-orm";
 import { format } from "date-fns";
+import { requireNonDealer } from "@/lib/actions/auth";
 
 const GST_STATE_NAMES: Record<string, string> = {
   "01": "Jammu and Kashmir",
@@ -61,6 +62,7 @@ function round2(n: number) {
 }
 
 export async function getEwayExportData(startDateStr: string, endDateStr: string) {
+  await requireNonDealer();
   const settings = await getSettings();
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);

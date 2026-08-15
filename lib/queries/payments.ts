@@ -223,13 +223,9 @@ export async function getOutstandingPurchasesForSupplier(supplierId: number) {
 }
 
 export async function getReceipts() {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const customerIds = await getScopedCustomerIds();
 
   const query = db
     .select({
@@ -409,13 +405,9 @@ export const getSuppliersWithOutstanding = async () => {
 };
 
 export async function getOutstandingSummary() {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const customerIds = await getScopedCustomerIds();
 
   const salesQuery = db
     .select({

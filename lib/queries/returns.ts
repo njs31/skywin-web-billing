@@ -208,13 +208,9 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
 }
 
 export async function getSaleReturns() {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const customerIds = await getScopedCustomerIds();
 
   const query = db
     .select({
@@ -243,12 +239,8 @@ export async function getSaleReturns() {
 }
 
 export async function getSaleReturnById(id: number) {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const customerIds = await getScopedCustomerIds();
 
   const [ret] = await db
     .select({

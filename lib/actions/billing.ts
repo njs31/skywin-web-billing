@@ -9,10 +9,18 @@ import { createPartyPayment as createPartyPaymentMutation } from "@/lib/queries/
 import { adjustStock as adjustStockMutation } from "@/lib/queries/reports";
 import { createProduct as createProductMutation } from "@/lib/queries/products";
 import { updateSettings as updateSettingsMutation, type AppSettings } from "@/lib/settings";
+import {
+  assertCustomerAccess,
+  requireAdmin,
+  requireNonDealer,
+  requirePurchasingAccess,
+  requireUser,
+} from "@/lib/actions/auth";
 
 export async function createCustomer(
   input: Parameters<typeof createCustomerMutation>[0]
 ) {
+  await requireUser();
   return createCustomerMutation(input);
 }
 
@@ -20,24 +28,30 @@ export async function updateCustomer(
   id: number,
   input: Parameters<typeof updateCustomerMutation>[1]
 ) {
+  await requireUser();
+  await assertCustomerAccess(id);
   return updateCustomerMutation(id, input);
 }
 
 export async function createSaleReturn(
   input: Parameters<typeof createSaleReturnMutation>[0]
 ) {
+  await requireNonDealer();
   return createSaleReturnMutation(input);
 }
 
 export async function createPurchaseReturn(
   input: Parameters<typeof createPurchaseReturnMutation>[0]
 ) {
+  await requirePurchasingAccess();
   return createPurchaseReturnMutation(input);
 }
 
 export async function createPartyPayment(
   input: Parameters<typeof createPartyPaymentMutation>[0]
 ) {
+  await requireUser();
+  await assertCustomerAccess(input.customerId);
   return createPartyPaymentMutation(input);
 }
 
@@ -51,12 +65,14 @@ export async function adjustStock(
     purchaseRate?: number;
   }
 ) {
+  await requireNonDealer();
   return adjustStockMutation(productId, qtyDelta, notes, options);
 }
 
 export async function createProduct(
   input: Parameters<typeof createProductMutation>[0]
 ) {
+  await requireNonDealer();
   return createProductMutation(input);
 }
 
@@ -64,6 +80,7 @@ export async function updateSettings(
   input: Partial<AppSettings>,
   currentPin?: string
 ) {
+  await requireAdmin();
   if (input.inventoryAdminPin !== undefined) {
     const { getSetting } = await import("@/lib/settings");
     const storedPin = await getSetting("inventoryAdminPin");
@@ -80,6 +97,7 @@ export async function updateSettings(
 }
 
 export async function verifyInventoryAdminPin(pin: string): Promise<boolean> {
+  await requireUser();
   const { getSetting } = await import("@/lib/settings");
   const isRequired = await getSetting("inventoryAdminPinRequired");
   if (isRequired !== "true") return true;
@@ -94,11 +112,15 @@ export async function isInventoryPinRequired(): Promise<boolean> {
 }
 
 export async function getCustomerOutstanding(customerId: number): Promise<number> {
+  await requireUser();
+  await assertCustomerAccess(customerId);
   const { getCustomerOutstanding: query } = await import("@/lib/queries/customers");
   return query(customerId);
 }
 
 export async function getOutstandingSalesForCustomer(customerId: number) {
+  await requireUser();
+  await assertCustomerAccess(customerId);
   const { getOutstandingSalesForCustomer: query } = await import(
     "@/lib/queries/payments"
   );
@@ -106,6 +128,7 @@ export async function getOutstandingSalesForCustomer(customerId: number) {
 }
 
 export async function getOutstandingPurchasesForSupplier(supplierId: number) {
+  await requirePurchasingAccess();
   const { getOutstandingPurchasesForSupplier: query } = await import(
     "@/lib/queries/payments"
   );

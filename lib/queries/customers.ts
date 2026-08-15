@@ -4,13 +4,9 @@ import { asc, eq, ilike, or, sql, desc, and, isNotNull, type SQL } from "drizzle
 import { z } from "zod";
 
 export async function getCustomers(search?: string) {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const customerIds = await getScopedCustomerIds();
 
   const query = db.select().from(customers);
 
@@ -36,6 +32,12 @@ export async function getCustomers(search?: string) {
 }
 
 export async function getCustomerById(id: number) {
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const customerIds = await getScopedCustomerIds();
+  if (customerIds !== null && !customerIds.includes(id)) {
+    return null;
+  }
+
   const [customer] = await db
     .select()
     .from(customers)
@@ -188,12 +190,8 @@ export async function getCustomerOutstanding(customerId: number) {
 }
 
 export async function getCustomersWithOutstanding() {
-  const { getCurrentUser, getVisibleCustomerIds } = await import("@/lib/actions/auth");
-  const user = await getCurrentUser();
-  let customerIds: number[] | null = null;
-  if (user) {
-    customerIds = await getVisibleCustomerIds(user);
-  }
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const customerIds = await getScopedCustomerIds();
 
   let allCustomers = await db.select().from(customers).orderBy(asc(customers.name));
   if (customerIds !== null) {

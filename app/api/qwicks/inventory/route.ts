@@ -1,21 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getQwicksInventoryPayload } from "@/lib/queries/qwicks";
-import { getSettings } from "@/lib/settings";
-
-async function verifyApiKey(req: NextRequest) {
-  const settings = await getSettings();
-  const configuredKey = settings.qwicksApiKey;
-  if (!configuredKey) return true; // Allow if no key configured
-
-  const reqKey = req.headers.get("x-api-key") || req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!reqKey || reqKey.trim() !== configuredKey.trim()) {
-    return false;
-  }
-  return true;
-}
+import { verifyQwicksApiKey } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
-  const authorized = await verifyApiKey(req);
+  const authorized = await verifyQwicksApiKey(req);
   if (!authorized) {
     return NextResponse.json(
       { error: "Unauthorized: Missing or invalid x-api-key" },

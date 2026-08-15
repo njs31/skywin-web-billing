@@ -12,12 +12,15 @@ import {
   importStockFromRows as importStockFromRowsQuery,
   type StockImportRow,
 } from "@/lib/queries/stock-import";
+import { requireNonDealer, requireUser } from "@/lib/actions/auth";
 
 export async function getStockExportData() {
+  await requireNonDealer();
   return getAllProductsForExport();
 }
 
 export async function searchProducts(query: string, limit = 20) {
+  await requireUser();
   return searchProductsQuery(query, limit);
 }
 
@@ -26,10 +29,12 @@ export async function searchProductBatches(
   limit = 30,
   options?: { onlyInStock?: boolean }
 ) {
+  await requireUser();
   return searchProductBatchesQuery(query, limit, options);
 }
 
 export async function getProductByScanCode(code: string) {
+  await requireUser();
   return getProductByScanCodeQuery(code);
 }
 
@@ -45,18 +50,22 @@ export async function updateProduct(
     discountPercent?: number;
   }
 ) {
+  await requireNonDealer();
   return updateProductQuery(id, data);
 }
 
 export async function deleteProduct(id: number) {
+  await requireNonDealer();
   return deleteProductQuery(id);
 }
 
 export async function importStockFromExcel(rows: StockImportRow[]) {
+  await requireNonDealer();
   return importStockFromRowsQuery(rows);
 }
 
 export async function resolveProductsForImport(rows: StockImportRow[]) {
+  await requireNonDealer();
   const resolved = [];
   const failed = [];
 
