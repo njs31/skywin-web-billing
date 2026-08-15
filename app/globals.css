@@ -291,6 +291,23 @@ body {
 }
 
 @media print {
+  html.label-print-active,
+  html.label-print-active body,
+  html.label-print-active .label-print-shell,
+  html.label-print-active .label-print-page,
+  html.label-print-active .label-print-root {
+    width: 105mm !important;
+    min-width: 105mm !important;
+    max-width: 105mm !important;
+    height: 297mm !important;
+    min-height: 0 !important;
+    max-height: 297mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #fff !important;
+  }
+
   .label-print-page {
     margin: 0 !important;
     padding: 0 !important;
@@ -317,6 +334,8 @@ body {
   }
 
   .product-label {
+    width: 35mm !important;
+    height: 22mm !important;
     border: none !important;
     box-shadow: none !important;
     page-break-after: auto !important;

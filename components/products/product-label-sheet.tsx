@@ -78,7 +78,7 @@ function LabelCard({
   );
 }
 
-function printA4Sheet() {
+function printHalfA4Sheet() {
   let style = document.getElementById(
     "skywin-print-page-size"
   ) as HTMLStyleElement | null;
@@ -87,8 +87,15 @@ function printA4Sheet() {
     style.id = "skywin-print-page-size";
     document.head.appendChild(style);
   }
-  style.textContent = "@page { size: 105mm 297mm; margin: 0; }";
+  style.textContent = `@page { size: 105mm 297mm; margin: 0; }
+html, body { width: 105mm !important; height: 297mm !important; margin: 0 !important; padding: 0 !important; }`;
   document.documentElement.dataset.printSize = "A4";
+  document.documentElement.classList.add("label-print-active");
+  const cleanup = () => {
+    document.documentElement.classList.remove("label-print-active");
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
   window.print();
 }
 
@@ -161,7 +168,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           type="button"
           className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
           disabled={!ready}
-          onClick={printA4Sheet}
+          onClick={printHalfA4Sheet}
         >
           {ready ? "Print half-A4 sheet" : "Preparing QR…"}
         </button>
@@ -193,8 +200,8 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           A4 sheet (105×297 mm, 3 × 10 of 35×22 mm). Print dialog: paper{" "}
           <strong>105 × 297 mm</strong> if listed, otherwise A4, feed the half
           sheet on the <strong>left</strong>, margins <strong>None</strong>,
-          scale <strong>100%</strong>. Enable <strong>Background graphics</strong>{" "}
-          if the QR is missing.
+          scale <strong>100%</strong> (turn off Fit to Page). Enable{" "}
+          <strong>Background graphics</strong> if the QR is missing.
         </p>
       </div>
       {pages.map((page, pageIdx) => (
