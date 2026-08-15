@@ -15,9 +15,9 @@ export type LabelProduct = {
   expiryDate: string | null;
 };
 
-/** 35×22 mm stickers on portrait A4 — 6 across, 12 down (matches the physical sheet). */
+/** 35×22 mm stickers on portrait A4 — 6 across, 10 down. */
 const LABEL_COLS = 6;
-const LABEL_ROWS = 12;
+const LABEL_ROWS = 10;
 const LABELS_PER_SHEET = LABEL_COLS * LABEL_ROWS;
 
 function inclusiveRate(saleRate: string | number, gstRate: string | number) {
@@ -190,7 +190,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         </label>
         <p className="text-xs text-slate-500">
           {labelCount} label{labelCount === 1 ? "" : "s"} on A4 sticker paper
-          (6 across). Print dialog: paper <strong>A4</strong>, margins{" "}
+          (6 × 10). Print dialog: paper <strong>A4</strong>, margins{" "}
           <strong>None</strong>, scale <strong>100%</strong>. Enable{" "}
           <strong>Background graphics</strong> if the QR is missing.
         </p>
