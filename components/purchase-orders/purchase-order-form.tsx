@@ -4,8 +4,13 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { searchProductBatches } from "@/lib/actions/products";
 import { createPurchaseOrder } from "@/lib/actions/purchase-orders";
-import { calculateLineAmount, getProductRate } from "@/lib/gst";
-import { formatCurrency } from "@/lib/utils";
+import {
+  applyRupeeRounding,
+  calculateGstBreakdown,
+  calculateLineAmount,
+  getProductRate,
+} from "@/lib/gst";
+import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
@@ -28,12 +33,9 @@ type LineItem = {
   name: string;
   qty: number;
   rate: number;
+  gstRate: number;
   hsnCode?: string;
 };
-
-function round2(n: number) {
-  return Math.round(n * 100) / 100;
-}
 
 export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
   const router = useRouter();
@@ -50,6 +52,7 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
   const [customHsn, setCustomHsn] = useState("");
   const [customQty, setCustomQty] = useState("1");
   const [customRate, setCustomRate] = useState("");
+  const [customGst, setCustomGst] = useState("0");
 
   useEffect(() => {
     const t = setTimeout(async () => {
@@ -71,6 +74,7 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
         name: p.name,
         qty: 1,
         rate: getProductRate(p, "wholesale"),
+        gstRate: toNumber(p.gstRate),
         hsnCode: p.hsnCode ?? undefined,
       },
     ]);
@@ -110,6 +114,7 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
         name: customName.trim(),
         qty,
         rate,
+        gstRate: parseFloat(customGst) || 0,
         hsnCode: customHsn.trim() || undefined,
       },
     ]);
@@ -117,14 +122,21 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
     setCustomHsn("");
     setCustomQty("1");
     setCustomRate("");
+    setCustomGst("0");
     setShowCustom(false);
     setError("");
   };
 
-  const subtotal = useMemo(
+  const gstPreview = useMemo(
     () =>
-      round2(
-        items.reduce((s, i) => s + calculateLineAmount(i.qty, i.rate), 0)
+      applyRupeeRounding(
+        calculateGstBreakdown(
+          items.map((i) => ({
+            qty: i.qty,
+            rate: i.rate,
+            gstRate: i.gstRate,
+          }))
+        )
       ),
     [items]
   );
@@ -149,6 +161,7 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
             hsnCode: i.product ? i.product.hsnCode || null : i.hsnCode,
             qty: i.qty,
             rate: i.rate,
+            gstRate: i.gstRate,
           })),
         });
         router.push(`/purchase-orders/${po.id}`);
@@ -260,6 +273,17 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
                 onChange={(e) => setCustomRate(e.target.value)}
               />
             </div>
+            <div>
+              <Label className="text-xs">GST %</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                className="h-9 bg-white"
+                value={customGst}
+                onChange={(e) => setCustomGst(e.target.value)}
+              />
+            </div>
             <div className="flex items-end sm:col-span-1">
               <Button
                 size="sm"
@@ -323,6 +347,9 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
               }
             />
           </div>
+          <span className="w-16 text-right text-[10px] text-slate-500">
+            {item.gstRate}% GST
+          </span>
           <span className="w-24 text-right text-sm font-semibold text-slate-900">
             {formatCurrency(calculateLineAmount(item.qty, item.rate))}
           </span>
@@ -342,11 +369,36 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
 
       {items.length > 0 && (
         <div className="space-y-3 border-t pt-3">
-          <div className="ml-auto w-64 space-y-1 text-sm">
-            <div className="flex justify-between border-t pt-2 font-semibold">
-              <span>PO Total</span>
-              <span>{formatCurrency(subtotal)}</span>
+          <div className="ml-auto w-72 space-y-1 text-sm">
+            <div className="flex justify-between text-slate-600">
+              <span>Taxable</span>
+              <span>{formatCurrency(gstPreview.subtotal)}</span>
             </div>
+            {gstPreview.igst > 0 ? (
+              <div className="flex justify-between text-slate-600">
+                <span>IGST</span>
+                <span>{formatCurrency(gstPreview.igst)}</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between text-slate-600">
+                  <span>CGST</span>
+                  <span>{formatCurrency(gstPreview.cgst)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>SGST</span>
+                  <span>{formatCurrency(gstPreview.sgst)}</span>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between border-t pt-2 font-semibold">
+              <span>Print total (incl. GST)</span>
+              <span>{formatCurrency(gstPreview.grandTotal)}</span>
+            </div>
+            <p className="text-[11px] font-normal text-slate-500">
+              Saved PO total stays {formatCurrency(gstPreview.subtotal)} (qty ×
+              rate).
+            </p>
           </div>
           <div className="flex justify-end">
             <Button

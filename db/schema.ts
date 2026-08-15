@@ -372,6 +372,7 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   customName: text("custom_name"),
   qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
   rate: numeric("rate", { precision: 14, scale: 2 }).notNull(),
+  gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
   hsnCode: text("hsn_code"),
 });

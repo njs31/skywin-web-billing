@@ -7,7 +7,7 @@ import {
 } from "@/db/schema";
 import { calculateLineAmount } from "@/lib/gst";
 import { getIndianFinancialYearBounds } from "@/lib/financial-year";
-import { desc, eq, sql, and } from "drizzle-orm";
+import { desc, eq, sql, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 const poItemSchema = z.object({
@@ -15,6 +15,7 @@ const poItemSchema = z.object({
   customName: z.string().optional(),
   qty: z.number().positive(),
   rate: z.number().nonnegative(),
+  gstRate: z.number().nonnegative().default(0),
   hsnCode: z.string().optional().nullable(),
 });
 
@@ -75,6 +76,24 @@ export async function createPurchaseOrder(
     throw new Error("Select a customer or enter a customer name.");
   }
 
+  const productIds = [
+    ...new Set(
+      data.items
+        .map((item) => item.productId)
+        .filter((id): id is number => typeof id === "number")
+    ),
+  ];
+  const productGst = new Map<number, number>();
+  if (productIds.length > 0) {
+    const rows = await db
+      .select({ id: products.id, gstRate: products.gstRate })
+      .from(products)
+      .where(inArray(products.id, productIds));
+    for (const row of rows) {
+      productGst.set(row.id, Number(row.gstRate ?? 0));
+    }
+  }
+
   const lineAmounts = data.items.map((item) =>
     calculateLineAmount(item.qty, item.rate)
   );
@@ -104,6 +123,10 @@ export async function createPurchaseOrder(
         customName: item.customName?.trim() || null,
         qty: item.qty.toFixed(2),
         rate: item.rate.toFixed(2),
+        gstRate: (
+          item.gstRate ||
+          (item.productId ? productGst.get(item.productId) ?? 0 : 0)
+        ).toFixed(2),
         amount: lineAmounts[idx].toFixed(2),
         hsnCode: item.hsnCode?.trim() || null,
       }))
@@ -158,6 +181,12 @@ export async function getPurchaseOrderById(id: number) {
       customerRecordPhone: customers.phone,
       customerGstin: customers.gstin,
       customerAddress: customers.address,
+      customerAcre: customers.acre,
+      customerCrop: customers.crop,
+      customerPinCode: customers.pinCode,
+      customerVillage: customers.village,
+      customerTaluk: customers.taluk,
+      customerDistrict: customers.district,
     })
     .from(purchaseOrders)
     .leftJoin(customers, eq(purchaseOrders.customerId, customers.id))
@@ -175,6 +204,7 @@ export async function getPurchaseOrderById(id: number) {
       hsnCode: sql<string>`coalesce(${purchaseOrderItems.hsnCode}, ${products.hsnCode})`,
       qty: purchaseOrderItems.qty,
       rate: purchaseOrderItems.rate,
+      gstRate: sql<string>`coalesce(${purchaseOrderItems.gstRate}, ${products.gstRate}, 0)`,
       amount: purchaseOrderItems.amount,
       unit: products.unit,
     })
