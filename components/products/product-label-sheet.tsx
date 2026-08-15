@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { BUSINESS } from "@/lib/business";
 import { toNumber } from "@/lib/utils";
@@ -19,6 +20,12 @@ export type LabelProduct = {
 const LABEL_COLS = 3;
 const LABEL_ROWS = 10;
 const LABELS_PER_SHEET = LABEL_COLS * LABEL_ROWS;
+const PAGE_W = 105;
+const PAGE_H = 297;
+const LABEL_W = 35;
+const LABEL_H = 22;
+const PAD_TOP = 5.5;
+const ROW_GAP = 7.33;
 
 function inclusiveRate(saleRate: string | number, gstRate: string | number) {
   const rate = toNumber(saleRate);
@@ -78,25 +85,84 @@ function LabelCard({
   );
 }
 
-function printHalfA4Sheet() {
-  let style = document.getElementById(
-    "skywin-print-page-size"
-  ) as HTMLStyleElement | null;
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "skywin-print-page-size";
-    document.head.appendChild(style);
+function drawPdfLabel(
+  doc: jsPDF,
+  product: LabelProduct,
+  qrDataUrl: string,
+  x: number,
+  y: number
+) {
+  const padX = 1.1;
+  const textW = LABEL_W - padX * 2 - 9;
+  let ty = y + 2.4;
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.text(BUSINESS.name, x + padX, ty, { maxWidth: LABEL_W - padX * 2 });
+
+  ty += 2.2;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5);
+  doc.text(`(${BUSINESS.tagline})`, x + padX, ty, {
+    maxWidth: LABEL_W - padX * 2,
+  });
+
+  ty += 2.4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6);
+  const nameLines = doc.splitTextToSize(product.name, textW).slice(0, 2);
+  doc.text(nameLines, x + padX, ty);
+  ty += nameLines.length * 2.1;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5.5);
+  doc.text(productCode(product), x + padX, ty, { maxWidth: textW });
+  ty += 2.1;
+  const exp = formatExp(product.expiryDate);
+  doc.text(`EXP: ${exp || "—"}`, x + padX, ty, { maxWidth: textW });
+
+  const rate = inclusiveRate(product.saleRate, product.gstRate);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y + LABEL_H - 1.6);
+
+  if (qrDataUrl) {
+    doc.addImage(
+      qrDataUrl,
+      "PNG",
+      x + LABEL_W - 9.1,
+      y + LABEL_H - 9.1,
+      8,
+      8
+    );
   }
-  style.textContent = `@page { size: 105mm 297mm; margin: 0; }
-html, body { width: 105mm !important; height: 297mm !important; margin: 0 !important; padding: 0 !important; }`;
-  document.documentElement.dataset.printSize = "A4";
-  document.documentElement.classList.add("label-print-active");
-  const cleanup = () => {
-    document.documentElement.classList.remove("label-print-active");
-    window.removeEventListener("afterprint", cleanup);
-  };
-  window.addEventListener("afterprint", cleanup);
-  window.print();
+}
+
+function buildLabelPdf(
+  pages: (LabelProduct | null)[][],
+  qrMap: Record<number, string>
+) {
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: [PAGE_W, PAGE_H],
+    compress: true,
+  });
+
+  pages.forEach((page, pageIdx) => {
+    if (pageIdx > 0) doc.addPage([PAGE_W, PAGE_H], "portrait");
+    page.forEach((product, idx) => {
+      if (!product) return;
+      const col = idx % LABEL_COLS;
+      const row = Math.floor(idx / LABEL_COLS);
+      const x = col * LABEL_W;
+      const y = PAD_TOP + row * (LABEL_H + ROW_GAP);
+      drawPdfLabel(doc, product, qrMap[product.id] || "", x, y);
+    });
+  });
+
+  return doc;
 }
 
 function chunkPages(slots: (LabelProduct | null)[]) {
@@ -123,7 +189,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         try {
           entries[p.id] = await QRCode.toDataURL(productCode(p), {
             margin: 0,
-            width: 128,
+            width: 256,
             errorCorrectionLevel: "M",
             color: { dark: "#000000", light: "#ffffff" },
           });
@@ -151,6 +217,16 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     return chunkPages([...Array(skip).fill(null), ...printed]);
   }, [products, startAt, copies]);
 
+  function printPdf() {
+    const doc = buildLabelPdf(pages, qrMap);
+    const blob = doc.output("blob");
+    const url = URL.createObjectURL(blob);
+    const opened = window.open(url, "_blank");
+    if (!opened) {
+      doc.save("skywin-labels.pdf");
+    }
+  }
+
   if (products.length === 0) {
     return (
       <p className="p-6 text-sm text-slate-500">
@@ -168,9 +244,9 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           type="button"
           className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
           disabled={!ready}
-          onClick={printHalfA4Sheet}
+          onClick={printPdf}
         >
-          {ready ? "Print half-A4 sheet" : "Preparing QR…"}
+          {ready ? "Open print PDF" : "Preparing QR…"}
         </button>
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
           Start at
@@ -196,12 +272,10 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           />
         </label>
         <p className="text-xs text-slate-500">
-          {labelCount} label{labelCount === 1 ? "" : "s"} on a vertical half
-          A4 sheet (105×297 mm, 3 × 10 of 35×22 mm). Print dialog: paper{" "}
-          <strong>105 × 297 mm</strong> if listed, otherwise A4, feed the half
-          sheet on the <strong>left</strong>, margins <strong>None</strong>,
-          scale <strong>100%</strong> (turn off Fit to Page). Enable{" "}
-          <strong>Background graphics</strong> if the QR is missing.
+          {labelCount} label{labelCount === 1 ? "" : "s"} as a 105×297 mm PDF
+          (3 × 10 of 35×22 mm). In the PDF print dialog: paper{" "}
+          <strong>105 × 297 mm</strong>, margins <strong>None</strong>, scale{" "}
+          <strong>100% / Actual Size</strong> (not Fit).
         </p>
       </div>
       {pages.map((page, pageIdx) => (
