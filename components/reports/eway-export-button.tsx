@@ -50,7 +50,8 @@ export function EwayExportButton() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-slate-500">
-          B2B sales (customer GSTIN present) for Tally / E-Way import
+          B2B sales with customer GSTIN and invoice total above ₹50,000
+          (e-Way requirement)
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>

@@ -395,6 +395,8 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
     billType === "retail" &&
     (paymentMode === "cash" || paymentMode === "upi");
 
+  const needsEway = gst.grandTotal > 50000;
+
   const splitCashAmount = Math.min(
     gst.grandTotal,
     Math.max(0, parseFloat(cashAmountInput) || 0)
@@ -459,10 +461,12 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
           discountAmount: parseFloat(billDiscount) || 0,
           poNumber: poNumber.trim() || undefined,
           quotationNumber: quotationNumber.trim() || undefined,
-          ewayBillNo: ewayBillNo.trim() || undefined,
-          vehicleNo: vehicleNo.trim() || undefined,
-          dispatchedThrough: dispatchedThrough.trim() || undefined,
-          destination: destination.trim() || undefined,
+          ewayBillNo: needsEway ? ewayBillNo.trim() || undefined : undefined,
+          vehicleNo: needsEway ? vehicleNo.trim() || undefined : undefined,
+          dispatchedThrough: needsEway
+            ? dispatchedThrough.trim() || undefined
+            : undefined,
+          destination: needsEway ? destination.trim() || undefined : undefined,
           deliveryNote: deliveryNote.trim() || undefined,
           paymentTerms: paymentTerms.trim() || undefined,
           items: cart.map((c) => ({
@@ -995,42 +999,46 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                       className="mt-1 h-9"
                     />
                   </div>
-                  <div>
-                    <Label className="text-xs">e-Way Bill No.</Label>
-                    <Input
-                      value={ewayBillNo}
-                      onChange={(e) => setEwayBillNo(e.target.value)}
-                      placeholder="Optional"
-                      className="mt-1 h-9"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Vehicle No.</Label>
-                    <Input
-                      value={vehicleNo}
-                      onChange={(e) => setVehicleNo(e.target.value)}
-                      placeholder="Optional"
-                      className="mt-1 h-9"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Dispatched through</Label>
-                    <Input
-                      value={dispatchedThrough}
-                      onChange={(e) => setDispatchedThrough(e.target.value)}
-                      placeholder="e.g. ROAD"
-                      className="mt-1 h-9"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Destination</Label>
-                    <Input
-                      value={destination}
-                      onChange={(e) => setDestination(e.target.value)}
-                      placeholder="Optional"
-                      className="mt-1 h-9"
-                    />
-                  </div>
+                  {needsEway && (
+                    <>
+                      <div>
+                        <Label className="text-xs">e-Way Bill No.</Label>
+                        <Input
+                          value={ewayBillNo}
+                          onChange={(e) => setEwayBillNo(e.target.value)}
+                          placeholder="Required above ₹50,000"
+                          className="mt-1 h-9"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Vehicle No.</Label>
+                        <Input
+                          value={vehicleNo}
+                          onChange={(e) => setVehicleNo(e.target.value)}
+                          placeholder="Optional"
+                          className="mt-1 h-9"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Dispatched through</Label>
+                        <Input
+                          value={dispatchedThrough}
+                          onChange={(e) => setDispatchedThrough(e.target.value)}
+                          placeholder="e.g. ROAD"
+                          className="mt-1 h-9"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Destination</Label>
+                        <Input
+                          value={destination}
+                          onChange={(e) => setDestination(e.target.value)}
+                          placeholder="Optional"
+                          className="mt-1 h-9"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               {(!customerId || customerId === "none") && (
                 <div className="space-y-2">

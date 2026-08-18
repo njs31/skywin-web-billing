@@ -48,6 +48,7 @@ export async function updateProduct(
     expiryDate?: string | null;
     mrp?: number | null;
     discountPercent?: number;
+    name?: string;
   }
 ) {
   await requireNonDealer();

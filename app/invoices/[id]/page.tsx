@@ -1,10 +1,25 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import QRCode from "qrcode";
 import { getSaleById } from "@/lib/queries/sales";
 import { getSettings } from "@/lib/settings";
 import { InvoiceTemplate } from "@/components/invoice/invoice-template";
 import { PrintButton } from "@/components/invoice/print-button";
 import { Button } from "@/components/ui/button";
+import { formatDateIST } from "@/lib/utils";
+
+async function invoiceQrDataUrl(payload: string) {
+  try {
+    return await QRCode.toDataURL(payload, {
+      margin: 0,
+      width: 256,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+  } catch {
+    return null;
+  }
+}
 
 export default async function InvoiceDetailPage({
   params,
@@ -37,6 +52,16 @@ export default async function InvoiceDetailPage({
     bankIfsc: settings.bankIfsc,
   };
 
+  const einvoiceQrUrl = await invoiceQrDataUrl(
+    JSON.stringify({
+      invoiceNo: sale.invoiceNo,
+      date: formatDateIST(sale.date),
+      sellerGstin: settings.gstin,
+      buyerGstin: sale.customerGstin || "",
+      grandTotal: sale.grandTotal,
+    })
+  );
+
   return (
     <div className="p-6">
       <div className="no-print mb-6 flex items-center justify-between">
@@ -49,7 +74,12 @@ export default async function InvoiceDetailPage({
           buttonText="Print Invoice"
         />
       </div>
-      <InvoiceTemplate business={business} sale={sale} items={sale.items} />
+      <InvoiceTemplate
+        business={business}
+        sale={sale}
+        items={sale.items}
+        einvoiceQrUrl={einvoiceQrUrl}
+      />
     </div>
   );
 }

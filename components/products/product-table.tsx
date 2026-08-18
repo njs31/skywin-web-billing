@@ -51,6 +51,7 @@ function isExpired(value: string | null | undefined) {
 export function ProductTable({ products }: { products: Product[] }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [name, setName] = useState("");
   const [saleRate, setSaleRate] = useState("");
   const [mrp, setMrp] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
@@ -62,6 +63,7 @@ export function ProductTable({ products }: { products: Product[] }) {
 
   const startEdit = (product: Product) => {
     setEditingId(product.id);
+    setName(product.name);
     setSaleRate(String(toNumber(product.saleRate)));
     setMrp(product.mrp != null ? String(toNumber(product.mrp)) : "");
     setDiscountPercent(String(toNumber(product.discountPercent)));
@@ -72,6 +74,10 @@ export function ProductTable({ products }: { products: Product[] }) {
   };
 
   const save = (id: number) => {
+    if (!name.trim()) {
+      alert("Product name is required.");
+      return;
+    }
     if (!hsnCode.trim()) {
       alert("HSN code is mandatory.");
       return;
@@ -97,6 +103,7 @@ export function ProductTable({ products }: { products: Product[] }) {
         const parsedMrp = mrp.trim() === "" ? null : parseFloat(mrp);
         const parsedDisc = parseFloat(discountPercent);
         await updateProduct(id, {
+          name: name.trim(),
           saleRate: Number.isFinite(parsedSale) ? parsedSale : 0,
           mrp: parsedMrp != null && Number.isFinite(parsedMrp) ? parsedMrp : null,
           discountPercent: Number.isFinite(parsedDisc) ? parsedDisc : 0,
@@ -171,8 +178,16 @@ export function ProductTable({ products }: { products: Product[] }) {
                 toNumber(product.stockQty) < 10 ? "bg-amber-50/60" : undefined
               }
             >
-              <TableCell className="max-w-[200px] font-medium truncate py-2 px-3">
-                {product.name}
+              <TableCell className="max-w-[200px] font-medium py-2 px-3">
+                {editingId === product.id ? (
+                  <Input
+                    className="h-7 w-full min-w-[10rem] text-xs px-1.5"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                ) : (
+                  <span className="truncate block">{product.name}</span>
+                )}
               </TableCell>
               <TableCell className="text-slate-500 py-2 px-2 whitespace-nowrap">
                 {product.sku ?? "-"}

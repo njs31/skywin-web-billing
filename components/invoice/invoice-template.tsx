@@ -75,6 +75,7 @@ type InvoiceTemplateProps = {
   };
   sale: InvoiceSale;
   items: InvoiceItem[];
+  einvoiceQrUrl?: string | null;
 };
 
 type HsnRow = {
@@ -187,7 +188,12 @@ function MetaCell({
   );
 }
 
-export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps) {
+export function InvoiceTemplate({
+  business,
+  sale,
+  items,
+  einvoiceQrUrl,
+}: InvoiceTemplateProps) {
   const customer =
     sale.customerRecordName ?? sale.customerName ?? null;
   const agriBits = [
@@ -211,8 +217,21 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
   return (
     <div className="mx-auto max-w-[210mm] bg-white p-3 text-slate-900 print-sheet print:p-2">
       <div className="border border-slate-900">
-        <div className="border-b border-slate-900 px-2 py-1 text-center text-sm font-bold tracking-wide">
-          TAX INVOICE
+        <div className="grid grid-cols-[1fr_auto] border-b border-slate-900">
+          <div className="px-2 py-1 text-center text-sm font-bold tracking-wide">
+            TAX INVOICE
+          </div>
+          {einvoiceQrUrl ? (
+            <div className="flex flex-col items-center border-l border-slate-900 px-2 py-1">
+              <p className="text-[10px] font-bold leading-none">e-Invoice</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={einvoiceQrUrl}
+                alt="Invoice QR"
+                className="mt-0.5 h-[72px] w-[72px] print:h-[22mm] print:w-[22mm]"
+              />
+            </div>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-2 border-b border-slate-900">
@@ -576,6 +595,9 @@ export function InvoiceTemplate({ business, sale, items }: InvoiceTemplateProps)
         <div className="grid grid-cols-2 text-[10px]">
           <div className="border-r border-slate-900 p-2">
             <p className="mb-1 font-semibold">Declaration</p>
+            <p className="font-bold">
+              Sold items cannot be returned or exchanged
+            </p>
             <p>
               We declare that this invoice shows the actual price of the goods
               described and that all particulars are true and correct.

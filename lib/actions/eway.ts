@@ -92,7 +92,8 @@ export async function getEwayExportData(startDateStr: string, endDateStr: string
         gte(sales.date, start),
         lte(sales.date, end),
         isNotNull(customers.gstin),
-        ne(customers.gstin, "")
+        ne(customers.gstin, ""),
+        sql`${sales.grandTotal}::numeric > 50000`
       )
     );
 

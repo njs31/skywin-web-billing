@@ -250,10 +250,14 @@ export async function updateProduct(
     hsnCode?: string;
     barcode?: string;
     expiryDate?: string | null;
+    name?: string;
   }
 ) {
   if (data.hsnCode !== undefined && !data.hsnCode.trim()) {
     throw new Error("HSN code is mandatory and cannot be empty.");
+  }
+  if (data.name !== undefined && !data.name.trim()) {
+    throw new Error("Product name is required.");
   }
   if (data.stockQty !== undefined && data.stockQty < 0) {
     throw new Error("Stock cannot be negative.");
@@ -292,6 +296,7 @@ export async function updateProduct(
         : {}),
       ...(data.hsnCode !== undefined ? { hsnCode: data.hsnCode } : {}),
       ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
+      ...(data.name !== undefined ? { name: data.name.trim() } : {}),
       ...(data.expiryDate !== undefined
         ? { expiryDate: data.expiryDate }
         : {}),
