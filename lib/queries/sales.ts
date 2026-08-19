@@ -879,6 +879,8 @@ export async function getTodaySalesTotal() {
       count: sql<number>`count(*)::int`,
       retail: sql<string>`coalesce(sum(case when ${sales.billType} = 'retail' then ${sales.grandTotal}::numeric else 0 end), 0)`,
       wholesale: sql<string>`coalesce(sum(case when ${sales.billType} = 'wholesale' then ${sales.grandTotal}::numeric else 0 end), 0)`,
+      retailCount: sql<number>`count(*) filter (where ${sales.billType} = 'retail')::int`,
+      wholesaleCount: sql<number>`count(*) filter (where ${sales.billType} = 'wholesale')::int`,
     })
     .from(sales);
 
@@ -886,7 +888,14 @@ export async function getTodaySalesTotal() {
 
   if (customerIds !== null) {
     if (customerIds.length === 0) {
-      return { total: 0, count: 0, retail: 0, wholesale: 0 };
+      return {
+        total: 0,
+        count: 0,
+        retail: 0,
+        wholesale: 0,
+        retailCount: 0,
+        wholesaleCount: 0,
+      };
     }
     const [result] = await query.where(and(baseCondition, inArray(sales.customerId, customerIds)));
     return {
@@ -894,6 +903,8 @@ export async function getTodaySalesTotal() {
       count: result?.count ?? 0,
       retail: parseFloat(result?.retail ?? "0"),
       wholesale: parseFloat(result?.wholesale ?? "0"),
+      retailCount: result?.retailCount ?? 0,
+      wholesaleCount: result?.wholesaleCount ?? 0,
     };
   }
 
@@ -903,6 +914,8 @@ export async function getTodaySalesTotal() {
     count: result?.count ?? 0,
     retail: parseFloat(result?.retail ?? "0"),
     wholesale: parseFloat(result?.wholesale ?? "0"),
+    retailCount: result?.retailCount ?? 0,
+    wholesaleCount: result?.wholesaleCount ?? 0,
   };
 }
 

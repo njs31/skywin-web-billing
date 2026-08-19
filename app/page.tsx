@@ -6,7 +6,7 @@ import {
 } from "@/lib/queries/sales";
 import { getLowStockProducts, getProductStats } from "@/lib/queries/products";
 import { getOutstandingSummary } from "@/lib/queries/payments";
-import { getGrossProfitReport, getStockValuation } from "@/lib/queries/reports";
+import { getStockValuation } from "@/lib/queries/reports";
 import {
   getSalesTrend,
   getPaymentModeMix,
@@ -30,7 +30,7 @@ import {
   Package,
   AlertTriangle,
   Wallet,
-  TrendingUp,
+  Receipt,
   Warehouse,
 } from "lucide-react";
 import {
@@ -43,8 +43,6 @@ import {
 } from "@/components/dashboard/charts";
 
 export default async function DashboardPage() {
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-
   const [
     todaySales,
     recentSales,
@@ -52,7 +50,6 @@ export default async function DashboardPage() {
     productStats,
     topProducts,
     outstanding,
-    profit,
     stockVal,
     salesTrend,
     paymentMix,
@@ -66,7 +63,6 @@ export default async function DashboardPage() {
     getProductStats(),
     getTopSellingProducts(5),
     getOutstandingSummary(),
-    getGrossProfitReport(monthStart),
     getStockValuation(),
     getSalesTrend(30),
     getPaymentModeMix(30),
@@ -88,12 +84,12 @@ export default async function DashboardPage() {
       href: "/invoices",
     },
     {
-      label: "Gross Profit (MTD)",
-      value: formatCurrency(profit.grossProfit),
-      sub: `${profit.margin.toFixed(1)}% margin`,
-      icon: TrendingUp,
+      label: "Bills Today",
+      value: String(todaySales.count),
+      sub: `R: ${todaySales.retailCount} · W: ${todaySales.wholesaleCount}`,
+      icon: Receipt,
       color: "text-blue-600",
-      href: "/reports",
+      href: "/invoices",
     },
     {
       label: "Stock Value",
