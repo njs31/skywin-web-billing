@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Search, Trash2, X } from "lucide-react";
 import { searchProductBatches } from "@/lib/actions/products";
-import { createSaleReturn } from "@/lib/actions/billing";
+import { createSaleReturn, updateSaleReturn } from "@/lib/actions/billing";
 import { searchSalesForReturn } from "@/lib/actions/sales";
 import { calculateLineAmount } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
@@ -16,7 +16,41 @@ import { Label } from "@/components/ui/label";
 import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
 
-type LineItem = { product: Product; qty: number; rate: number };
+type LineItem = {
+  product: Product;
+  qty: number;
+  rate: number;
+  discountPercent: number;
+};
+
+export type SaleReturnEditInitial = {
+  id: number;
+  returnNo: string;
+  saleId: number | null;
+  saleInvoiceNo: string | null;
+  customerId: number | null;
+  customerGstin: string | null;
+  reason: string | null;
+  items: Array<{
+    productId: number | null;
+    productName: string | null;
+    customName?: string | null;
+    hsnCode: string | null;
+    qty: string;
+    rate: string;
+    discountPercent?: string | null;
+    discountValue?: string | null;
+    discountType?: string | null;
+    gstRate: string;
+    saleRate?: string | null;
+    wholesaleRate?: string | null;
+    purchaseRate?: string | null;
+    sku?: string | null;
+    barcode?: string | null;
+    stockQty?: string | null;
+    productGstRate?: string | null;
+  }>;
+};
 
 function isValidGstin(gstin: string) {
   return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(
@@ -24,22 +58,78 @@ function isValidGstin(gstin: string) {
   );
 }
 
-export function ReturnForm({ customers }: { customers: Customer[] }) {
+function discOf(item: LineItem) {
+  return calculateLineAmount(item.qty, item.rate, item.discountPercent, "percent");
+}
+
+export function ReturnForm({
+  customers,
+  initialReturn,
+}: {
+  customers: Customer[];
+  initialReturn?: SaleReturnEditInitial;
+}) {
   const router = useRouter();
+  const isEdit = Boolean(initialReturn);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
-  const [items, setItems] = useState<LineItem[]>([]);
-  const [customerId, setCustomerId] = useState("none");
+  const [items, setItems] = useState<LineItem[]>(() => {
+    if (!initialReturn) return [];
+    return initialReturn.items
+      .filter((i) => i.productId != null)
+      .map((i) => {
+        const disc =
+          i.discountType === "value"
+            ? toNumber(i.discountPercent ?? 0)
+            : toNumber(i.discountPercent ?? i.discountValue ?? 0);
+        return {
+          product: {
+            id: i.productId as number,
+            name: i.productName || i.customName || "Item",
+            sku: i.sku ?? null,
+            barcode: i.barcode ?? null,
+            hsnCode: i.hsnCode,
+            gstRate: i.productGstRate ?? i.gstRate,
+            saleRate: i.saleRate ?? i.rate,
+            wholesaleRate: i.wholesaleRate ?? null,
+            purchaseRate: i.purchaseRate ?? "0",
+            stockQty: i.stockQty ?? "0",
+          } as Product,
+          qty: toNumber(i.qty),
+          rate: toNumber(i.rate),
+          discountPercent: disc,
+        };
+      });
+  });
+  const [customerId, setCustomerId] = useState(
+    initialReturn?.customerId ? String(initialReturn.customerId) : "none"
+  );
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
-  const [customerGstin, setCustomerGstin] = useState("");
-  const [reason, setReason] = useState("");
+  const [customerGstin, setCustomerGstin] = useState(
+    initialReturn?.customerGstin?.trim().toUpperCase() ?? ""
+  );
+  const [reason, setReason] = useState(initialReturn?.reason ?? "");
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
-  const [invoiceQuery, setInvoiceQuery] = useState("");
+  const [invoiceQuery, setInvoiceQuery] = useState(
+    initialReturn?.saleInvoiceNo ?? ""
+  );
   const [invoiceResults, setInvoiceResults] = useState<SaleInvoiceOption[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<SaleInvoiceOption | null>(
-    null
+    initialReturn?.saleId && initialReturn.saleInvoiceNo
+      ? {
+          id: initialReturn.saleId,
+          invoiceNo: initialReturn.saleInvoiceNo,
+          customerId: initialReturn.customerId,
+          customerName:
+            customers.find((c) => c.id === initialReturn.customerId)?.name ??
+            "Customer",
+          billType: "retail",
+          date: new Date(),
+          grandTotal: "0",
+        }
+      : null
   );
   const [isInvoiceDropdownOpen, setIsInvoiceDropdownOpen] = useState(false);
 
@@ -65,6 +155,12 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
       )
       .slice(0, 50);
   }, [customers, customerSearch]);
+
+  useEffect(() => {
+    if (!initialReturn?.customerId) return;
+    const c = customers.find((x) => x.id === initialReturn.customerId);
+    if (c) setCustomerSearch(c.name);
+  }, [initialReturn, customers]);
 
   const clearCustomer = () => {
     setCustomerId("none");
@@ -113,13 +209,14 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
   }, [invoiceQuery, customerId, selectedInvoice]);
 
   useEffect(() => {
+    if (isEdit) return;
     if (selectedCustomer) {
       setCustomerGstin(selectedCustomer.gstin?.trim().toUpperCase() ?? "");
     } else {
       setCustomerGstin("");
     }
     setError("");
-  }, [selectedCustomer]);
+  }, [selectedCustomer, isEdit]);
 
   const addItem = (p: Product) => {
     if (!p.hsnCode || !p.hsnCode.trim()) {
@@ -135,6 +232,7 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
         product: p,
         qty: 1,
         rate: toNumber(isWholesale ? p.wholesaleRate ?? p.saleRate : p.saleRate),
+        discountPercent: 0,
       },
     ]);
     setQuery("");
@@ -156,10 +254,7 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
     } as Product);
   };
 
-  const total = items.reduce(
-    (s, i) => s + calculateLineAmount(i.qty, i.rate),
-    0
-  );
+  const total = items.reduce((s, i) => s + discOf(i), 0);
 
   const submit = () => {
     if (items.length === 0) return;
@@ -179,23 +274,34 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
       }
     }
 
+    const payload = {
+      saleId: selectedInvoice?.id,
+      customerId:
+        customerId !== "none" ? parseInt(customerId, 10) : undefined,
+      customerGstin: customerGstin.trim()
+        ? customerGstin.trim().toUpperCase()
+        : undefined,
+      reason: reason || undefined,
+      items: items.map((i) => ({
+        productId: i.product.id,
+        qty: i.qty,
+        rate: i.rate,
+        gstRate: toNumber(i.product.gstRate),
+        discountPercent: i.discountPercent,
+        discountType: "percent" as const,
+        discountValue: i.discountPercent,
+      })),
+    };
+
     startTransition(async () => {
       try {
-        await createSaleReturn({
-          saleId: selectedInvoice?.id,
-          customerId:
-            customerId !== "none" ? parseInt(customerId, 10) : undefined,
-          customerGstin: customerGstin.trim()
-            ? customerGstin.trim().toUpperCase()
-            : undefined,
-          reason: reason || undefined,
-          items: items.map((i) => ({
-            productId: i.product.id,
-            qty: i.qty,
-            rate: i.rate,
-            gstRate: toNumber(i.product.gstRate),
-          })),
-        });
+        if (isEdit && initialReturn) {
+          await updateSaleReturn(initialReturn.id, payload);
+          router.push(`/returns/${initialReturn.id}`);
+          router.refresh();
+          return;
+        }
+        await createSaleReturn(payload);
         setItems([]);
         setReason("");
         setCustomerId("none");
@@ -211,6 +317,13 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
 
   return (
     <div className="space-y-4">
+      {isEdit ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Editing credit note <strong>{initialReturn?.returnNo}</strong>. Saving
+          updates lines, totals, and stock.
+        </p>
+      ) : null}
+
       <div>
         <Label>Against Invoice (original bill)</Label>
         <div className="relative mt-1">
@@ -434,58 +547,93 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
         />
       )}
 
-      {items.map((item) => (
-        <div
-          key={item.product.id}
-          className="flex items-center gap-3 rounded-lg border p-3"
-        >
-          <span className="flex-1 text-sm font-medium">{item.product.name}</span>
-          <Input
-            type="number"
-            className="w-20"
-            value={item.qty}
-            min={0.01}
-            step={0.01}
-            onChange={(e) =>
-              setItems((prev) =>
-                prev.map((i) =>
-                  i.product.id === item.product.id
-                    ? { ...i, qty: parseFloat(e.target.value) || 0 }
-                    : i
-                )
-              )
-            }
-          />
-          <Input
-            type="number"
-            className="w-24"
-            value={item.rate}
-            onChange={(e) =>
-              setItems((prev) =>
-                prev.map((i) =>
-                  i.product.id === item.product.id
-                    ? { ...i, rate: parseFloat(e.target.value) || 0 }
-                    : i
-                )
-              )
-            }
-          />
-          <span className="w-24 text-right text-sm font-semibold">
-            {formatCurrency(calculateLineAmount(item.qty, item.rate))}
-          </span>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() =>
-              setItems((prev) =>
-                prev.filter((i) => i.product.id !== item.product.id)
-              )
-            }
-          >
-            <Trash2 className="h-4 w-4 text-red-500" />
-          </Button>
+      {items.length > 0 ? (
+        <div className="overflow-x-auto rounded-lg border">
+          <div className="grid grid-cols-[1fr_4.5rem_5rem_4.5rem_5.5rem_2rem] gap-2 border-b bg-slate-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <span>Item</span>
+            <span className="text-right">Qty</span>
+            <span className="text-right">Rate</span>
+            <span className="text-right">Disc %</span>
+            <span className="text-right">Amount</span>
+            <span />
+          </div>
+          {items.map((item) => (
+            <div
+              key={item.product.id}
+              className="grid grid-cols-[1fr_4.5rem_5rem_4.5rem_5.5rem_2rem] items-center gap-2 border-b px-3 py-2 last:border-b-0"
+            >
+              <span className="truncate text-sm font-medium">
+                {item.product.name}
+              </span>
+              <Input
+                type="number"
+                className="h-8 text-right"
+                value={item.qty}
+                min={0.01}
+                step={0.01}
+                onChange={(e) =>
+                  setItems((prev) =>
+                    prev.map((i) =>
+                      i.product.id === item.product.id
+                        ? { ...i, qty: parseFloat(e.target.value) || 0 }
+                        : i
+                    )
+                  )
+                }
+              />
+              <Input
+                type="number"
+                className="h-8 text-right"
+                value={item.rate}
+                onChange={(e) =>
+                  setItems((prev) =>
+                    prev.map((i) =>
+                      i.product.id === item.product.id
+                        ? { ...i, rate: parseFloat(e.target.value) || 0 }
+                        : i
+                    )
+                  )
+                }
+              />
+              <Input
+                type="number"
+                className="h-8 text-right"
+                value={item.discountPercent}
+                min={0}
+                max={100}
+                step={0.01}
+                onChange={(e) =>
+                  setItems((prev) =>
+                    prev.map((i) =>
+                      i.product.id === item.product.id
+                        ? {
+                            ...i,
+                            discountPercent: parseFloat(e.target.value) || 0,
+                          }
+                        : i
+                    )
+                  )
+                }
+              />
+              <span className="text-right text-sm font-semibold">
+                {formatCurrency(discOf(item))}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() =>
+                  setItems((prev) =>
+                    prev.filter((i) => i.product.id !== item.product.id)
+                  )
+                }
+              >
+                <Trash2 className="h-4 w-4 text-red-500" />
+              </Button>
+            </div>
+          ))}
         </div>
-      ))}
+      ) : null}
 
       {error ? (
         <div className="rounded-md bg-red-50 p-3 text-sm font-medium text-red-600">
@@ -496,9 +644,25 @@ export function ReturnForm({ customers }: { customers: Customer[] }) {
       {items.length > 0 && (
         <div className="flex items-center justify-between border-t pt-3">
           <span className="font-bold">Return Total: {formatCurrency(total)}</span>
-          <Button disabled={isPending} onClick={submit}>
-            {isPending ? "Saving..." : "Save Return"}
-          </Button>
+          <div className="flex gap-2">
+            {isEdit ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isPending}
+                onClick={() => router.push(`/returns/${initialReturn!.id}`)}
+              >
+                Cancel
+              </Button>
+            ) : null}
+            <Button disabled={isPending} onClick={submit}>
+              {isPending
+                ? "Saving..."
+                : isEdit
+                  ? "Update Return"
+                  : "Save Return"}
+            </Button>
+          </div>
         </div>
       )}
     </div>

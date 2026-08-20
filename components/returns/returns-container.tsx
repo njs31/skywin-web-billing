@@ -129,6 +129,9 @@ export function ReturnsContainer({
                             <Button asChild variant="outline" size="sm">
                               <Link href={`/returns/${r.id}`}>View</Link>
                             </Button>
+                            <Button asChild variant="outline" size="sm">
+                              <Link href={`/returns/${r.id}/edit`}>Edit</Link>
+                            </Button>
                             <PrintSizeMenu
                               href={`/returns/${r.id}`}
                               label="Print Credit Note"

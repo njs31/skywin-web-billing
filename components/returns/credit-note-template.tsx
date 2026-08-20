@@ -21,6 +21,9 @@ type CreditNoteItem = {
   hsnCode: string | null;
   qty: string;
   rate: string;
+  discountPercent?: string | null;
+  discountValue?: string | null;
+  discountType?: string | null;
   gstRate: string;
   amount: string;
 };
@@ -127,12 +130,19 @@ export function CreditNoteTemplate({
             <th className="px-2 py-2 text-left">HSN</th>
             <th className="px-2 py-2 text-right">Qty</th>
             <th className="px-2 py-2 text-right">Rate</th>
+            <th className="px-2 py-2 text-right">Disc. %</th>
             <th className="px-2 py-2 text-right">GST%</th>
             <th className="px-2 py-2 text-right">Amount</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((item, idx) => (
+          {items.map((item, idx) => {
+            const discPct = Number(
+              item.discountPercent ??
+                (item.discountType !== "value" ? item.discountValue : 0) ??
+                0
+            );
+            return (
             <tr key={idx} className="border-b border-slate-200">
               <td className="px-2 py-2">{idx + 1}</td>
               <td className="px-2 py-2">
@@ -146,16 +156,20 @@ export function CreditNoteTemplate({
                 {formatNumber(item.rate, 2)}
               </td>
               <td className="px-2 py-2 text-right">
+                {discPct > 0 ? formatNumber(discPct, 2) : ""}
+              </td>
+              <td className="px-2 py-2 text-right">
                 {formatNumber(item.gstRate, 0)}%
               </td>
               <td className="px-2 py-2 text-right">
                 {formatCurrency(item.amount)}
               </td>
             </tr>
-          ))}
+            );
+          })}
           {items.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-2 py-4 text-center text-slate-400">
+              <td colSpan={8} className="px-2 py-4 text-center text-slate-400">
                 No items recorded
               </td>
             </tr>

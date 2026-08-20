@@ -26,6 +26,9 @@ const returnItemSchema = z.object({
   qty: z.number().positive(),
   rate: z.number().nonnegative(),
   gstRate: z.number().nonnegative(),
+  discountPercent: z.number().nonnegative().optional().default(0),
+  discountType: z.enum(["percent", "value"]).optional().default("percent"),
+  discountValue: z.number().nonnegative().optional().default(0),
 });
 
 const createReturnSchema = z.object({
@@ -42,7 +45,6 @@ function normalizeGstin(value?: string | null) {
 }
 
 function isValidGstin(gstin: string) {
-  // Standard 15-char Indian GSTIN format
   return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstin);
 }
 
@@ -58,18 +60,29 @@ async function generateReturnNo(tx: DbOrTx) {
   return `${prefix}${String(seq).padStart(4, "0")}`;
 }
 
-export async function createSaleReturn(input: z.infer<typeof createReturnSchema>) {
-  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
-  const data = createReturnSchema.parse(input);
+function lineDiscountFields(item: z.infer<typeof returnItemSchema>) {
+  const discountType = item.discountType ?? "percent";
+  const discountValue =
+    item.discountValue !== undefined
+      ? item.discountValue
+      : (item.discountPercent ?? 0);
+  const discountPercent =
+    discountType === "percent" ? discountValue : (item.discountPercent ?? 0);
+  return { discountType, discountValue, discountPercent };
+}
 
-  let customerGstin = normalizeGstin(data.customerGstin);
+async function validateReturnCustomerGstin(
+  customerId: number | undefined,
+  rawGstin?: string | null
+) {
+  let customerGstin = normalizeGstin(rawGstin);
 
-  if (data.customerId) {
+  if (customerId) {
     const { customers } = await import("@/db/schema");
     const [customer] = await db
       .select()
       .from(customers)
-      .where(eq(customers.id, data.customerId))
+      .where(eq(customers.id, customerId))
       .limit(1);
 
     if (!customer) {
@@ -100,37 +113,165 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
     );
   }
 
+  return customerGstin;
+}
+
+async function maybeUpdateCustomerGstin(
+  tx: DbOrTx,
+  customerId: number | undefined,
+  customerGstin: string | null
+) {
+  if (!customerId || !customerGstin) return;
+  const { customers } = await import("@/db/schema");
+  const [existingGst] = await tx
+    .select()
+    .from(customers)
+    .where(
+      sql`upper(${customers.gstin}) = ${customerGstin} AND ${customers.id} <> ${customerId}`
+    )
+    .limit(1);
+  if (existingGst) {
+    throw new Error(
+      `GSTIN "${customerGstin}" is already registered to "${existingGst.name}".`
+    );
+  }
+
+  await tx
+    .update(customers)
+    .set({ gstin: customerGstin })
+    .where(eq(customers.id, customerId));
+}
+
+async function insertReturnItemsAndStock(
+  tx: DbOrTx,
+  returnId: number,
+  reason: string | undefined,
+  items: z.infer<typeof returnItemSchema>[]
+) {
+  const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
+
+  for (const item of items) {
+    const [product] = await tx
+      .select()
+      .from(products)
+      .where(eq(products.id, item.productId))
+      .limit(1);
+    if (!product || !product.hsnCode || !product.hsnCode.trim()) {
+      throw new Error(`HSN code is mandatory for all credit note items.`);
+    }
+
+    const { discountType, discountValue, discountPercent } =
+      lineDiscountFields(item);
+    const amount = calculateLineAmount(
+      item.qty,
+      item.rate,
+      discountValue,
+      discountType
+    );
+    await tx.insert(saleReturnItems).values({
+      returnId,
+      productId: item.productId,
+      qty: item.qty.toFixed(2),
+      rate: item.rate.toFixed(2),
+      discountPercent: discountPercent.toFixed(2),
+      discountType,
+      discountValue: discountValue.toFixed(2),
+      gstRate: item.gstRate.toFixed(2),
+      amount: amount.toFixed(2),
+      hsnCode: product.hsnCode,
+    });
+
+    const batch = await addStockToBatch(tx, {
+      productId: item.productId,
+      batchNumber: defaultBatchNumber("RET"),
+      qty: item.qty,
+      purchaseRate: parseFloat(product.purchaseRate),
+      saleRate: parseFloat(product.saleRate),
+      expiryDate: product.expiryDate,
+      notes: reason || "Sales return",
+    });
+
+    await tx.insert(stockMovements).values({
+      productId: item.productId,
+      batchId: batch.id,
+      batchNumber: batch.batchNumber,
+      type: "return",
+      qtyDelta: item.qty.toFixed(2),
+      referenceId: returnId,
+      notes: reason,
+    });
+  }
+}
+
+/** Undo stock added by a prior sales return (before re-applying edited lines). */
+async function reverseReturnStock(tx: DbOrTx, returnId: number) {
+  const { deductFromBatch, deductStockFefo } = await import("@/lib/batches");
+  const movements = await tx
+    .select()
+    .from(stockMovements)
+    .where(
+      sql`${stockMovements.referenceId} = ${returnId} AND ${stockMovements.type} = 'return'`
+    );
+
+  for (const mov of movements) {
+    const qty = Math.abs(parseFloat(mov.qtyDelta));
+    if (qty <= 0 || !mov.productId) continue;
+
+    try {
+      if (mov.batchId) {
+        await deductFromBatch(tx, mov.batchId, qty, mov.productId);
+      } else {
+        await deductStockFefo(tx, mov.productId, qty);
+      }
+    } catch {
+      // Batch may have been consumed; fall back to FEFO across the product.
+      await deductStockFefo(tx, mov.productId, qty);
+    }
+
+    await tx.insert(stockMovements).values({
+      productId: mov.productId,
+      batchId: mov.batchId,
+      batchNumber: mov.batchNumber,
+      type: "adjustment",
+      qtyDelta: (-qty).toFixed(2),
+      referenceId: returnId,
+      notes: "Reverse sales return (edit)",
+    });
+  }
+
+  await tx
+    .delete(stockMovements)
+    .where(
+      sql`${stockMovements.referenceId} = ${returnId} AND ${stockMovements.type} = 'return'`
+    );
+}
+
+export async function createSaleReturn(input: z.infer<typeof createReturnSchema>) {
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
+  const data = createReturnSchema.parse(input);
+  const customerGstin = await validateReturnCustomerGstin(
+    data.customerId,
+    data.customerGstin
+  );
+
   const gst = calculateGstBreakdown(
-    data.items.map((i) => ({
-      qty: i.qty,
-      rate: i.rate,
-      gstRate: i.gstRate,
-    }))
+    data.items.map((i) => {
+      const { discountType, discountValue, discountPercent } =
+        lineDiscountFields(i);
+      return {
+        qty: i.qty,
+        rate: i.rate,
+        gstRate: i.gstRate,
+        discountType,
+        discountValue,
+        discountPercent,
+      };
+    })
   );
 
   const saleReturn = await db.transaction(async (tx) => {
     const returnNo = await generateReturnNo(tx);
-
-    if (data.customerId && customerGstin) {
-      const { customers } = await import("@/db/schema");
-      const [existingGst] = await tx
-        .select()
-        .from(customers)
-        .where(
-          sql`upper(${customers.gstin}) = ${customerGstin} AND ${customers.id} <> ${data.customerId}`
-        )
-        .limit(1);
-      if (existingGst) {
-        throw new Error(
-          `GSTIN "${customerGstin}" is already registered to "${existingGst.name}".`
-        );
-      }
-
-      await tx
-        .update(customers)
-        .set({ gstin: customerGstin })
-        .where(eq(customers.id, data.customerId));
-    }
+    await maybeUpdateCustomerGstin(tx, data.customerId, customerGstin);
 
     const [created] = await tx
       .insert(saleReturns)
@@ -147,49 +288,7 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
       })
       .returning();
 
-    for (const item of data.items) {
-      const [product] = await tx
-        .select()
-        .from(products)
-        .where(eq(products.id, item.productId))
-        .limit(1);
-      if (!product || !product.hsnCode || !product.hsnCode.trim()) {
-        throw new Error(`HSN code is mandatory for all credit note items.`);
-      }
-
-      const amount = calculateLineAmount(item.qty, item.rate);
-      await tx.insert(saleReturnItems).values({
-        returnId: created.id,
-        productId: item.productId,
-        qty: item.qty.toFixed(2),
-        rate: item.rate.toFixed(2),
-        gstRate: item.gstRate.toFixed(2),
-        amount: amount.toFixed(2),
-        hsnCode: product.hsnCode,
-      });
-
-      const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
-      const batch = await addStockToBatch(tx, {
-        productId: item.productId,
-        batchNumber: defaultBatchNumber("RET"),
-        qty: item.qty,
-        purchaseRate: parseFloat(product.purchaseRate),
-        saleRate: parseFloat(product.saleRate),
-        expiryDate: product.expiryDate,
-        notes: data.reason || "Sales return",
-      });
-
-      await tx.insert(stockMovements).values({
-        productId: item.productId,
-        batchId: batch.id,
-        batchNumber: batch.batchNumber,
-        type: "return",
-        qtyDelta: item.qty.toFixed(2),
-        referenceId: created.id,
-        notes: data.reason,
-      });
-    }
-
+    await insertReturnItemsAndStock(tx, created.id, data.reason, data.items);
     return created;
   });
 
@@ -205,6 +304,78 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
   scheduleQwicksStockPush(data.items.map((item) => item.productId));
 
   return saleReturn;
+}
+
+export async function updateSaleReturn(
+  id: number,
+  input: z.infer<typeof createReturnSchema>
+) {
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
+  const data = createReturnSchema.parse(input);
+
+  const existing = await getSaleReturnById(id);
+  if (!existing) throw new Error("Sales return not found.");
+
+  const customerGstin = await validateReturnCustomerGstin(
+    data.customerId,
+    data.customerGstin
+  );
+
+  const gst = calculateGstBreakdown(
+    data.items.map((i) => {
+      const { discountType, discountValue, discountPercent } =
+        lineDiscountFields(i);
+      return {
+        qty: i.qty,
+        rate: i.rate,
+        gstRate: i.gstRate,
+        discountType,
+        discountValue,
+        discountPercent,
+      };
+    })
+  );
+
+  const oldProductIds = existing.items
+    .map((i) => i.productId)
+    .filter((pid): pid is number => pid != null);
+  const newProductIds = data.items.map((i) => i.productId);
+
+  await db.transaction(async (tx) => {
+    await reverseReturnStock(tx, id);
+    await maybeUpdateCustomerGstin(tx, data.customerId, customerGstin);
+
+    await tx
+      .update(saleReturns)
+      .set({
+        saleId: data.saleId ?? null,
+        customerId: data.customerId ?? null,
+        customerGstin,
+        subtotal: gst.subtotal.toFixed(2),
+        cgst: gst.cgst.toFixed(2),
+        sgst: gst.sgst.toFixed(2),
+        grandTotal: gst.grandTotal.toFixed(2),
+        reason: data.reason ?? null,
+      })
+      .where(eq(saleReturns.id, id));
+
+    await tx.delete(saleReturnItems).where(eq(saleReturnItems.returnId, id));
+    await insertReturnItemsAndStock(tx, id, data.reason, data.items);
+  });
+
+  revalidateTag("sales", "max");
+  revalidateTag("products", "max");
+  revalidateTag("customers", "max");
+  revalidatePath("/returns");
+  revalidatePath(`/returns/${id}`);
+  revalidatePath("/products");
+  revalidatePath("/stock");
+  revalidatePath("/customers");
+
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush([...new Set([...oldProductIds, ...newProductIds])]);
+
+  return getSaleReturnById(id);
 }
 
 export async function getSaleReturns() {
@@ -277,13 +448,24 @@ export async function getSaleReturnById(id: number) {
 
   const items = await db
     .select({
+      productId: saleReturnItems.productId,
       productName: products.name,
       customName: saleReturnItems.customName,
       qty: saleReturnItems.qty,
       rate: saleReturnItems.rate,
+      discountPercent: saleReturnItems.discountPercent,
+      discountType: saleReturnItems.discountType,
+      discountValue: saleReturnItems.discountValue,
       gstRate: saleReturnItems.gstRate,
       amount: saleReturnItems.amount,
       hsnCode: sql<string>`coalesce(${saleReturnItems.hsnCode}, ${products.hsnCode})`,
+      saleRate: products.saleRate,
+      wholesaleRate: products.wholesaleRate,
+      purchaseRate: products.purchaseRate,
+      sku: products.sku,
+      barcode: products.barcode,
+      stockQty: products.stockQty,
+      productGstRate: products.gstRate,
     })
     .from(saleReturnItems)
     .leftJoin(products, eq(saleReturnItems.productId, products.id))

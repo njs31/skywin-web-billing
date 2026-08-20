@@ -40,6 +40,9 @@ export default async function CreditNoteDetailPage({
           <Button asChild variant="outline">
             <Link href="/returns">Back to Sales Returns</Link>
           </Button>
+          <Button asChild variant="outline">
+            <Link href={`/returns/${creditNote.id}/edit`}>Edit</Link>
+          </Button>
           {creditNote.saleId && (
             <Button asChild variant="outline">
               <Link href={`/invoices/${creditNote.saleId}`}>Original Invoice</Link>

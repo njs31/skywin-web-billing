@@ -4,6 +4,7 @@ import { createCustomer as createCustomerMutation, updateCustomer as updateCusto
 import {
   createSaleReturn as createSaleReturnMutation,
   createPurchaseReturn as createPurchaseReturnMutation,
+  updateSaleReturn as updateSaleReturnMutation,
 } from "@/lib/queries/returns";
 import { createPartyPayment as createPartyPaymentMutation } from "@/lib/queries/payments";
 import { adjustStock as adjustStockMutation } from "@/lib/queries/reports";
@@ -38,6 +39,14 @@ export async function createSaleReturn(
 ) {
   await requireNonDealer();
   return createSaleReturnMutation(input);
+}
+
+export async function updateSaleReturn(
+  id: number,
+  input: Parameters<typeof updateSaleReturnMutation>[1]
+) {
+  await requireNonDealer();
+  return updateSaleReturnMutation(id, input);
 }
 
 export async function createPurchaseReturn(
