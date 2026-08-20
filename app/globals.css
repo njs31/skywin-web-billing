@@ -172,7 +172,7 @@ body {
   }
 }
 
-/* Product barcode labels — vertical A4-half (105×297 mm), 3×10 of 35×22 mm */
+/* Product barcode labels — A4 (210×297 mm), 6×10 of 35×22 mm */
 .label-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -185,15 +185,15 @@ body {
 
 .product-label-sheet {
   box-sizing: border-box;
-  width: 105mm;
+  width: 210mm;
   height: 297mm;
   margin: 16px;
-  padding-top: 5.5mm;
+  padding-top: 0;
   padding-right: 0;
-  padding-bottom: 5.5mm;
+  padding-bottom: 0;
   padding-left: 0;
   display: grid;
-  grid-template-columns: repeat(3, 35mm);
+  grid-template-columns: repeat(6, 35mm);
   grid-template-rows: repeat(10, 22mm);
   column-gap: 0;
   row-gap: 7.33mm;
@@ -207,6 +207,7 @@ body {
   height: 22mm;
   overflow: hidden;
   border: 1px dashed #cbd5e1;
+  border-radius: 2mm;
   background: #fff;
   color: #000;
 }
@@ -218,8 +219,10 @@ body {
 
 .product-label-inner {
   box-sizing: border-box;
+  display: flex;
   height: 100%;
-  padding: 0.7mm 1.1mm;
+  flex-direction: column;
+  padding: 0.6mm 1.2mm 0.5mm;
   font-family: Arial, Helvetica, sans-serif;
 }
 
@@ -243,18 +246,43 @@ body {
   text-overflow: ellipsis;
 }
 
+.label-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.8mm;
+  margin-top: 0.3mm;
+}
+
+.label-text {
+  min-width: 0;
+  flex: 1;
+}
+
 .label-name {
-  margin: 0.4mm 0 0;
+  margin: 0;
   font-size: 6px;
   font-weight: 600;
   line-height: 1.1;
   max-height: 2.2em;
   overflow: hidden;
+  text-transform: uppercase;
 }
 
-.label-code,
+.label-code {
+  margin: 0.2mm 0 0;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .label-exp {
-  margin: 0;
+  margin: 0.15mm 0 0;
   font-size: 5.5px;
   line-height: 1.1;
   white-space: nowrap;
@@ -262,16 +290,8 @@ body {
   text-overflow: ellipsis;
 }
 
-.label-footer {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1mm;
-  margin-top: 0.3mm;
-}
-
 .label-rate {
-  margin: 0;
+  margin: 0.15mm 0 0;
   font-size: 6.5px;
   font-weight: 700;
   line-height: 1;
@@ -296,9 +316,9 @@ body {
   html.label-print-active .label-print-shell,
   html.label-print-active .label-print-page,
   html.label-print-active .label-print-root {
-    width: 105mm !important;
-    min-width: 105mm !important;
-    max-width: 105mm !important;
+    width: 210mm !important;
+    min-width: 210mm !important;
+    max-width: 210mm !important;
     height: 297mm !important;
     min-height: 0 !important;
     max-height: 297mm !important;
@@ -320,7 +340,7 @@ body {
   }
 
   .product-label-sheet {
-    width: 105mm !important;
+    width: 210mm !important;
     height: 297mm !important;
     margin: 0 !important;
     box-shadow: none !important;

@@ -16,16 +16,24 @@ export type LabelProduct = {
   expiryDate: string | null;
 };
 
-/** 35×22 mm stickers on a vertical A4-half sheet (105×297 mm) — 3 across, 10 down. */
-const LABEL_COLS = 3;
+/**
+ * Full A4 (210 × 297 mm): 6 × 10 of 35 × 22 mm stickers.
+ * First sticker starts at top-left. 6 × 35 mm = 210 mm (full width).
+ * Stickers touch horizontally; the ~2 mm “gap” in photos is the rounded die-cut.
+ */
+const LABEL_COLS = 6;
 const LABEL_ROWS = 10;
 const LABELS_PER_SHEET = LABEL_COLS * LABEL_ROWS;
-const PAGE_W = 105;
+const PAGE_W = 210;
 const PAGE_H = 297;
 const LABEL_W = 35;
 const LABEL_H = 22;
-const PAD_TOP = 5.5;
+const PAD_LEFT = 0;
+const PAD_TOP = 0;
+const COL_GAP = 0;
 const ROW_GAP = 7.33;
+const QR_MM = 8;
+const OFFSET_KEY = "skywin-label-offset-mm";
 
 function inclusiveRate(saleRate: string | number, gstRate: string | number) {
   const rate = toNumber(saleRate);
@@ -68,11 +76,13 @@ function LabelCard({
       <div className="product-label-inner">
         <p className="label-brand">{BUSINESS.name}</p>
         <p className="label-tagline">({BUSINESS.tagline})</p>
-        <p className="label-name">{product.name}</p>
-        <p className="label-code">{code}</p>
-        <p className="label-exp">EXP: {exp || "—"}</p>
-        <div className="label-footer">
-          <p className="label-rate">RATE: {rate.toFixed(2)}</p>
+        <div className="label-body">
+          <div className="label-text">
+            <p className="label-name">{product.name.toUpperCase()}</p>
+            <p className="label-code">{code}</p>
+            <p className="label-exp">EXP: {exp || ""}</p>
+            <p className="label-rate">RATE: {rate.toFixed(2)}</p>
+          </div>
           {qrDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={qrDataUrl} alt="" className="label-qr" />
@@ -92,72 +102,80 @@ function drawPdfLabel(
   x: number,
   y: number
 ) {
-  const padX = 1.1;
-  const textW = LABEL_W - padX * 2 - 9;
-  let ty = y + 2.4;
+  const padX = 1.2;
+  const qr = QR_MM;
+  const textW = LABEL_W - padX * 2 - qr - 1;
+  let ty = y + 1.8;
 
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
+  doc.setFontSize(6.5);
   doc.text(BUSINESS.name, x + padX, ty, { maxWidth: LABEL_W - padX * 2 });
 
-  ty += 2.2;
+  ty += 2.1;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(5);
+  doc.setFontSize(4.8);
   doc.text(`(${BUSINESS.tagline})`, x + padX, ty, {
     maxWidth: LABEL_W - padX * 2,
   });
 
-  ty += 2.4;
+  ty += 2.3;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6);
-  const nameLines = doc.splitTextToSize(product.name, textW).slice(0, 2);
+  doc.setFontSize(5.8);
+  const nameLines = doc
+    .splitTextToSize(product.name.toUpperCase(), textW)
+    .slice(0, 2);
   doc.text(nameLines, x + padX, ty);
-  ty += nameLines.length * 2.1;
+  ty += nameLines.length * 2.0;
+
+  doc.setFontSize(8);
+  doc.text(productCode(product), x + padX, ty, { maxWidth: textW });
+  ty += 2.6;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(5.5);
-  doc.text(productCode(product), x + padX, ty, { maxWidth: textW });
-  ty += 2.1;
-  const exp = formatExp(product.expiryDate);
-  doc.text(`EXP: ${exp || "—"}`, x + padX, ty, { maxWidth: textW });
+  doc.text(`EXP: ${formatExp(product.expiryDate)}`, x + padX, ty, {
+    maxWidth: textW,
+  });
 
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y + LABEL_H - 1.6);
+  doc.setFontSize(6.5);
+  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y + LABEL_H - 1.5);
 
   if (qrDataUrl) {
     doc.addImage(
       qrDataUrl,
       "PNG",
-      x + LABEL_W - 9.1,
-      y + LABEL_H - 9.1,
-      8,
-      8
+      x + LABEL_W - padX - qr,
+      y + LABEL_H - padX - qr,
+      qr,
+      qr
     );
   }
 }
 
 function buildLabelPdf(
   pages: (LabelProduct | null)[][],
-  qrMap: Record<number, string>
+  qrMap: Record<number, string>,
+  offsetX: number,
+  offsetY: number
 ) {
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
-    format: [PAGE_W, PAGE_H],
+    format: "a4",
     compress: true,
   });
 
   pages.forEach((page, pageIdx) => {
-    if (pageIdx > 0) doc.addPage([PAGE_W, PAGE_H], "portrait");
+    if (pageIdx > 0) doc.addPage("a4", "portrait");
     page.forEach((product, idx) => {
       if (!product) return;
       const col = idx % LABEL_COLS;
       const row = Math.floor(idx / LABEL_COLS);
-      const x = col * LABEL_W;
-      const y = PAD_TOP + row * (LABEL_H + ROW_GAP);
+      const x = PAD_LEFT + offsetX + col * (LABEL_W + COL_GAP);
+      const y = PAD_TOP + offsetY + row * (LABEL_H + ROW_GAP);
       drawPdfLabel(doc, product, qrMap[product.id] || "", x, y);
     });
   });
@@ -180,6 +198,26 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const [ready, setReady] = useState(false);
   const [startAt, setStartAt] = useState(1);
   const [copies, setCopies] = useState(1);
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(OFFSET_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { x?: number; y?: number };
+      if (Number.isFinite(parsed.x)) setOffsetX(parsed.x as number);
+      if (Number.isFinite(parsed.y)) setOffsetY(parsed.y as number);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function setOffset(nextX: number, nextY: number) {
+    setOffsetX(nextX);
+    setOffsetY(nextY);
+    localStorage.setItem(OFFSET_KEY, JSON.stringify({ x: nextX, y: nextY }));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -218,7 +256,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   }, [products, startAt, copies]);
 
   function printPdf() {
-    const doc = buildLabelPdf(pages, qrMap);
+    const doc = buildLabelPdf(pages, qrMap, offsetX, offsetY);
     const blob = doc.output("blob");
     const url = URL.createObjectURL(blob);
     const opened = window.open(url, "_blank");
@@ -271,15 +309,46 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
             className="h-8 w-14 rounded border border-slate-300 px-2 text-sm"
           />
         </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          Shift X mm
+          <input
+            type="number"
+            step={0.5}
+            value={offsetX}
+            onChange={(e) =>
+              setOffset(Number(e.target.value) || 0, offsetY)
+            }
+            className="h-8 w-16 rounded border border-slate-300 px-2 text-sm"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          Shift Y mm
+          <input
+            type="number"
+            step={0.5}
+            value={offsetY}
+            onChange={(e) =>
+              setOffset(offsetX, Number(e.target.value) || 0)
+            }
+            className="h-8 w-16 rounded border border-slate-300 px-2 text-sm"
+          />
+        </label>
         <p className="text-xs text-slate-500">
-          {labelCount} label{labelCount === 1 ? "" : "s"} as a 105×297 mm PDF
-          (3 × 10 of 35×22 mm). In the PDF print dialog: paper{" "}
-          <strong>105 × 297 mm</strong>, margins <strong>None</strong>, scale{" "}
-          <strong>100% / Actual Size</strong> (not Fit).
+          {labelCount} label{labelCount === 1 ? "" : "s"} on A4 (6 × 10 of
+          35 × 22 mm). First sticker is top-left. Print at{" "}
+          <strong>100% / Actual size</strong>, paper <strong>A4</strong>,
+          margins <strong>None</strong>. Use Shift X/Y if the printer clips
+          an edge.
         </p>
       </div>
       {pages.map((page, pageIdx) => (
-        <div key={pageIdx} className="product-label-sheet">
+        <div
+          key={pageIdx}
+          className="product-label-sheet"
+          style={{
+            transform: `translate(${offsetX}mm, ${offsetY}mm)`,
+          }}
+        >
           {page.map((p, idx) => (
             <LabelCard
               key={`${pageIdx}-${idx}-${p?.id ?? "empty"}`}
