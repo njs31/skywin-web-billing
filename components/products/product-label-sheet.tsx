@@ -105,19 +105,21 @@ function drawPdfLabel(
   const padX = 1.0;
   const qr = QR_MM;
   const textW = LABEL_W - padX * 2 - qr - 0.8;
+  // Vertically center the whole text+QR block in the 22 mm sticker.
+  const blockH = 14;
+  const y0 = y + (LABEL_H - blockH) / 2;
 
   doc.setTextColor(0, 0, 0);
 
-  // Compact top-to-bottom stack — no empty band between EXP and RATE.
   doc.setFont("helvetica", "bold");
   doc.setFontSize(5.5);
-  doc.text(BUSINESS.name, x + padX, y + 1.6, {
+  doc.text(BUSINESS.name, x + padX, y0 + 1.6, {
     maxWidth: LABEL_W - padX * 2,
   });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(4.2);
-  doc.text(`(${BUSINESS.tagline})`, x + padX, y + 3.2, {
+  doc.text(`(${BUSINESS.tagline})`, x + padX, y0 + 3.2, {
     maxWidth: LABEL_W - padX * 2,
   });
 
@@ -126,21 +128,21 @@ function drawPdfLabel(
   const nameLine = doc
     .splitTextToSize(product.name.toUpperCase(), textW)
     .slice(0, 1)[0] as string;
-  doc.text(nameLine || "", x + padX, y + 5.4);
+  doc.text(nameLine || "", x + padX, y0 + 5.4);
 
   doc.setFontSize(7);
-  doc.text(productCode(product), x + padX, y + 8.0, { maxWidth: textW });
+  doc.text(productCode(product), x + padX, y0 + 8.0, { maxWidth: textW });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(5.2);
-  doc.text(`EXP: ${formatExp(product.expiryDate)}`, x + padX, y + 10.4, {
+  doc.text(`EXP: ${formatExp(product.expiryDate)}`, x + padX, y0 + 10.4, {
     maxWidth: textW,
   });
 
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6.2);
-  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y + 13.0, {
+  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y0 + 13.0, {
     maxWidth: textW,
   });
 
@@ -149,7 +151,7 @@ function drawPdfLabel(
       qrDataUrl,
       "PNG",
       x + LABEL_W - padX - qr,
-      y + 5.0,
+      y0 + 5.0,
       qr,
       qr
     );
