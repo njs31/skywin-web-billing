@@ -17,23 +17,24 @@ export type LabelProduct = {
 };
 
 /**
- * Full A4 (210 × 297 mm): 6 × 10 of 35 × 22 mm stickers.
- * First sticker starts at top-left. 6 × 35 mm = 210 mm (full width).
- * Stickers touch horizontally; the ~2 mm “gap” in photos is the rounded die-cut.
+ * Physical sticker sheet: 105 × 297 mm (A4 half), 3 × 10 of 35 × 22 mm.
+ * Stickers touch horizontally; rounded corners look like small gaps.
  */
-const LABEL_COLS = 6;
+const LABEL_COLS = 3;
 const LABEL_ROWS = 10;
 const LABELS_PER_SHEET = LABEL_COLS * LABEL_ROWS;
-const PAGE_W = 210;
+const PAGE_W = 105;
 const PAGE_H = 297;
 const LABEL_W = 35;
 const LABEL_H = 22;
 const PAD_LEFT = 0;
-const PAD_TOP = 0;
+const PAD_TOP = 5.5;
 const COL_GAP = 0;
 const ROW_GAP = 7.33;
 const QR_MM = 7;
+const CONTENT_H = 14;
 const OFFSET_KEY = "skywin-label-offset-mm";
+const FLIP_KEY = "skywin-label-flip-180";
 
 function inclusiveRate(saleRate: string | number, gstRate: string | number) {
   const rate = toNumber(saleRate);
@@ -100,61 +101,83 @@ function drawPdfLabel(
   product: LabelProduct,
   qrDataUrl: string,
   x: number,
-  y: number
+  y: number,
+  flip180: boolean
 ) {
   const padX = 1.0;
   const qr = QR_MM;
   const textW = LABEL_W - padX * 2 - qr - 0.8;
-  // Vertically center the whole text+QR block in the 22 mm sticker.
-  const blockH = 14;
-  const y0 = y + (LABEL_H - blockH) / 2;
+  const topPad = (LABEL_H - CONTENT_H) / 2;
+
+  const rate = inclusiveRate(product.saleRate, product.gstRate);
+  const nameLine =
+    (doc
+      .setFont("helvetica", "bold")
+      .setFontSize(5.2)
+      .splitTextToSize(product.name.toUpperCase(), textW)
+      .slice(0, 1)[0] as string) || "";
+
+  type Line = {
+    text: string;
+    dy: number;
+    size: number;
+    bold?: boolean;
+    full?: boolean;
+  };
+
+  const lines: Line[] = [
+    { text: BUSINESS.name, dy: 1.6, size: 5.5, bold: true, full: true },
+    { text: `(${BUSINESS.tagline})`, dy: 3.2, size: 4.2 },
+    { text: nameLine, dy: 5.4, size: 5.2, bold: true },
+    { text: productCode(product), dy: 8.0, size: 7, bold: true },
+    {
+      text: `EXP: ${formatExp(product.expiryDate)}`,
+      dy: 10.4,
+      size: 5.2,
+    },
+    { text: `RATE: ${rate.toFixed(2)}`, dy: 13.0, size: 6.2, bold: true },
+  ];
 
   doc.setTextColor(0, 0, 0);
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(5.5);
-  doc.text(BUSINESS.name, x + padX, y0 + 1.6, {
-    maxWidth: LABEL_W - padX * 2,
-  });
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(4.2);
-  doc.text(`(${BUSINESS.tagline})`, x + padX, y0 + 3.2, {
-    maxWidth: LABEL_W - padX * 2,
-  });
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(5.2);
-  const nameLine = doc
-    .splitTextToSize(product.name.toUpperCase(), textW)
-    .slice(0, 1)[0] as string;
-  doc.text(nameLine || "", x + padX, y0 + 5.4);
-
-  doc.setFontSize(7);
-  doc.text(productCode(product), x + padX, y0 + 8.0, { maxWidth: textW });
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(5.2);
-  doc.text(`EXP: ${formatExp(product.expiryDate)}`, x + padX, y0 + 10.4, {
-    maxWidth: textW,
-  });
-
-  const rate = inclusiveRate(product.saleRate, product.gstRate);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.2);
-  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y0 + 13.0, {
-    maxWidth: textW,
-  });
+  for (const line of lines) {
+    doc.setFont("helvetica", line.bold ? "bold" : "normal");
+    doc.setFontSize(line.size);
+    const maxW = line.full ? LABEL_W - padX * 2 : textW;
+    if (flip180) {
+      // Rotate around the cell so printer/sheet feed comes out upright.
+      doc.text(line.text, x + LABEL_W - padX, y + LABEL_H - (topPad + line.dy), {
+        angle: 180,
+        maxWidth: maxW,
+      });
+    } else {
+      doc.text(line.text, x + padX, y + topPad + line.dy, { maxWidth: maxW });
+    }
+  }
 
   if (qrDataUrl) {
-    doc.addImage(
-      qrDataUrl,
-      "PNG",
-      x + LABEL_W - padX - qr,
-      y0 + 5.0,
-      qr,
-      qr
-    );
+    if (flip180) {
+      doc.addImage(
+        qrDataUrl,
+        "PNG",
+        x + padX,
+        y + LABEL_H - (topPad + 5.0) - qr,
+        qr,
+        qr,
+        undefined,
+        "NONE",
+        180
+      );
+    } else {
+      doc.addImage(
+        qrDataUrl,
+        "PNG",
+        x + LABEL_W - padX - qr,
+        y + topPad + 5.0,
+        qr,
+        qr
+      );
+    }
   }
 }
 
@@ -162,24 +185,25 @@ function buildLabelPdf(
   pages: (LabelProduct | null)[][],
   qrMap: Record<number, string>,
   offsetX: number,
-  offsetY: number
+  offsetY: number,
+  flip180: boolean
 ) {
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
-    format: "a4",
+    format: [PAGE_W, PAGE_H],
     compress: true,
   });
 
   pages.forEach((page, pageIdx) => {
-    if (pageIdx > 0) doc.addPage("a4", "portrait");
+    if (pageIdx > 0) doc.addPage([PAGE_W, PAGE_H], "portrait");
     page.forEach((product, idx) => {
       if (!product) return;
       const col = idx % LABEL_COLS;
       const row = Math.floor(idx / LABEL_COLS);
       const x = PAD_LEFT + offsetX + col * (LABEL_W + COL_GAP);
       const y = PAD_TOP + offsetY + row * (LABEL_H + ROW_GAP);
-      drawPdfLabel(doc, product, qrMap[product.id] || "", x, y);
+      drawPdfLabel(doc, product, qrMap[product.id] || "", x, y, flip180);
     });
   });
 
@@ -203,14 +227,20 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const [copies, setCopies] = useState(1);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
+  // Default on — your sheet was printing upside-down on the top-left sticker.
+  const [flip180, setFlip180] = useState(true);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(OFFSET_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { x?: number; y?: number };
-      if (Number.isFinite(parsed.x)) setOffsetX(parsed.x as number);
-      if (Number.isFinite(parsed.y)) setOffsetY(parsed.y as number);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { x?: number; y?: number };
+        if (Number.isFinite(parsed.x)) setOffsetX(parsed.x as number);
+        if (Number.isFinite(parsed.y)) setOffsetY(parsed.y as number);
+      }
+      const flip = localStorage.getItem(FLIP_KEY);
+      if (flip === "0") setFlip180(false);
+      if (flip === "1") setFlip180(true);
     } catch {
       /* ignore */
     }
@@ -220,6 +250,11 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     setOffsetX(nextX);
     setOffsetY(nextY);
     localStorage.setItem(OFFSET_KEY, JSON.stringify({ x: nextX, y: nextY }));
+  }
+
+  function setFlip(next: boolean) {
+    setFlip180(next);
+    localStorage.setItem(FLIP_KEY, next ? "1" : "0");
   }
 
   useEffect(() => {
@@ -259,7 +294,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   }, [products, startAt, copies]);
 
   function printPdf() {
-    const doc = buildLabelPdf(pages, qrMap, offsetX, offsetY);
+    const doc = buildLabelPdf(pages, qrMap, offsetX, offsetY, flip180);
     const blob = doc.output("blob");
     const url = URL.createObjectURL(blob);
     const opened = window.open(url, "_blank");
@@ -318,9 +353,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
             type="number"
             step={0.5}
             value={offsetX}
-            onChange={(e) =>
-              setOffset(Number(e.target.value) || 0, offsetY)
-            }
+            onChange={(e) => setOffset(Number(e.target.value) || 0, offsetY)}
             className="h-8 w-16 rounded border border-slate-300 px-2 text-sm"
           />
         </label>
@@ -330,18 +363,24 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
             type="number"
             step={0.5}
             value={offsetY}
-            onChange={(e) =>
-              setOffset(offsetX, Number(e.target.value) || 0)
-            }
+            onChange={(e) => setOffset(offsetX, Number(e.target.value) || 0)}
             className="h-8 w-16 rounded border border-slate-300 px-2 text-sm"
           />
         </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          <input
+            type="checkbox"
+            checked={flip180}
+            onChange={(e) => setFlip(e.target.checked)}
+          />
+          Rotate 180° (fix upside-down print)
+        </label>
         <p className="text-xs text-slate-500">
-          {labelCount} label{labelCount === 1 ? "" : "s"} on A4 (6 × 10 of
-          35 × 22 mm). First sticker is top-left. Print at{" "}
-          <strong>100% / Actual size</strong>, paper <strong>A4</strong>,
-          margins <strong>None</strong>. Use Shift X/Y if the printer clips
-          an edge.
+          {labelCount} label{labelCount === 1 ? "" : "s"} on a 105 × 297 mm
+          sheet (3 × 10 of 35 × 22 mm). Print at{" "}
+          <strong>100% / Actual size</strong>, paper{" "}
+          <strong>105 × 297 mm</strong> (not A4), margins <strong>None</strong>.
+          Keep “Rotate 180°” on if the text comes out inverted.
         </p>
       </div>
       {pages.map((page, pageIdx) => (
