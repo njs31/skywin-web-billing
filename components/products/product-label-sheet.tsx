@@ -108,46 +108,48 @@ function drawPdfLabel(
 
   doc.setTextColor(0, 0, 0);
 
-  // Fixed baselines inside 22 mm so long names cannot collide with the code.
+  // Compact top-to-bottom stack — no empty band between EXP and RATE.
   doc.setFont("helvetica", "bold");
   doc.setFontSize(5.5);
-  doc.text(BUSINESS.name, x + padX, y + 1.7, {
+  doc.text(BUSINESS.name, x + padX, y + 1.6, {
     maxWidth: LABEL_W - padX * 2,
   });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(4.2);
-  doc.text(`(${BUSINESS.tagline})`, x + padX, y + 3.4, {
+  doc.text(`(${BUSINESS.tagline})`, x + padX, y + 3.2, {
     maxWidth: LABEL_W - padX * 2,
   });
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(5);
+  doc.setFontSize(5.2);
   const nameLine = doc
     .splitTextToSize(product.name.toUpperCase(), textW)
     .slice(0, 1)[0] as string;
   doc.text(nameLine || "", x + padX, y + 5.4);
 
-  doc.setFontSize(6.5);
-  doc.text(productCode(product), x + padX, y + 7.8, { maxWidth: textW });
+  doc.setFontSize(7);
+  doc.text(productCode(product), x + padX, y + 8.0, { maxWidth: textW });
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(5);
-  doc.text(`EXP: ${formatExp(product.expiryDate)}`, x + padX, y + 9.8, {
+  doc.setFontSize(5.2);
+  doc.text(`EXP: ${formatExp(product.expiryDate)}`, x + padX, y + 10.4, {
     maxWidth: textW,
   });
 
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6);
-  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y + LABEL_H - 1.4);
+  doc.setFontSize(6.2);
+  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y + 13.0, {
+    maxWidth: textW,
+  });
 
   if (qrDataUrl) {
     doc.addImage(
       qrDataUrl,
       "PNG",
       x + LABEL_W - padX - qr,
-      y + LABEL_H - padX - qr,
+      y + 5.0,
       qr,
       qr
     );

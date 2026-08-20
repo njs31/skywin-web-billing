@@ -250,10 +250,10 @@ body {
   display: flex;
   flex: 1;
   min-height: 0;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.6mm;
-  margin-top: 0.2mm;
+  margin-top: 0.35mm;
 }
 
 .label-text {
@@ -261,13 +261,13 @@ body {
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  justify-content: flex-end;
-  gap: 0.15mm;
+  justify-content: flex-start;
+  gap: 0.35mm;
 }
 
 .label-name {
   margin: 0;
-  font-size: 5px;
+  font-size: 5.2px;
   font-weight: 600;
   line-height: 1.05;
   white-space: nowrap;
@@ -278,7 +278,7 @@ body {
 
 .label-code {
   margin: 0;
-  font-size: 6.5px;
+  font-size: 7px;
   font-weight: 700;
   line-height: 1.05;
   white-space: nowrap;
@@ -288,7 +288,7 @@ body {
 
 .label-exp {
   margin: 0;
-  font-size: 5px;
+  font-size: 5.2px;
   line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
@@ -297,7 +297,7 @@ body {
 
 .label-rate {
   margin: 0;
-  font-size: 6px;
+  font-size: 6.2px;
   font-weight: 700;
   line-height: 1;
 }
@@ -306,6 +306,7 @@ body {
   width: 7mm;
   height: 7mm;
   flex-shrink: 0;
+  margin-top: 0.2mm;
   object-fit: contain;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
