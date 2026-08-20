@@ -32,7 +32,7 @@ const PAD_LEFT = 0;
 const PAD_TOP = 0;
 const COL_GAP = 0;
 const ROW_GAP = 7.33;
-const QR_MM = 8;
+const QR_MM = 7;
 const OFFSET_KEY = "skywin-label-offset-mm";
 
 function inclusiveRate(saleRate: string | number, gstRate: string | number) {
@@ -102,46 +102,45 @@ function drawPdfLabel(
   x: number,
   y: number
 ) {
-  const padX = 1.2;
+  const padX = 1.0;
   const qr = QR_MM;
-  const textW = LABEL_W - padX * 2 - qr - 1;
-  let ty = y + 1.8;
+  const textW = LABEL_W - padX * 2 - qr - 0.8;
 
   doc.setTextColor(0, 0, 0);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.text(BUSINESS.name, x + padX, ty, { maxWidth: LABEL_W - padX * 2 });
 
-  ty += 2.1;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(4.8);
-  doc.text(`(${BUSINESS.tagline})`, x + padX, ty, {
+  // Fixed baselines inside 22 mm so long names cannot collide with the code.
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5.5);
+  doc.text(BUSINESS.name, x + padX, y + 1.7, {
     maxWidth: LABEL_W - padX * 2,
   });
 
-  ty += 2.3;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(5.8);
-  const nameLines = doc
-    .splitTextToSize(product.name.toUpperCase(), textW)
-    .slice(0, 2);
-  doc.text(nameLines, x + padX, ty);
-  ty += nameLines.length * 2.0;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(4.2);
+  doc.text(`(${BUSINESS.tagline})`, x + padX, y + 3.4, {
+    maxWidth: LABEL_W - padX * 2,
+  });
 
-  doc.setFontSize(8);
-  doc.text(productCode(product), x + padX, ty, { maxWidth: textW });
-  ty += 2.6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5);
+  const nameLine = doc
+    .splitTextToSize(product.name.toUpperCase(), textW)
+    .slice(0, 1)[0] as string;
+  doc.text(nameLine || "", x + padX, y + 5.4);
+
+  doc.setFontSize(6.5);
+  doc.text(productCode(product), x + padX, y + 7.8, { maxWidth: textW });
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(5.5);
-  doc.text(`EXP: ${formatExp(product.expiryDate)}`, x + padX, ty, {
+  doc.setFontSize(5);
+  doc.text(`EXP: ${formatExp(product.expiryDate)}`, x + padX, y + 9.8, {
     maxWidth: textW,
   });
 
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y + LABEL_H - 1.5);
+  doc.setFontSize(6);
+  doc.text(`RATE: ${rate.toFixed(2)}`, x + padX, y + LABEL_H - 1.4);
 
   if (qrDataUrl) {
     doc.addImage(

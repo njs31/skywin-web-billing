@@ -222,13 +222,13 @@ body {
   display: flex;
   height: 100%;
   flex-direction: column;
-  padding: 0.6mm 1.2mm 0.5mm;
+  padding: 0.5mm 1mm 0.4mm;
   font-family: Arial, Helvetica, sans-serif;
 }
 
 .label-brand {
   margin: 0;
-  font-size: 6.5px;
+  font-size: 5.5px;
   font-weight: 700;
   line-height: 1.05;
   letter-spacing: 0.02em;
@@ -239,7 +239,7 @@ body {
 
 .label-tagline {
   margin: 0;
-  font-size: 5px;
+  font-size: 4.2px;
   line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
@@ -252,28 +252,33 @@ body {
   min-height: 0;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 0.8mm;
-  margin-top: 0.3mm;
+  gap: 0.6mm;
+  margin-top: 0.2mm;
 }
 
 .label-text {
+  display: flex;
   min-width: 0;
   flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.15mm;
 }
 
 .label-name {
   margin: 0;
-  font-size: 6px;
+  font-size: 5px;
   font-weight: 600;
-  line-height: 1.1;
-  max-height: 2.2em;
+  line-height: 1.05;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
   text-transform: uppercase;
 }
 
 .label-code {
-  margin: 0.2mm 0 0;
-  font-size: 8px;
+  margin: 0;
+  font-size: 6.5px;
   font-weight: 700;
   line-height: 1.05;
   white-space: nowrap;
@@ -282,24 +287,24 @@ body {
 }
 
 .label-exp {
-  margin: 0.15mm 0 0;
-  font-size: 5.5px;
-  line-height: 1.1;
+  margin: 0;
+  font-size: 5px;
+  line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .label-rate {
-  margin: 0.15mm 0 0;
-  font-size: 6.5px;
+  margin: 0;
+  font-size: 6px;
   font-weight: 700;
   line-height: 1;
 }
 
 .label-qr {
-  width: 8mm;
-  height: 8mm;
+  width: 7mm;
+  height: 7mm;
   flex-shrink: 0;
   object-fit: contain;
   -webkit-print-color-adjust: exact;
