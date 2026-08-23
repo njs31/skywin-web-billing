@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getPurchases } from "@/lib/queries/purchases";
 import { formatCurrency } from "@/lib/utils";
+import { PurchaseReport } from "@/components/purchases/purchase-report";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -26,6 +27,8 @@ export default async function PurchasesPage() {
           <Link href="/purchases/new">New Purchase</Link>
         </Button>
       </div>
+
+      <PurchaseReport />
 
       <Card>
         <CardContent className="p-0">
@@ -61,9 +64,14 @@ export default async function PurchasesPage() {
                       {formatCurrency(p.grandTotal)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/purchases/${p.id}`}>Show</Link>
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/purchases/${p.id}`}>Show</Link>
+                        </Button>
+                        <Button asChild size="sm">
+                          <Link href={`/purchases/${p.id}?print=1`}>Print</Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

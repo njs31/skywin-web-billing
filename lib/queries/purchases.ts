@@ -8,7 +8,7 @@ import {
   suppliers,
 } from "@/db/schema";
 import { calculateLineAmount } from "@/lib/gst";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 export const getPurchases = unstable_cache(
@@ -40,9 +40,14 @@ export async function getPurchaseById(id: number) {
       subtotal: purchases.subtotal,
       gstTotal: purchases.gstTotal,
       grandTotal: purchases.grandTotal,
+      handlingCharges: purchases.handlingCharges,
+      paidAmount: purchases.paidAmount,
       notes: purchases.notes,
       supplierId: purchases.supplierId,
       supplierName: suppliers.name,
+      supplierPhone: suppliers.phone,
+      supplierGstin: suppliers.gstin,
+      supplierAddress: suppliers.address,
     })
     .from(purchases)
     .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id))
@@ -60,6 +65,7 @@ export async function getPurchaseById(id: number) {
       qty: purchaseItems.qty,
       rate: purchaseItems.rate,
       amount: purchaseItems.amount,
+      batchNumber: purchaseItems.batchNumber,
       hsnCode: sql<string>`coalesce(${purchaseItems.hsnCode}, ${products.hsnCode})`,
     })
     .from(purchaseItems)
@@ -140,6 +146,7 @@ const purchaseItemSchema = z.object({
 const createPurchaseSchema = z.object({
   supplierId: z.number(),
   invoiceNo: z.string().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   paymentType: z.enum(["credit", "cash"]),
   notes: z.string().optional(),
   handlingCharges: z.number().nonnegative().optional().default(0),
@@ -191,6 +198,7 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
       .values({
         supplierId: data.supplierId,
         invoiceNo: data.invoiceNo,
+        date: new Date(`${data.date}T12:00:00+05:30`),
         paymentType: data.paymentType,
         subtotal: subtotal.toFixed(2),
         gstTotal: "0",
@@ -307,4 +315,175 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
   scheduleQwicksStockPush(purchase.touchedProductIds);
 
   return purchase.created;
+}
+
+export type PurchaseReportBill = {
+  id: number;
+  invoiceNo: string;
+  date: Date;
+  supplierName: string;
+  paymentType: string;
+  subtotal: number;
+  gstTotal: number;
+  handlingCharges: number;
+  grandTotal: number;
+  paidAmount: number;
+};
+
+export type PurchaseReportLineItem = {
+  invoiceNo: string;
+  date: Date;
+  supplierName: string;
+  paymentType: string;
+  productName: string;
+  hsnCode: string;
+  batchNumber: string;
+  qty: number;
+  rate: number;
+  amount: number;
+};
+
+export type PurchaseReportData = {
+  fromDate: string;
+  toDate: string;
+  summary: {
+    billCount: number;
+    subtotal: number;
+    gstTotal: number;
+    handlingCharges: number;
+    grandTotal: number;
+    paidAmount: number;
+    byPaymentType: Record<string, { count: number; amount: number }>;
+  };
+  bills: PurchaseReportBill[];
+  lineItems: PurchaseReportLineItem[];
+};
+
+function toNum(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return 0;
+  const n = typeof value === "number" ? value : parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export async function getPurchaseReport(
+  fromDate: string,
+  toDate: string
+): Promise<PurchaseReportData> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+    throw new Error("Invalid date format. Use YYYY-MM-DD.");
+  }
+  if (fromDate > toDate) {
+    throw new Error("From date cannot be after To date.");
+  }
+
+  const from = new Date(`${fromDate}T00:00:00+05:30`);
+  const to = new Date(`${toDate}T23:59:59.999+05:30`);
+
+  const billRows = await db
+    .select({
+      id: purchases.id,
+      invoiceNo: purchases.invoiceNo,
+      date: purchases.date,
+      paymentType: purchases.paymentType,
+      subtotal: purchases.subtotal,
+      gstTotal: purchases.gstTotal,
+      handlingCharges: purchases.handlingCharges,
+      grandTotal: purchases.grandTotal,
+      paidAmount: purchases.paidAmount,
+      supplierName: suppliers.name,
+    })
+    .from(purchases)
+    .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id))
+    .where(and(gte(purchases.date, from), lte(purchases.date, to)))
+    .orderBy(desc(purchases.date));
+
+  const bills: PurchaseReportBill[] = billRows.map((row) => ({
+    id: row.id,
+    invoiceNo: row.invoiceNo?.trim() || `PUR-${row.id}`,
+    date: row.date,
+    supplierName: row.supplierName,
+    paymentType: row.paymentType,
+    subtotal: toNum(row.subtotal),
+    gstTotal: toNum(row.gstTotal),
+    handlingCharges: toNum(row.handlingCharges),
+    grandTotal: toNum(row.grandTotal),
+    paidAmount: toNum(row.paidAmount),
+  }));
+
+  const purchaseIds = bills.map((b) => b.id);
+  let lineItems: PurchaseReportLineItem[] = [];
+
+  if (purchaseIds.length > 0) {
+    const itemRows = await db
+      .select({
+        invoiceNo: purchases.invoiceNo,
+        purchaseId: purchases.id,
+        date: purchases.date,
+        paymentType: purchases.paymentType,
+        supplierName: suppliers.name,
+        productName: products.name,
+        customName: purchaseItems.customName,
+        hsnCode: sql<string>`coalesce(${purchaseItems.hsnCode}, ${products.hsnCode})`,
+        batchNumber: purchaseItems.batchNumber,
+        qty: purchaseItems.qty,
+        rate: purchaseItems.rate,
+        amount: purchaseItems.amount,
+      })
+      .from(purchaseItems)
+      .innerJoin(purchases, eq(purchaseItems.purchaseId, purchases.id))
+      .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id))
+      .leftJoin(products, eq(purchaseItems.productId, products.id))
+      .where(inArray(purchaseItems.purchaseId, purchaseIds))
+      .orderBy(desc(purchases.date), purchaseItems.id);
+
+    lineItems = itemRows.map((row) => ({
+      invoiceNo: row.invoiceNo?.trim() || `PUR-${row.purchaseId}`,
+      date: row.date,
+      supplierName: row.supplierName,
+      paymentType: row.paymentType,
+      productName: row.productName || row.customName || "Item",
+      hsnCode: row.hsnCode || "",
+      batchNumber: row.batchNumber || "",
+      qty: toNum(row.qty),
+      rate: toNum(row.rate),
+      amount: toNum(row.amount),
+    }));
+  }
+
+  const byPaymentType: Record<string, { count: number; amount: number }> = {};
+  let subtotal = 0;
+  let gstTotal = 0;
+  let handlingCharges = 0;
+  let grandTotal = 0;
+  let paidAmount = 0;
+
+  for (const bill of bills) {
+    subtotal += bill.subtotal;
+    gstTotal += bill.gstTotal;
+    handlingCharges += bill.handlingCharges;
+    grandTotal += bill.grandTotal;
+    paidAmount += bill.paidAmount;
+    const mode = bill.paymentType || "credit";
+    if (!byPaymentType[mode]) byPaymentType[mode] = { count: 0, amount: 0 };
+    byPaymentType[mode].count++;
+    byPaymentType[mode].amount += bill.grandTotal;
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  return {
+    fromDate,
+    toDate,
+    summary: {
+      billCount: bills.length,
+      subtotal: round2(subtotal),
+      gstTotal: round2(gstTotal),
+      handlingCharges: round2(handlingCharges),
+      grandTotal: round2(grandTotal),
+      paidAmount: round2(paidAmount),
+      byPaymentType,
+    },
+    bills,
+    lineItems,
+  };
 }

@@ -167,6 +167,14 @@ export async function addStockToBatch(tx: DbOrTx, input: BatchAddInput) {
     }
   }
 
+  // New/updated batch sale price becomes the product's selling rate for POS.
+  if (input.saleRate != null) {
+    await tx
+      .update(products)
+      .set({ saleRate: input.saleRate.toFixed(2) })
+      .where(eq(products.id, input.productId));
+  }
+
   await syncProductStockQty(tx, input.productId);
   return batch;
 }

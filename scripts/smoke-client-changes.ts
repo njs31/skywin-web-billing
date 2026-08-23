@@ -111,6 +111,7 @@ async function main() {
   const purchase = await createPurchase({
     supplierId: supplier.id,
     paymentType: "cash",
+    date: new Date().toISOString().slice(0, 10),
     items: [
       {
         customName: purchaseName,
@@ -219,6 +220,7 @@ async function main() {
     supplierId: supplier.id,
     paymentType: "credit",
     paidAmount: 0,
+    date: new Date().toISOString().slice(0, 10),
     items: [
       {
         productId: manualProduct.id,

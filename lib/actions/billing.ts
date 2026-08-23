@@ -144,3 +144,12 @@ export async function getOutstandingPurchasesForSupplier(supplierId: number) {
   return query(supplierId);
 }
 
+export async function getStockMovementsReportData(
+  fromDate: string,
+  toDate: string
+) {
+  await requireUser();
+  const { getStockMovementsReport } = await import("@/lib/queries/reports");
+  return getStockMovementsReport(fromDate, toDate);
+}
+

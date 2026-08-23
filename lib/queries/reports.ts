@@ -212,6 +212,24 @@ export async function getPartyWiseSales(from?: Date, to?: Date) {
     .limit(100);
 }
 
+/**
+ * Unit cost for a sold line: batch purchase rate, else current product rate.
+ * If that cost is >10× the billed rate, the master/batch rate is treated as
+ * bad data (e.g. kg cost applied to a piece sale) so it cannot wipe MTD GP.
+ */
+const saleLineCostSql = sql`${saleItems.qty}::numeric * case
+  when ${saleItems.rate}::numeric > 0
+    and coalesce(
+      nullif(${productBatches.purchaseRate}::numeric, 0),
+      ${products.purchaseRate}::numeric
+    ) > ${saleItems.rate}::numeric * 10
+  then ${saleItems.rate}::numeric
+  else coalesce(
+    nullif(${productBatches.purchaseRate}::numeric, 0),
+    ${products.purchaseRate}::numeric
+  )
+end`;
+
 export async function getDailySummary(from?: Date, to?: Date) {
   const start = from ?? new Date(new Date().setDate(new Date().getDate() - 30));
   const end = to ?? new Date();
@@ -240,12 +258,32 @@ export async function getDailySummary(from?: Date, to?: Date) {
     purchasesByDay.map((p) => [p.date, parseFloat(p.purchaseTotal)])
   );
 
+  const cogsByDay = await db
+    .select({
+      date: sql<string>`date(${sales.date})`,
+      revenue: sql<string>`coalesce(sum(${saleItems.amount}::numeric), 0)`,
+      cost: sql<string>`coalesce(sum(${saleLineCostSql}), 0)`,
+    })
+    .from(saleItems)
+    .innerJoin(sales, eq(saleItems.saleId, sales.id))
+    .innerJoin(products, eq(saleItems.productId, products.id))
+    .leftJoin(productBatches, eq(saleItems.batchId, productBatches.id))
+    .where(and(gte(sales.date, start), lte(sales.date, end)))
+    .groupBy(sql`date(${sales.date})`);
+
+  const cogsMap = Object.fromEntries(
+    cogsByDay.map((row) => [
+      row.date,
+      parseFloat(row.revenue) - parseFloat(row.cost),
+    ])
+  );
+
   return salesByDay.map((s) => ({
     date: s.date,
     salesTotal: parseFloat(s.salesTotal),
     billCount: s.billCount,
     purchaseTotal: purchaseMap[s.date] ?? 0,
-    grossProfit: parseFloat(s.salesTotal) - (purchaseMap[s.date] ?? 0),
+    grossProfit: cogsMap[s.date] ?? 0,
   }));
 }
 
@@ -257,11 +295,12 @@ export async function getGrossProfitReport(from?: Date, to?: Date) {
   const [result] = await db
     .select({
       revenue: sql<string>`coalesce(sum(${saleItems.amount}::numeric), 0)`,
-      cost: sql<string>`coalesce(sum(${saleItems.qty}::numeric * ${products.purchaseRate}::numeric), 0)`,
+      cost: sql<string>`coalesce(sum(${saleLineCostSql}), 0)`,
     })
     .from(saleItems)
     .innerJoin(sales, eq(saleItems.saleId, sales.id))
     .innerJoin(products, eq(saleItems.productId, products.id))
+    .leftJoin(productBatches, eq(saleItems.batchId, productBatches.id))
     .where(conditions.length ? and(...conditions) : undefined);
 
   const revenue = parseFloat(result?.revenue ?? "0");
@@ -293,4 +332,101 @@ export async function getPurchaseBook(from?: Date, to?: Date) {
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(purchases.date))
     .limit(500);
+}
+
+export type StockMovementsReportRow = {
+  id: number;
+  date: Date;
+  productName: string;
+  sku: string | null;
+  type: string;
+  qtyDelta: number;
+  batchNumber: string | null;
+  notes: string | null;
+  referenceId: number | null;
+};
+
+export type StockMovementsReportData = {
+  fromDate: string;
+  toDate: string;
+  summary: {
+    movementCount: number;
+    qtyIn: number;
+    qtyOut: number;
+    byType: Record<string, { count: number; qty: number }>;
+  };
+  rows: StockMovementsReportRow[];
+};
+
+export async function getStockMovementsReport(
+  fromDate: string,
+  toDate: string
+): Promise<StockMovementsReportData> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+    throw new Error("Invalid date format. Use YYYY-MM-DD.");
+  }
+  if (fromDate > toDate) {
+    throw new Error("From date cannot be after To date.");
+  }
+
+  const from = new Date(`${fromDate}T00:00:00+05:30`);
+  const to = new Date(`${toDate}T23:59:59.999+05:30`);
+
+  const movementRows = await db
+    .select({
+      id: stockMovements.id,
+      date: stockMovements.createdAt,
+      productName: products.name,
+      sku: products.sku,
+      type: stockMovements.type,
+      qtyDelta: stockMovements.qtyDelta,
+      batchNumber: stockMovements.batchNumber,
+      notes: stockMovements.notes,
+      referenceId: stockMovements.referenceId,
+    })
+    .from(stockMovements)
+    .innerJoin(products, eq(stockMovements.productId, products.id))
+    .where(
+      and(gte(stockMovements.createdAt, from), lte(stockMovements.createdAt, to))
+    )
+    .orderBy(desc(stockMovements.createdAt))
+    .limit(5000);
+
+  const rows: StockMovementsReportRow[] = movementRows.map((row) => ({
+    id: row.id,
+    date: row.date,
+    productName: row.productName,
+    sku: row.sku,
+    type: row.type,
+    qtyDelta: parseFloat(row.qtyDelta) || 0,
+    batchNumber: row.batchNumber,
+    notes: row.notes,
+    referenceId: row.referenceId,
+  }));
+
+  const byType: Record<string, { count: number; qty: number }> = {};
+  let qtyIn = 0;
+  let qtyOut = 0;
+
+  for (const row of rows) {
+    if (row.qtyDelta >= 0) qtyIn += row.qtyDelta;
+    else qtyOut += Math.abs(row.qtyDelta);
+    if (!byType[row.type]) byType[row.type] = { count: 0, qty: 0 };
+    byType[row.type].count++;
+    byType[row.type].qty += row.qtyDelta;
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  return {
+    fromDate,
+    toDate,
+    summary: {
+      movementCount: rows.length,
+      qtyIn: round2(qtyIn),
+      qtyOut: round2(qtyOut),
+      byType,
+    },
+    rows,
+  };
 }

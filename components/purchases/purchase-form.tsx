@@ -114,6 +114,13 @@ export function PurchaseForm({
   const [suppliers] = useState(initialSuppliers);
   const [supplierId, setSupplierId] = useState<string | undefined>(undefined);
   const [invoiceNo, setInvoiceNo] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  });
   const [paymentType, setPaymentType] = useState<"credit" | "cash">("credit");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
@@ -227,6 +234,7 @@ export function PurchaseForm({
     batchNumber?: string;
     expiryDate?: string;
     rate?: number;
+    saleRate?: number;
   }) => {
     if (!product.hsnCode || !product.hsnCode.trim()) {
       alert(`HSN code is mandatory. Product "${product.name}" lacks an HSN code. Please update the product in Inventory first.`);
@@ -245,6 +253,7 @@ export function PurchaseForm({
         discountValue: 0,
         batchNumber: batch?.batchNumber ?? "",
         expiryDate: batch?.expiryDate ?? product.expiryDate ?? "",
+        saleRate: batch?.saleRate ?? toNumber(product.saleRate),
       },
     ]);
     setQuery("");
@@ -269,6 +278,7 @@ export function PurchaseForm({
       batchNumber: row.batchNumber ?? "",
       expiryDate: row.batchExpiry ?? "",
       rate: toNumber(row.batchPurchaseRate ?? row.purchaseRate),
+      saleRate: toNumber(row.batchSaleRate ?? row.saleRate),
     });
   };
 
@@ -316,7 +326,7 @@ export function PurchaseForm({
 
   const updateItem = (
     id: string,
-    field: "qty" | "rate" | "discountValue",
+    field: "qty" | "rate" | "discountValue" | "saleRate",
     value: number,
     discountType?: "percent" | "value"
   ) => {
@@ -364,6 +374,7 @@ export function PurchaseForm({
         await createPurchase({
           supplierId: parseInt(supplierId, 10),
           invoiceNo: invoiceNo || undefined,
+          date: invoiceDate,
           paymentType,
           handlingCharges: parseFloat(handlingCharges) || 0,
           paidAmount: paymentType === "cash" ? undefined : (parseFloat(paidAmount) || 0),
@@ -436,6 +447,15 @@ export function PurchaseForm({
               value={invoiceNo}
               onChange={(e) => setInvoiceNo(e.target.value)}
               placeholder="Supplier invoice number"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Invoice Date</Label>
+            <Input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+              required
             />
           </div>
           <div className="space-y-2">
@@ -719,7 +739,9 @@ export function PurchaseForm({
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Label className="text-[10px] text-slate-400">Rate</Label>
+                      <Label className="text-[10px] text-slate-400">
+                        Purchase Rate
+                      </Label>
                       <Input
                         type="number"
                         className="h-8 w-24 text-xs"
@@ -730,6 +752,26 @@ export function PurchaseForm({
                           updateItem(
                             item.id,
                             "rate",
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-[10px] text-slate-400">
+                        Sale Rate
+                      </Label>
+                      <Input
+                        type="number"
+                        className="h-8 w-24 text-xs"
+                        value={item.saleRate ?? ""}
+                        min={0}
+                        step={0.01}
+                        placeholder="Sell @"
+                        onChange={(e) =>
+                          updateItem(
+                            item.id,
+                            "saleRate",
                             parseFloat(e.target.value) || 0
                           )
                         }
@@ -789,7 +831,15 @@ export function PurchaseForm({
                     </Button>
                   </div>
                   {item.product ? (
-                    <div className="grid gap-2 border-t border-slate-100 pt-2 sm:grid-cols-2">
+                    <div className="grid gap-2 border-t border-slate-100 pt-2 sm:grid-cols-3">
+                      <div className="sm:col-span-1">
+                        <Label className="text-[10px] text-slate-400">
+                          Product
+                        </Label>
+                        <p className="mt-0.5 truncate text-xs font-medium text-slate-700">
+                          {item.name}
+                        </p>
+                      </div>
                       <div>
                         <Label className="text-[10px] text-slate-400">
                           Batch No. *

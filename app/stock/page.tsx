@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { productBatches } from "@/db/schema";
 import { inArray } from "drizzle-orm";
 import { formatCurrency, toNumber } from "@/lib/utils";
+import { StockMovementsReport } from "@/components/stock/stock-movements-report";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -59,6 +60,8 @@ export default async function StockPage() {
           </Button>
         </div>
       </div>
+
+      <StockMovementsReport />
 
       <div className="grid gap-4 sm:grid-cols-4">
         <Card>
