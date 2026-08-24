@@ -6,6 +6,7 @@ import {
   updateProduct as updateProductQuery,
   deleteProduct as deleteProductQuery,
   getAllProductsForExport,
+  getProductsExportForDateRange,
 } from "@/lib/queries/products";
 import { getProductByScanCode as getProductByScanCodeQuery } from "@/lib/queries/stock-import";
 import {
@@ -17,6 +18,11 @@ import { requireNonDealer, requireUser } from "@/lib/actions/auth";
 export async function getStockExportData() {
   await requireNonDealer();
   return getAllProductsForExport();
+}
+
+export async function getProductsExportData(fromDate: string, toDate: string) {
+  await requireNonDealer();
+  return getProductsExportForDateRange(fromDate, toDate);
 }
 
 export async function searchProducts(query: string, limit = 20) {

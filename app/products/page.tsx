@@ -34,13 +34,12 @@ export default async function ProductsPage({
             {!q && totalPages > 1 && ` (page ${page} of ${totalPages})`}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ProductExportButtons />
-          <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
-            <Link href="/products/new">Add Product</Link>
-          </Button>
-        </div>
+        <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
+          <Link href="/products/new">Add Product</Link>
+        </Button>
       </div>
+
+      <ProductExportButtons />
 
       <Card>
         <CardHeader>

@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
-import { products, categories, productBatches, stockMovements } from "@/db/schema";
-import { ilike, or, sql, asc, eq, and, gt, inArray } from "drizzle-orm";
+import { products, categories, productBatches, stockMovements, sales, saleItems } from "@/db/schema";
+import { ilike, or, sql, asc, eq, and, gt, inArray, gte, lte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { parseSkuFromName } from "@/lib/gst";
 
@@ -473,6 +473,14 @@ export type StockExportRow = {
   purchaseValue: number;
   saleValue: number;
   status: string;
+  qtySold?: number;
+  salesAmount?: number;
+};
+
+export type ProductDateRangeExport = {
+  fromDate: string;
+  toDate: string;
+  rows: StockExportRow[];
 };
 
 export async function getAllProductsForExport(): Promise<StockExportRow[]> {
@@ -528,4 +536,64 @@ export async function getAllProductsForExport(): Promise<StockExportRow[]> {
       status: row.isActive ? "Active" : "Inactive",
     };
   });
+}
+
+export async function getProductsExportForDateRange(
+  fromDate: string,
+  toDate: string
+): Promise<ProductDateRangeExport> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+    throw new Error("Invalid date format. Use YYYY-MM-DD.");
+  }
+  if (fromDate > toDate) {
+    throw new Error("From date cannot be after To date.");
+  }
+
+  const from = new Date(`${fromDate}T00:00:00+05:30`);
+  const to = new Date(`${toDate}T23:59:59.999+05:30`);
+
+  const [baseRows, salesAgg] = await Promise.all([
+    getAllProductsForExport(),
+    db
+      .select({
+        productId: saleItems.productId,
+        totalQty: sql<string>`coalesce(sum(${saleItems.qty}::numeric), 0)`,
+        totalAmount: sql<string>`coalesce(sum(${saleItems.amount}::numeric), 0)`,
+      })
+      .from(saleItems)
+      .innerJoin(sales, eq(saleItems.saleId, sales.id))
+      .where(
+        and(
+          gte(sales.date, from),
+          lte(sales.date, to),
+          isNotNull(saleItems.productId)
+        )
+      )
+      .groupBy(saleItems.productId),
+  ]);
+
+  const salesMap = new Map<
+    number,
+    { qtySold: number; salesAmount: number }
+  >();
+  for (const row of salesAgg) {
+    if (row.productId == null) continue;
+    salesMap.set(row.productId, {
+      qtySold: Math.round(Number(row.totalQty) * 100) / 100,
+      salesAmount: Math.round(Number(row.totalAmount) * 100) / 100,
+    });
+  }
+
+  return {
+    fromDate,
+    toDate,
+    rows: baseRows.map((row) => {
+      const sold = salesMap.get(row.id);
+      return {
+        ...row,
+        qtySold: sold?.qtySold ?? 0,
+        salesAmount: sold?.salesAmount ?? 0,
+      };
+    }),
+  };
 }
