@@ -241,6 +241,10 @@ export function PurchaseForm({
       return;
     }
     const wholeQty = Math.max(1, Math.round(qty) || 1);
+    const nextSaleRate = batch?.saleRate ?? toNumber(product.saleRate);
+    // #region agent log
+    fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'A',location:'purchase-form.tsx:addItem',message:'catalog line added',data:{productId:product.id,name:product.name,batchNumber:batch?.batchNumber??'',purchaseRate:batch?.rate??toNumber(product.purchaseRate),saleRate:nextSaleRate,hasProductSaleRate:product.saleRate!=null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     setItems((prev) => [
       ...prev,
       {
@@ -253,7 +257,7 @@ export function PurchaseForm({
         discountValue: 0,
         batchNumber: batch?.batchNumber ?? "",
         expiryDate: batch?.expiryDate ?? product.expiryDate ?? "",
-        saleRate: batch?.saleRate ?? toNumber(product.saleRate),
+        saleRate: nextSaleRate,
       },
     ]);
     setQuery("");
@@ -340,6 +344,11 @@ export function PurchaseForm({
         if (discountType !== undefined) {
           updated.discountType = discountType;
         }
+        // #region agent log
+        if (field === "saleRate") {
+          fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'D',location:'purchase-form.tsx:updateItem',message:'sale rate edited',data:{id:i.id,name:i.name,batchNumber:i.batchNumber??'',saleRate:value,purchaseRate:i.rate},timestamp:Date.now()})}).catch(()=>{});
+        }
+        // #endregion
         return updated;
       })
     );
@@ -371,14 +380,7 @@ export function PurchaseForm({
     setError("");
     startTransition(async () => {
       try {
-        await createPurchase({
-          supplierId: parseInt(supplierId, 10),
-          invoiceNo: invoiceNo || undefined,
-          date: invoiceDate,
-          paymentType,
-          handlingCharges: parseFloat(handlingCharges) || 0,
-          paidAmount: paymentType === "cash" ? undefined : (parseFloat(paidAmount) || 0),
-          items: items.map((i) => ({
+        const payloadItems = items.map((i) => ({
             productId: i.product ? i.product.id : undefined,
             customName: i.product ? undefined : i.name,
             hsnCode: i.product ? (i.product.hsnCode || null) : i.hsnCode,
@@ -390,7 +392,18 @@ export function PurchaseForm({
             expiryDate: i.expiryDate?.trim() || undefined,
             gstRate: i.gstRate ?? 0,
             saleRate: i.saleRate,
-          })),
+          }));
+        // #region agent log
+        fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'B',location:'purchase-form.tsx:submit',message:'submit payload sale/batch fields',data:{lines:payloadItems.map((p)=>({productId:p.productId,batchNumber:p.batchNumber,rate:p.rate,saleRate:p.saleRate,saleRateType:typeof p.saleRate}))},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        await createPurchase({
+          supplierId: parseInt(supplierId, 10),
+          invoiceNo: invoiceNo || undefined,
+          date: invoiceDate,
+          paymentType,
+          handlingCharges: parseFloat(handlingCharges) || 0,
+          paidAmount: paymentType === "cash" ? undefined : (parseFloat(paidAmount) || 0),
+          items: payloadItems,
         });
         router.push("/purchases");
       } catch (e) {

@@ -279,6 +279,9 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
             ? `Purchase ${data.invoiceNo}`
             : `Purchase #${created.id}`,
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'C',location:'purchases.ts:createPurchase',message:'addStockToBatch called',data:{productId,batchNumber,batchId:batch.id,batchSaleRate:batch.saleRate,inputSaleRate:item.saleRate??null,fallbackRate:item.rate},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
 
         await tx.insert(stockMovements).values({
           productId,
