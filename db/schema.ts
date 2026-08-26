@@ -198,6 +198,7 @@ export const purchaseItems = pgTable("purchase_items", {
   discountValue: numeric("discount_value", { precision: 14, scale: 2 }).default("0").notNull(),
   amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
   hsnCode: text("hsn_code"),
+  gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).default("0").notNull(),
   batchNumber: text("batch_number"),
   expiryDate: date("expiry_date"),
 });

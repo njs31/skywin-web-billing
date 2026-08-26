@@ -5,8 +5,9 @@ import { Plus, Trash2, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Loader
 import { searchProductBatches, resolveProductsForImport } from "@/lib/actions/products";
 import * as XLSX from "xlsx";
 import { createPurchase } from "@/lib/actions/purchases";
-import { calculateLineAmount } from "@/lib/gst";
+import { calculateLineAmount, calculateGstBreakdown, isInterstateGst } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
+import { BUSINESS } from "@/lib/business";
 import type { Product, Supplier } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
@@ -242,9 +243,6 @@ export function PurchaseForm({
     }
     const wholeQty = Math.max(1, Math.round(qty) || 1);
     const nextSaleRate = batch?.saleRate ?? toNumber(product.saleRate);
-    // #region agent log
-    fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'A',location:'purchase-form.tsx:addItem',message:'catalog line added',data:{productId:product.id,name:product.name,batchNumber:batch?.batchNumber??'',purchaseRate:batch?.rate??toNumber(product.purchaseRate),saleRate:nextSaleRate,hasProductSaleRate:product.saleRate!=null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     setItems((prev) => [
       ...prev,
       {
@@ -258,6 +256,7 @@ export function PurchaseForm({
         batchNumber: batch?.batchNumber ?? "",
         expiryDate: batch?.expiryDate ?? product.expiryDate ?? "",
         saleRate: nextSaleRate,
+        gstRate: toNumber(product.gstRate),
       },
     ]);
     setQuery("");
@@ -344,11 +343,6 @@ export function PurchaseForm({
         if (discountType !== undefined) {
           updated.discountType = discountType;
         }
-        // #region agent log
-        if (field === "saleRate") {
-          fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'D',location:'purchase-form.tsx:updateItem',message:'sale rate edited',data:{id:i.id,name:i.name,batchNumber:i.batchNumber??'',saleRate:value,purchaseRate:i.rate},timestamp:Date.now()})}).catch(()=>{});
-        }
-        // #endregion
         return updated;
       })
     );
@@ -362,6 +356,27 @@ export function PurchaseForm({
     (sum, i) => sum + calculateLineAmount(i.qty, i.rate, i.discountValue, i.discountType),
     0
   );
+  const selectedSupplier = suppliers.find((s) => String(s.id) === supplierId);
+  const interstate = isInterstateGst(
+    selectedSupplier?.gstin,
+    BUSINESS.stateCode
+  );
+  const gstPreview = calculateGstBreakdown(
+    items.map((i) => ({
+      qty: i.qty,
+      rate: i.rate,
+      gstRate: i.gstRate ?? toNumber(i.product?.gstRate),
+      discountType: i.discountType,
+      discountValue: i.discountValue,
+    })),
+    { interstate }
+  );
+  const gstTotalPreview =
+    Math.round((gstPreview.cgst + gstPreview.sgst + gstPreview.igst) * 100) /
+    100;
+  const handlingPreview = parseFloat(handlingCharges) || 0;
+  const grandTotalPreview =
+    Math.round((gstPreview.grandTotal + handlingPreview) * 100) / 100;
 
   const submit = () => {
     if (!supplierId || items.length === 0) {
@@ -390,12 +405,9 @@ export function PurchaseForm({
             discountValue: i.discountValue,
             batchNumber: i.batchNumber?.trim() || undefined,
             expiryDate: i.expiryDate?.trim() || undefined,
-            gstRate: i.gstRate ?? 0,
+            gstRate: i.gstRate ?? toNumber(i.product?.gstRate),
             saleRate: i.saleRate,
           }));
-        // #region agent log
-        fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'B',location:'purchase-form.tsx:submit',message:'submit payload sale/batch fields',data:{lines:payloadItems.map((p)=>({productId:p.productId,batchNumber:p.batchNumber,rate:p.rate,saleRate:p.saleRate,saleRateType:typeof p.saleRate}))},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         await createPurchase({
           supplierId: parseInt(supplierId, 10),
           invoiceNo: invoiceNo || undefined,
@@ -902,9 +914,38 @@ export function PurchaseForm({
                 <span>Items Subtotal</span>
                 <span>{formatCurrency(subtotal)}</span>
               </div>
+              {gstTotalPreview > 0 && (
+                <>
+                  {interstate ? (
+                    <div className="flex justify-between text-sm text-slate-700">
+                      <span>IGST</span>
+                      <span>{formatCurrency(gstPreview.igst)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-sm text-slate-700">
+                        <span>CGST</span>
+                        <span>{formatCurrency(gstPreview.cgst)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-slate-700">
+                        <span>SGST</span>
+                        <span>{formatCurrency(gstPreview.sgst)}</span>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+              {handlingPreview > 0 && (
+                <div className="flex justify-between text-sm text-slate-700">
+                  <span>Handling</span>
+                  <span>{formatCurrency(handlingPreview)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-base font-bold text-slate-900">
-                <span>Grand Total (incl. Handling)</span>
-                <span className="text-emerald-700">{formatCurrency(subtotal + (parseFloat(handlingCharges) || 0))}</span>
+                <span>Grand Total</span>
+                <span className="text-emerald-700">
+                  {formatCurrency(grandTotalPreview)}
+                </span>
               </div>
             </div>
           )}

@@ -7,9 +7,11 @@ import {
   stockMovements,
   suppliers,
 } from "@/db/schema";
-import { calculateLineAmount } from "@/lib/gst";
+import { calculateLineAmount, calculateGstBreakdown, isInterstateGst } from "@/lib/gst";
+import { getSettings } from "@/lib/settings";
 import { and, desc, eq, gte, lte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
+import { toNumber } from "@/lib/utils";
 
 export const getPurchases = unstable_cache(
   async () =>
@@ -48,6 +50,7 @@ export async function getPurchaseById(id: number) {
       supplierPhone: suppliers.phone,
       supplierGstin: suppliers.gstin,
       supplierAddress: suppliers.address,
+      supplierState: suppliers.state,
     })
     .from(purchases)
     .innerJoin(suppliers, eq(purchases.supplierId, suppliers.id))
@@ -67,6 +70,7 @@ export async function getPurchaseById(id: number) {
       amount: purchaseItems.amount,
       batchNumber: purchaseItems.batchNumber,
       hsnCode: sql<string>`coalesce(${purchaseItems.hsnCode}, ${products.hsnCode})`,
+      gstRate: sql<string>`coalesce(nullif(${purchaseItems.gstRate}::numeric, 0), ${products.gstRate}::numeric, 0)`,
     })
     .from(purchaseItems)
     .leftJoin(products, eq(purchaseItems.productId, products.id))
@@ -157,38 +161,67 @@ const createPurchaseSchema = z.object({
 export async function createPurchase(input: z.infer<typeof createPurchaseSchema>) {
   const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = createPurchaseSchema.parse(input);
+  const settings = await getSettings();
+
+  const [supplier] = await db
+    .select({ gstin: suppliers.gstin })
+    .from(suppliers)
+    .where(eq(suppliers.id, data.supplierId))
+    .limit(1);
+  if (!supplier) throw new Error("Supplier not found");
+
+  const resolvedItems: Array<
+    (typeof data.items)[number] & { amount: number; gstRate: number; hsnCode: string }
+  > = [];
 
   for (const item of data.items) {
-    let itemHsn = item.hsnCode;
+    let itemHsn = item.hsnCode ?? null;
+    let gstRate = item.gstRate ?? 0;
     if (item.productId) {
       const [product] = await db
         .select()
         .from(products)
         .where(eq(products.id, item.productId))
         .limit(1);
-      if (product && !itemHsn) itemHsn = product.hsnCode;
+      if (product) {
+        if (!itemHsn) itemHsn = product.hsnCode;
+        if (!gstRate) gstRate = toNumber(product.gstRate);
+      }
     }
     if (!itemHsn || !itemHsn.trim()) {
       throw new Error(`HSN code is mandatory for all purchase items.`);
     }
-  }
-
-  let subtotal = 0;
-  const lineItems = data.items.map((item) => {
     const amount = calculateLineAmount(
       item.qty,
       item.rate,
       item.discountValue,
       item.discountType
     );
-    subtotal += amount;
-    return { ...item, amount };
-  });
-  subtotal = Math.round(subtotal * 100) / 100;
+    resolvedItems.push({
+      ...item,
+      hsnCode: itemHsn.trim(),
+      gstRate,
+      amount,
+    });
+  }
+
+  const interstate = isInterstateGst(supplier.gstin, settings.stateCode);
+  const gst = calculateGstBreakdown(
+    resolvedItems.map((item) => ({
+      qty: item.qty,
+      rate: item.rate,
+      gstRate: item.gstRate,
+      discountType: item.discountType,
+      discountValue: item.discountValue,
+    })),
+    { interstate }
+  );
+  const subtotal = gst.taxableAmount;
+  const gstTotal = Math.round((gst.cgst + gst.sgst + gst.igst) * 100) / 100;
 
   const purchase = await db.transaction(async (tx) => {
     const handling = data.handlingCharges ?? 0;
-    const grandTotal = subtotal + handling;
+    const grandTotal = Math.round((gst.grandTotal + handling) * 100) / 100;
     const paidAmount = data.paymentType === "cash"
       ? grandTotal
       : (data.paidAmount ?? 0);
@@ -201,7 +234,7 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
         date: new Date(`${data.date}T12:00:00+05:30`),
         paymentType: data.paymentType,
         subtotal: subtotal.toFixed(2),
-        gstTotal: "0",
+        gstTotal: gstTotal.toFixed(2),
         grandTotal: grandTotal.toFixed(2),
         paidAmount: paidAmount.toFixed(2),
         handlingCharges: handling.toFixed(2),
@@ -211,13 +244,12 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
 
     const touchedProductIds: number[] = [];
 
-    for (const item of lineItems) {
+    for (const item of resolvedItems) {
       let productId = item.productId || null;
 
       // Manual purchase lines become real inventory products so they can be billed.
       if (!productId && item.customName?.trim()) {
         const saleRate = item.saleRate ?? item.rate;
-        const gstRate = item.gstRate ?? 0;
         const [createdProduct] = await tx
           .insert(products)
           .values({
@@ -227,8 +259,8 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
             saleRate: saleRate.toFixed(2),
             wholesaleRate: saleRate.toFixed(2),
             stockQty: "0.00",
-            hsnCode: item.hsnCode!.trim(),
-            gstRate: gstRate.toFixed(2),
+            hsnCode: item.hsnCode,
+            gstRate: item.gstRate.toFixed(2),
             expiryDate: item.expiryDate || null,
             isActive: true,
           })
@@ -253,6 +285,7 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
         discountValue: item.discountValue.toFixed(2),
         amount: item.amount.toFixed(2),
         hsnCode: item.hsnCode || null,
+        gstRate: item.gstRate.toFixed(2),
         batchNumber: item.batchNumber?.trim().toUpperCase() || null,
         expiryDate: item.expiryDate || null,
       });
@@ -279,9 +312,6 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
             ? `Purchase ${data.invoiceNo}`
             : `Purchase #${created.id}`,
         });
-        // #region agent log
-        fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'C',location:'purchases.ts:createPurchase',message:'addStockToBatch called',data:{productId,batchNumber,batchId:batch.id,batchSaleRate:batch.saleRate,inputSaleRate:item.saleRate??null,fallbackRate:item.rate},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
 
         await tx.insert(stockMovements).values({
           productId,
@@ -299,7 +329,7 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
     await tx
       .update(suppliers)
       .set({
-        totalPurchased: sql`${suppliers.totalPurchased}::numeric + ${grandTotal}`,
+        totalPurchased: sql`${suppliers.totalPurchased}::numeric + ${grandTotal.toFixed(2)}`,
       })
       .where(eq(suppliers.id, data.supplierId));
 
