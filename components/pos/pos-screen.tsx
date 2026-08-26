@@ -254,8 +254,8 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
         barcode: row.barcode,
         hsnCode: row.hsnCode,
         gstRate: row.gstRate,
-        // Always bill at the current product sale/wholesale rate, not a stale batch rate.
-        saleRate: row.saleRate,
+        // Prefer batch sale rate when set (purchase entry can price batches differently).
+        saleRate: row.batchSaleRate ?? row.saleRate,
         wholesaleRate: row.wholesaleRate,
         purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
         stockQty: row.batchQty || row.productStockQty,
