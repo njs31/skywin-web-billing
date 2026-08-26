@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { sortPaymentModeEntries } from "@/lib/sale-settlement";
 
 function toDateInputValue(date: Date) {
   const y = date.getFullYear();
@@ -157,12 +158,12 @@ function exportExcel(data: SalesReportData) {
     XLSX.utils.json_to_sheet(lineItemSheetRows(data)),
     "Line Items"
   );
-  const receivedRows = Object.entries(data.summary.receivedByMode || {})
-    .filter(([, amt]) => amt > 0)
-    .map(([mode, amount]) => ({
-      Mode: mode.toUpperCase(),
-      "Amount Received": amount,
-    }));
+  const receivedRows = sortPaymentModeEntries(
+    Object.entries(data.summary.receivedByMode || {}).filter(([, amt]) => amt > 0)
+  ).map(([mode, amount]) => ({
+    Mode: mode.toUpperCase(),
+    "Amount Received": amount,
+  }));
   if (receivedRows.length > 0) {
     XLSX.utils.book_append_sheet(
       wb,
@@ -170,13 +171,13 @@ function exportExcel(data: SalesReportData) {
       "Received by Mode"
     );
   }
-  const paymentModeRows = Object.entries(data.summary.byPaymentMode || {}).map(
-    ([mode, info]) => ({
-      Mode: mode.toUpperCase(),
-      Bills: info.count,
-      Amount: info.amount,
-    })
-  );
+  const paymentModeRows = sortPaymentModeEntries(
+    Object.entries(data.summary.byPaymentMode || {})
+  ).map(([mode, info]) => ({
+    Mode: mode.toUpperCase(),
+    Bills: info.count,
+    Amount: info.amount,
+  }));
   if (paymentModeRows.length > 0) {
     XLSX.utils.book_append_sheet(
       wb,
@@ -319,8 +320,10 @@ function exportPdf(data: SalesReportData) {
     });
   }
 
-  const paymentEntries = Object.entries(summary.byPaymentMode || {}).filter(
-    ([, info]) => info.amount > 0 || info.count > 0
+  const paymentEntries = sortPaymentModeEntries(
+    Object.entries(summary.byPaymentMode || {}).filter(
+      ([, info]) => info.amount > 0 || info.count > 0
+    )
   );
   if (paymentEntries.length > 0) {
     doc.addPage();
@@ -396,7 +399,8 @@ export function SalesReport() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Sales Report</CardTitle>
           <p className="text-sm text-slate-500">
-            Select a date range to view detailed sales invoices and line items. Export to Excel or PDF.
+            Select a date range to view detailed sales invoices and line items in
+            ascending date / invoice order. Export to Excel or PDF.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -533,7 +537,9 @@ export function SalesReport() {
           {Object.keys(report.summary.byPaymentMode).length > 0 ? (
             <Card>
               <CardContent className="flex flex-wrap gap-4 p-4">
-                {Object.entries(report.summary.byPaymentMode).map(([mode, info]) => (
+                {sortPaymentModeEntries(
+                  Object.entries(report.summary.byPaymentMode)
+                ).map(([mode, info]) => (
                   <div key={mode} className="min-w-[120px]">
                     <p className="text-xs capitalize text-slate-500">{mode}</p>
                     <p className="font-semibold">{formatCurrency(info.amount)}</p>
@@ -566,6 +572,7 @@ export function SalesReport() {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead>S.No.</TableHead>
                             <TableHead>Invoice</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Type</TableHead>
@@ -580,8 +587,11 @@ export function SalesReport() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {report.invoices.map((inv) => (
+                          {report.invoices.map((inv, index) => (
                             <TableRow key={inv.id}>
+                              <TableCell className="text-slate-500">
+                                {index + 1}
+                              </TableCell>
                               <TableCell className="font-medium">
                                 {inv.invoiceNo}
                               </TableCell>
@@ -618,7 +628,7 @@ export function SalesReport() {
                         </TableBody>
                         <TableFooter>
                           <TableRow>
-                            <TableCell colSpan={5}>Grand Total</TableCell>
+                            <TableCell colSpan={6}>Grand Total</TableCell>
                             <TableCell className="text-right">
                               {formatCurrency(report.summary.subtotal)}
                             </TableCell>
@@ -656,6 +666,7 @@ export function SalesReport() {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead>S.No.</TableHead>
                             <TableHead>Invoice</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Customer</TableHead>
@@ -671,6 +682,9 @@ export function SalesReport() {
                         <TableBody>
                           {report.lineItems.map((item, index) => (
                             <TableRow key={`${item.invoiceNo}-${index}`}>
+                              <TableCell className="text-slate-500">
+                                {index + 1}
+                              </TableCell>
                               <TableCell className="font-medium">
                                 {item.invoiceNo}
                               </TableCell>
@@ -699,7 +713,7 @@ export function SalesReport() {
                         </TableBody>
                         <TableFooter>
                           <TableRow>
-                            <TableCell colSpan={5}>Grand Total</TableCell>
+                            <TableCell colSpan={6}>Grand Total</TableCell>
                             <TableCell className="text-right">
                               {round2(
                                 report.lineItems.reduce((s, i) => s + i.qty, 0)
@@ -729,9 +743,11 @@ export function SalesReport() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-6 p-4 pt-0">
-                {Object.entries(report.summary.receivedByMode)
-                  .filter(([, amt]) => amt > 0)
-                  .map(([mode, amount]) => (
+                {sortPaymentModeEntries(
+                  Object.entries(report.summary.receivedByMode).filter(
+                    ([, amt]) => amt > 0
+                  )
+                ).map(([mode, amount]) => (
                     <div key={mode} className="min-w-[120px]">
                       <p className="text-xs capitalize text-slate-500">{mode}</p>
                       <p className="text-lg font-semibold text-emerald-700">

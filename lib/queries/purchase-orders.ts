@@ -3,7 +3,7 @@ import {
   purchaseOrders,
   purchaseOrderItems,
   products,
-  customers,
+  suppliers,
 } from "@/db/schema";
 import { calculateLineAmount } from "@/lib/gst";
 import { getIndianFinancialYearBounds } from "@/lib/financial-year";
@@ -20,9 +20,8 @@ const poItemSchema = z.object({
 });
 
 const createPurchaseOrderSchema = z.object({
-  customerId: z.number().optional(),
-  customerName: z.string().optional(),
-  customerPhone: z.string().optional(),
+  supplierId: z.number().optional(),
+  supplierName: z.string().optional(),
   notes: z.string().optional(),
   items: z.array(poItemSchema).min(1),
 });
@@ -57,23 +56,21 @@ export async function createPurchaseOrder(
     await import("@/lib/revalidate");
   const data = createPurchaseOrderSchema.parse(input);
 
-  let customerId = data.customerId ?? null;
-  let customerName = data.customerName?.trim() || null;
-  let customerPhone = data.customerPhone?.trim() || null;
+  let supplierId = data.supplierId ?? null;
+  let supplierName = data.supplierName?.trim() || null;
 
-  if (customerId) {
-    const [customer] = await db
+  if (supplierId) {
+    const [supplier] = await db
       .select()
-      .from(customers)
-      .where(eq(customers.id, customerId))
+      .from(suppliers)
+      .where(eq(suppliers.id, supplierId))
       .limit(1);
-    if (!customer) throw new Error("Selected customer was not found.");
-    customerName = customer.name;
-    customerPhone = customer.phone ?? customerPhone;
+    if (!supplier) throw new Error("Selected supplier was not found.");
+    supplierName = supplier.name;
   }
 
-  if (!customerId && !customerName) {
-    throw new Error("Select a customer or enter a customer name.");
+  if (!supplierId && !supplierName) {
+    throw new Error("Select a supplier or enter a supplier name.");
   }
 
   const productIds = [
@@ -106,9 +103,8 @@ export async function createPurchaseOrder(
       .insert(purchaseOrders)
       .values({
         poNumber,
-        customerId,
-        customerName,
-        customerPhone,
+        supplierId,
+        supplierName,
         notes: data.notes?.trim() || null,
         subtotal: subtotal.toFixed(2),
         grandTotal: subtotal.toFixed(2),
@@ -148,17 +144,16 @@ export async function getPurchaseOrders() {
       id: purchaseOrders.id,
       poNumber: purchaseOrders.poNumber,
       date: purchaseOrders.date,
-      customerId: purchaseOrders.customerId,
-      customerName: purchaseOrders.customerName,
-      customerPhone: purchaseOrders.customerPhone,
-      customerRecordName: customers.name,
+      supplierId: purchaseOrders.supplierId,
+      supplierName: purchaseOrders.supplierName,
+      supplierRecordName: suppliers.name,
       subtotal: purchaseOrders.subtotal,
       grandTotal: purchaseOrders.grandTotal,
       status: purchaseOrders.status,
       notes: purchaseOrders.notes,
     })
     .from(purchaseOrders)
-    .leftJoin(customers, eq(purchaseOrders.customerId, customers.id))
+    .leftJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
     .orderBy(desc(purchaseOrders.date))
     .limit(500);
 }
@@ -169,27 +164,23 @@ export async function getPurchaseOrderById(id: number) {
       id: purchaseOrders.id,
       poNumber: purchaseOrders.poNumber,
       date: purchaseOrders.date,
-      customerId: purchaseOrders.customerId,
-      customerName: purchaseOrders.customerName,
-      customerPhone: purchaseOrders.customerPhone,
+      supplierId: purchaseOrders.supplierId,
+      supplierName: purchaseOrders.supplierName,
       notes: purchaseOrders.notes,
       subtotal: purchaseOrders.subtotal,
       grandTotal: purchaseOrders.grandTotal,
       status: purchaseOrders.status,
       createdAt: purchaseOrders.createdAt,
-      customerRecordName: customers.name,
-      customerRecordPhone: customers.phone,
-      customerGstin: customers.gstin,
-      customerAddress: customers.address,
-      customerAcre: customers.acre,
-      customerCrop: customers.crop,
-      customerPinCode: customers.pinCode,
-      customerVillage: customers.village,
-      customerTaluk: customers.taluk,
-      customerDistrict: customers.district,
+      supplierRecordName: suppliers.name,
+      supplierPhone: suppliers.phone,
+      supplierGstin: suppliers.gstin,
+      supplierAddress: suppliers.address,
+      supplierCity: suppliers.city,
+      supplierState: suppliers.state,
+      supplierPinCode: suppliers.pinCode,
     })
     .from(purchaseOrders)
-    .leftJoin(customers, eq(purchaseOrders.customerId, customers.id))
+    .leftJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
     .where(eq(purchaseOrders.id, id))
     .limit(1);
 
