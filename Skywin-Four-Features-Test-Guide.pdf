@@ -1,0 +1,819 @@
+image.png%PDF-1.3
+%�߬�
+3 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 7411
+>>
+stream
+0.5670000000000001 w
+0 G
+0.05 0.45 0.43 rg
+0. 841.8899999999999864 595.2755905511811534 -73.7007874015748143 re
+f
+BT
+/F2 16 Tf
+18.3999999999999986 TL
+1. g
+51.0236220472441033 810.7088976377953031 Td
+(Skywin Billing - Test Guide) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+1. g
+51.0236220472441033 793.7010236220472734 Td
+(Four features: return notice, product name, invoice QR, e-Way) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+1. g
+51.0236220472441033 778.1104724409448181 Td
+(19 Aug 2026   Live site: https://skywin.qwicksapp.com/) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 745.5120472440944468 Td
+(Log in first. After any server rebuild, hard-refresh \(Cmd+Shift+R on Mac, Ctrl+Shift+R on Windows\) so you) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 732.4726771653542983 Td
+(are not looking at an old cached page.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 710.9293700787401349 Td
+(Test on https://skywin.qwicksapp.com/ Close the old PDF tab; this file replaces the overflowing one.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 689.3860629921258578 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 678.0474803149605805 Td
+(1. Return / exchange notice on sales invoices) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 653.8962992125983646 Td
+(Sales tax invoices \(retail and wholesale, A5/A4/A3\) show a bold line in Declaration at the bottom left.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 640.8569291338582161 Td
+(Purchase orders and quotations do not use this template, so they must not show that line.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 619.3136220472440527 Td
+(1. Open Sale Book: https://skywin.qwicksapp.com/invoices) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 602.0222834645669536 Td
+(2. Open any retail invoice.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 584.7309448818897408 Td
+(3. Scroll to Declaration \(bottom-left of the bill\).) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 567.4396062992126417 Td
+(4. First line must be bold: Sold items cannot be returned or exchanged. Next line is: We declare that this) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 554.4002362204724932 Td
+(invoice shows the actual price of the goods described...) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 537.1088976377952804 Td
+(5. Click Print Invoice. Check A5, then A4 \(A3 if you use it\).) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 519.8175590551181813 Td
+(6. Repeat on a wholesale invoice, including a long bill if you have one.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 502.5262204724410253 Td
+(7. Open a purchase order print and a quotation print. The bold no-return line must not appear.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.016 0.471 0.341 rg
+51.0236220472441033 485.2348818897638694 Td
+(Pass: bold sentence on every sales tax invoice print; missing on PO and quotation.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 467.9435433070866566 Td
+(Fail: line missing, not bold, or it appears on PO/quotation.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 446.4002362204724932 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 435.061653543307159 Td
+(2. Editable product name) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 410.9104724409449432 Td
+(On Products, pencil-edit now includes the Name field. SKU stays read-only. HSN is still required. If Settings) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 397.8711023622047946 Td
+(has inventory admin PIN turned on, save asks for Supervisor/Admin PIN. If that setting is off, save does not) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 384.8317322834646461 Td
+(ask for a PIN.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 363.2884251968504827 Td
+(Important: invoices reprint the current product master name. Changing a name updates future prints of old) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 350.2490551181103342 Td
+(bills for that product. Only custom \(non-catalog\) lines keep a stored name.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 328.7057480314962277 Td
+(1. Open Products: https://skywin.qwicksapp.com/products) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 311.4144094488190149 Td
+(2. Click the pencil on one product. Name becomes a text box. SKU does not.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 294.1230708661419158 Td
+(3. Change the name slightly. Keep HSN filled. Click the green check.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 276.831732283464703 Td
+(4. If a PIN prompt appears, enter Supervisor/Admin PIN. If no prompt, PIN is disabled in settings - that is) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 263.7923622047245544 Td
+(still a pass.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 246.5010236220474553 Td
+(5. The list should show the new name after save/refresh.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 229.2096850393702425 Td
+(6. Re-open an old invoice that used this product. The printed name will be the NEW master name \(live) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 216.170314960630094 Td
+(lookup\). Change the name back if this is live stock.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.016 0.471 0.341 rg
+51.0236220472441033 198.8789763779529949 Td
+(Pass: name editable; SKU not editable; HSN still required; PIN only if that setting is on.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 181.5876377952757821 Td
+(Fail: name cannot be edited, or SKU becomes editable.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 160.0443307086616755 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 148.7057480314963414 Td
+(3. e-Invoice QR at the top of the tax invoice) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 124.5545669291341255 Td
+(Every tax invoice header has a QR labelled e-Invoice, to the right of TAX INVOICE. It is in the header so) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 111.5151968503938633 Td
+(long wholesale bills do not clip it. It is a local scan of the bill, not a GST-portal IRN QR. The GST e-invoice) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 98.4758267716536011 Td
+(app will not accept it as a legal IRN.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 76.9325196850394377 Td
+(Scan payload \(JSON\): invoiceNo, date \(IST\), sellerGstin, buyerGstin \(blank if none\), grandTotal.) Tj
+ET
+0.8 0.84 0.88 RG
+0.5669291338582678 w
+51.0236220472441033 42.5199212598424126 m
+527.2440944881890346 42.5199212598424126 l
+S
+BT
+/F1 7.5 Tf
+8.625 TL
+0.392 0.455 0.545 rg
+51.0236220472441033 28.3466929133857093 Td
+(Invoice QR is local JSON, not a GST portal IRN. GST e-invoice app will not verify it.) Tj
+ET
+BT
+/F1 7.5 Tf
+8.625 TL
+0.392 0.455 0.545 rg
+506.1519685039370415 28.3466929133857093 Td
+(Page 1 of 2) Tj
+ET
+endstream
+endobj
+5 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 6 0 R
+>>
+endobj
+6 0 obj
+<<
+/Length 6113
+>>
+stream
+0.5670000000000001 w
+0 G
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 790.8663779527558972 Td
+(1. Open any sales invoice \(retail and wholesale\).) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 773.5750393700786844 Td
+(2. Top of the bill, right of TAX INVOICE: QR plus the label e-Invoice.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 756.2837007874015853 Td
+(3. Print A5 and A4. QR must stay on page 1 and must not be cut off.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 738.9923622047243725 Td
+(4. On a long wholesale bill, QR is in the header, not only after the item table.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 721.7010236220471597 Td
+(5. Scan with a phone. Values must match that invoice number, date, GSTINs, and total.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.016 0.471 0.341 rg
+51.0236220472441033 704.4096850393700606 Td
+(Pass: QR on retail and wholesale prints; scan matches the bill; not clipped.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 687.1183464566928478 Td
+(Fail: QR missing, clipped, or scan does not match. Do not treat GST-app rejection as a fail.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 665.5750393700786844 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 654.2364566929132934 Td
+(4. e-Way fields and export only above Rs. 50,000) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 630.0852755905510776 Td
+(Rule is strictly greater than Rs. 50,000 \(Rs. 50,000.01 and up\). A bill of exactly Rs. 50,000 must NOT show) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 617.0459055118109291 Td
+(the fields or appear in the Excel.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 595.5025984251967657 Td
+(POS \(https://skywin.qwicksapp.com/pos\): e-Way Bill No., Vehicle No., Dispatched through, and Destination) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 582.4632283464566171 Td
+(appear only when running grand total is above Rs. 50,000. Placeholder on e-Way Bill No. says Required) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 569.4238582677164686 Td
+(above Rs. 50,000, but saving the bill does not block you if those boxes are left empty.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 547.8805511811024189 Td
+(Reports Excel \(https://skywin.qwicksapp.com/reports\): E-Way Bill Export downloads) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 534.8411811023622704 Td
+(Skywin-EWay-Export-{start}-to-{end}.xlsx. One row per invoice LINE \(not one row per bill\). Included only if) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 521.8018110236221219 Td
+(the customer has a GSTIN and the invoice grand total is above Rs. 50,000. Walk-in / no GSTIN / Rs.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 508.7624409448819165 Td
+(50,000 or less are excluded.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 487.2191338582677531 Td
+(1. Open POS: https://skywin.qwicksapp.com/pos) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 469.9277952755905972 Td
+(2. Add items so grand total is Rs. 50,000 or less. e-Way / vehicle / dispatch / destination must be hidden.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 452.6364566929134412 Td
+(3. Raise the total above Rs. 50,000. Those four fields appear.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 435.3451181102362852 Td
+(4. Drop the total back to Rs. 50,000 or less. Fields hide again.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 418.0537795275591293 Td
+(5. On Reports, set a date range that includes small B2B bills and bills over Rs. 50,000. Click Download) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 405.0144094488189808 Td
+(E-Way Excel.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 387.7230708661418248 Td
+(6. Open the file. Every row must have Customer GSTIN and belong to an invoice whose total is above) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 374.6837007874016763 Td
+(Rs. 50,000.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.016 0.471 0.341 rg
+51.0236220472441033 357.3923622047245203 Td
+(Pass: POS fields toggle above Rs. 50,000; Excel is GSTIN B2B lines on invoices above Rs. 50,000.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 340.1010236220473644 Td
+(Fail: fields always visible, never appear above Rs. 50,000, or Excel includes B2C / no-GSTIN / Rs.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 327.0616535433072158 Td
+(50,000-or-less bills.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 302.6837007874017331 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 291.3451181102363989 Td
+(Checklist) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+51.0236220472441033 267.1939370078741831 Td
+([ ] 1. Bold no-return line on retail + wholesale prints; not on PO/quotation) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+51.0236220472441033 249.9025984251969703 Td
+([ ] 2. Product name editable; SKU not; PIN only if setting is on) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+51.0236220472441033 232.6112598425198712 Td
+([ ] 3. Header QR on every tax invoice; scan matches the bill) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+51.0236220472441033 215.3199212598426584 Td
+([ ] 4. e-Way POS fields and Excel only when invoice total is above Rs. 50,000 \(B2B for Excel\)) Tj
+ET
+0.8 0.84 0.88 RG
+0.5669291338582678 w
+51.0236220472441033 42.5199212598424126 m
+527.2440944881890346 42.5199212598424126 l
+S
+BT
+/F1 7.5 Tf
+8.625 TL
+0.392 0.455 0.545 rg
+51.0236220472441033 28.3466929133857093 Td
+(Invoice QR is local JSON, not a GST portal IRN. GST e-invoice app will not verify it.) Tj
+ET
+BT
+/F1 7.5 Tf
+8.625 TL
+0.392 0.455 0.545 rg
+506.1519685039370415 28.3466929133857093 Td
+(Page 2 of 2) Tj
+ET
+endstream
+endobj
+1 0 obj
+<</Type /Pages
+/Kids [3 0 R 5 0 R ]
+/Count 2
+>>
+endobj
+7 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+8 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+9 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+10 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+11 0 obj
+<<
+/Type /Font
+/BaseFont /Courier
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+12 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+13 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+14 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+15 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Roman
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+16 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+17 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Italic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+18 0 obj
+<<
+/Type /Font
+/BaseFont /Times-BoldItalic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+19 0 obj
+<<
+/Type /Font
+/BaseFont /ZapfDingbats
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+20 0 obj
+<<
+/Type /Font
+/BaseFont /Symbol
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+2 0 obj
+<<
+/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]
+/Font <<
+/F1 7 0 R
+/F2 8 0 R
+/F3 9 0 R
+/F4 10 0 R
+/F5 11 0 R
+/F6 12 0 R
+/F7 13 0 R
+/F8 14 0 R
+/F9 15 0 R
+/F10 16 0 R
+/F11 17 0 R
+/F12 18 0 R
+/F13 19 0 R
+/F14 20 0 R
+>>
+/XObject <<
+>>
+>>
+endobj
+21 0 obj
+<<
+/Producer (jsPDF 4.2.1)
+/CreationDate (D:20260819021833+05'30')
+>>
+endobj
+22 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+/OpenAction [3 0 R /FitH null]
+/PageLayout /OneColumn
+>>
+endobj
+xref
+0 23
+0000000000 65535 f 
+0000013917 00000 n 
+0000015742 00000 n 
+0000000015 00000 n 
+0000000152 00000 n 
+0000007615 00000 n 
+0000007752 00000 n 
+0000013980 00000 n 
+0000014105 00000 n 
+0000014235 00000 n 
+0000014368 00000 n 
+0000014506 00000 n 
+0000014630 00000 n 
+0000014759 00000 n 
+0000014891 00000 n 
+0000015027 00000 n 
+0000015155 00000 n 
+0000015282 00000 n 
+0000015411 00000 n 
+0000015544 00000 n 
+0000015646 00000 n 
+0000015992 00000 n 
+0000016078 00000 n 
+trailer
+<<
+/Size 23
+/Root 22 0 R
+/Info 21 0 R
+/ID [ <7AE54B1858487A0B00731F11DA1BB7B0> <7AE54B1858487A0B00731F11DA1BB7B0> ]
+>>
+startxref
+16182
+%%EOF

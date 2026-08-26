@@ -173,6 +173,9 @@ export async function addStockToBatch(tx: DbOrTx, input: BatchAddInput) {
       .update(products)
       .set({ saleRate: input.saleRate.toFixed(2) })
       .where(eq(products.id, input.productId));
+    // #region agent log
+    fetch('http://127.0.0.1:7653/ingest/8527ae0c-cbc0-4ad4-8c36-67cc03d92a10',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a50ee'},body:JSON.stringify({sessionId:'1a50ee',runId:'batch-price-check',hypothesisId:'C',location:'batches.ts:addStockToBatch',message:'product saleRate updated',data:{productId:input.productId,saleRate:input.saleRate,batchNumber:batch.batchNumber},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   }
 
   await syncProductStockQty(tx, input.productId);

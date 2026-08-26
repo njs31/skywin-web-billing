@@ -1,0 +1,637 @@
+%PDF-1.3
+%ºß¬à
+3 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 6028
+>>
+stream
+0.5670000000000001 w
+0 G
+0.05 0.45 0.43 rg
+0. 841.8899999999999864 595.2755905511811534 -73.7007874015748143 re
+f
+BT
+/F2 16 Tf
+18.3999999999999986 TL
+1. g
+51.0236220472441033 810.7088976377953031 Td
+(Skywin Billing - Sales Return Test Guide) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+1. g
+51.0236220472441033 793.7010236220472734 Td
+(Editable credit notes + Disc. % column) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+1. g
+51.0236220472441033 778.1104724409448181 Td
+(20 Aug 2026   Live: https://skywin.qwicksapp.com/) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 745.5120472440944468 Td
+(Log in first. Hard-refresh \(Cmd+Shift+R / Ctrl+Shift+R\) so you are not on a cached page.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 723.9687401574802834 Td
+(These two features are live: edit a saved sales return, and line Disc. % on the form and printed credit note.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 702.42543307086612 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 691.086850393700729 Td
+(1. Create a sales return with Disc. %) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 666.9356692913385132 Td
+(Open Sales Return, add a line, set Disc %, save, then print and confirm the Disc. % column.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 645.3923622047243498 Td
+(1. Open https://skywin.qwicksapp.com/returns \(Sales Return tab / Credit Notes\).) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 628.1010236220472507 Td
+(2. Optionally pick Against Invoice and a customer.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 610.8096850393700379 Td
+(3. Search and add at least one product.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 593.5183464566929388 Td
+(4. Set Qty, Rate, and Disc % \(e.g. Disc % = 10\). Amount should be less than Qty x Rate.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 576.227007874015726 Td
+(5. Click Save Return.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 558.9356692913386269 Td
+(6. Open the new credit note \(View\) and Print Credit Note.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 541.6443307086615278 Td
+(7. On the print, columns should be: #, Item, HSN, Qty, Rate, Disc. %, GST%, Amount.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.016 0.471 0.341 rg
+51.0236220472441033 524.352992125984315 Td
+(Pass: Disc. % shows on print; Amount is after discount; totals look correct.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 507.061653543307159 Td
+(Fail: Disc. % column missing, amount ignores discount, or save fails.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 485.5183464566929388 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 474.1797637795276046 Td
+(2. Edit an existing sales return) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 450.0285826771653319 Td
+(Saved credit notes can be edited from the list or the detail page. Saving updates lines, totals, and stock.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 428.4852755905511685 Td
+(1. On /returns, find a credit note and click Edit \(or open View, then Edit\).) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 411.1939370078740694 Td
+(2. URL should be /returns/{id}/edit. Banner shows Editing credit note RET-...) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 393.9025984251969135 Td
+(3. Change Disc %, Qty, or Rate. Add or remove a line if you want.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 376.6112598425197575 Td
+(4. Click Update Return.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 359.3199212598426016 Td
+(5. You return to the credit note view. Print again.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 342.0285826771654456 Td
+(6. Printed Disc. %, Amount, and Grand Total must match the edited values.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.016 0.471 0.341 rg
+51.0236220472441033 324.7372440944882328 Td
+(Pass: Edit saves; print matches the new Disc % / amounts.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 307.4459055118111337 Td
+(Fail: No Edit button, update errors, or print still shows old values.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 285.9025984251969703 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 274.5640157480315793 Td
+(3. Disc % = 0 / old returns) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 250.4128346456693635 Td
+(Older credit notes \(before this change\) have no discount stored. They should still open and print.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 228.8695275590552001 Td
+(1. Open an older credit note if you have one.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 211.578188976378101 Td
+(2. Print: Disc. % column is present; cell may be blank or 0 for old lines.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 194.2868503937008882 Td
+(3. Edit that return, set Disc % to 5, Update, print again - Disc. % should show 5.00.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.016 0.471 0.341 rg
+51.0236220472441033 176.9955118110237891 Td
+(Pass: Old bills still print; after edit, Disc. % appears.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 159.7041732283465763 Td
+(Fail: Old credit note crashes or print layout breaks.) Tj
+ET
+0.8 0.84 0.88 RG
+0.5669291338582678 w
+51.0236220472441033 42.5199212598424126 m
+544.2519685039370643 42.5199212598424126 l
+S
+BT
+/F1 7.5 Tf
+8.625 TL
+0.392 0.455 0.545 rg
+51.0236220472441033 28.3466929133857093 Td
+(Sales return edit + Disc. % only \(not purchase/debit notes\).) Tj
+ET
+BT
+/F1 7.5 Tf
+8.625 TL
+0.392 0.455 0.545 rg
+506.1519685039370415 28.3466929133857093 Td
+(Page 1 of 2) Tj
+ET
+endstream
+endobj
+5 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 6 0 R
+>>
+endobj
+6 0 obj
+<<
+/Length 2827
+>>
+stream
+0.5670000000000001 w
+0 G
+0.05 0.45 0.43 rg
+51.0236220472441033 802.2049606299211746 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 790.8663779527558972 Td
+(4. Stock check \(edit\)) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 766.7151968503936814 Td
+(Editing reverses the previous return stock, then applies the new qty. If stock was already sold from the return) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.2 0.255 0.333 rg
+51.0236220472441033 753.6758267716535329 Td
+(batch, Update may fail with insufficient stock - that is expected.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 732.1325196850393695 Td
+(1. Note stock of a product before editing a return that includes it.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 714.8411811023621567 Td
+(2. Edit the return: increase returned Qty, Update.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 697.5498425196849439 Td
+(3. Stock for that product should rise by the extra returned qty \(Products or Stock page\).) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+59.5275590551181182 680.2585039370078448 Td
+(4. Edit again: decrease Qty, Update. Stock should fall by the difference.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.016 0.471 0.341 rg
+51.0236220472441033 662.967165354330632 Td
+(Pass: Stock moves with the edited return qty.) Tj
+ET
+BT
+/F3 10 Tf
+11.5 TL
+0.725 0.11 0.11 rg
+51.0236220472441033 645.6758267716535329 Td
+(Fail: Stock unchanged after a successful update, or unexplained stock jumps.) Tj
+ET
+0.05 0.45 0.43 rg
+51.0236220472441033 621.2978740157479933 5.6692913385826778 -18.4251968503937036 re
+f
+BT
+/F2 12 Tf
+13.7999999999999989 TL
+0.059 0.09 0.165 rg
+65.1968503937007995 609.959291338582716 Td
+(Checklist) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+51.0236220472441033 585.8081102362205002 Td
+([ ] 1. Create return with Disc %; print shows Disc. % and correct Amount) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+51.0236220472441033 568.5167716535432874 Td
+([ ] 2. Edit return from list or detail; Update Return works) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+51.0236220472441033 551.2254330708661882 Td
+([ ] 3. Re-print after edit matches new Disc % / totals) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+51.0236220472441033 533.9340944881889754 Td
+([ ] 4. Old returns still open/print; optional stock check on edit) Tj
+ET
+0.8 0.84 0.88 RG
+0.5669291338582678 w
+51.0236220472441033 42.5199212598424126 m
+544.2519685039370643 42.5199212598424126 l
+S
+BT
+/F1 7.5 Tf
+8.625 TL
+0.392 0.455 0.545 rg
+51.0236220472441033 28.3466929133857093 Td
+(Sales return edit + Disc. % only \(not purchase/debit notes\).) Tj
+ET
+BT
+/F1 7.5 Tf
+8.625 TL
+0.392 0.455 0.545 rg
+506.1519685039370415 28.3466929133857093 Td
+(Page 2 of 2) Tj
+ET
+endstream
+endobj
+1 0 obj
+<</Type /Pages
+/Kids [3 0 R 5 0 R ]
+/Count 2
+>>
+endobj
+7 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+8 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+9 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+10 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+11 0 obj
+<<
+/Type /Font
+/BaseFont /Courier
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+12 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+13 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+14 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+15 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Roman
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+16 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+17 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Italic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+18 0 obj
+<<
+/Type /Font
+/BaseFont /Times-BoldItalic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+19 0 obj
+<<
+/Type /Font
+/BaseFont /ZapfDingbats
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+20 0 obj
+<<
+/Type /Font
+/BaseFont /Symbol
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+2 0 obj
+<<
+/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]
+/Font <<
+/F1 7 0 R
+/F2 8 0 R
+/F3 9 0 R
+/F4 10 0 R
+/F5 11 0 R
+/F6 12 0 R
+/F7 13 0 R
+/F8 14 0 R
+/F9 15 0 R
+/F10 16 0 R
+/F11 17 0 R
+/F12 18 0 R
+/F13 19 0 R
+/F14 20 0 R
+>>
+/XObject <<
+>>
+>>
+endobj
+21 0 obj
+<<
+/Producer (jsPDF 4.2.1)
+/CreationDate (D:20260820193737+05'30')
+>>
+endobj
+22 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+/OpenAction [3 0 R /FitH null]
+/PageLayout /OneColumn
+>>
+endobj
+xref
+0 23
+0000000000 65535 f 
+0000009248 00000 n 
+0000011073 00000 n 
+0000000015 00000 n 
+0000000152 00000 n 
+0000006232 00000 n 
+0000006369 00000 n 
+0000009311 00000 n 
+0000009436 00000 n 
+0000009566 00000 n 
+0000009699 00000 n 
+0000009837 00000 n 
+0000009961 00000 n 
+0000010090 00000 n 
+0000010222 00000 n 
+0000010358 00000 n 
+0000010486 00000 n 
+0000010613 00000 n 
+0000010742 00000 n 
+0000010875 00000 n 
+0000010977 00000 n 
+0000011323 00000 n 
+0000011409 00000 n 
+trailer
+<<
+/Size 23
+/Root 22 0 R
+/Info 21 0 R
+/ID [ <39FF7BD82563A3059EEF45A71C3E6949> <39FF7BD82563A3059EEF45A71C3E6949> ]
+>>
+startxref
+11513
+%%EOF
