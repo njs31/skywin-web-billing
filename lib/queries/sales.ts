@@ -12,7 +12,7 @@ import {
   applyRupeeRounding,
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
-import { getIndianFinancialYearBounds } from "@/lib/financial-year";
+import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR } from "@/lib/financial-year";
 import { format } from "date-fns";
 import { desc, eq, gte, lte, sql, and, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -247,14 +247,38 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     );
   }
 
-  const typePrefix =
-    data.billType === "wholesale" ? "WHL" : settings.invoicePrefix;
+  const isWholesale = data.billType === "wholesale";
   const dayStamp = format(new Date(), "yyyyMMdd");
-  const prefix = `${typePrefix}-${dayStamp}-`;
-  const { start: fyStart, end: fyEnd } = getIndianFinancialYearBounds();
+  const retailPrefix = `${settings.invoicePrefix}-${dayStamp}-`;
+  const { start: fyStart, end: fyEnd, shortLabel: fyShortLabel } =
+    getIndianFinancialYearBounds();
   // postgres.js raw sql cannot bind JS Date — must pass ISO strings
   const fyStartIso = fyStart.toISOString();
   const fyEndIso = fyEnd.toISOString();
+  const wholesaleLike = `${WHOLESALE_INVOICE_PREFIX}/%/${fyShortLabel}`;
+  const wholesaleSeqRegex = `^${WHOLESALE_INVOICE_PREFIX}/([0-9]+)/`;
+  const invoiceNoSelect = isWholesale
+    ? sql`${WHOLESALE_INVOICE_PREFIX} || '/' || lpad((
+          greatest(
+            coalesce(max(case
+              when s.invoice_no like ${wholesaleLike}
+              then nullif(substring(s.invoice_no from ${wholesaleSeqRegex}), '')::int
+            end), 0),
+            coalesce(max(case
+              when s.invoice_no like 'WHL-%'
+              then nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int
+            end), 0),
+            ${WHOLESALE_INVOICE_SEQ_FLOOR}
+          ) + 1
+        )::text, 4, '0') || '/' || ${fyShortLabel}`
+    : sql`${retailPrefix} || lpad((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text, greatest(4, length((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text)), '0')`;
+  const invoiceNoWhere = isWholesale
+    ? sql`(s.invoice_no like ${wholesaleLike} or s.invoice_no like 'WHL-%')
+            and s.date >= ${fyStartIso}::timestamptz
+            and s.date <= ${fyEndIso}::timestamptz`
+    : sql`s.invoice_no like ${settings.invoicePrefix + "-%"}
+            and s.date >= ${fyStartIso}::timestamptz
+            and s.date <= ${fyEndIso}::timestamptz`;
   const poNumber = data.poNumber?.trim() || null;
   const purchaseOrderId = data.purchaseOrderId ?? null;
   const quotationNumber = data.quotationNumber?.trim() || null;
@@ -556,7 +580,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             dispatched_through, destination, delivery_note, payment_terms, notes
           )
           select
-            ${prefix} || lpad((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text, greatest(4, length((coalesce(max(nullif(substring(s.invoice_no from '([0-9]+)$'), '')::int), 0) + 1)::text)), '0'),
+            ${invoiceNoSelect},
             ${data.billType}::bill_type,
             ${finalCustomerId ?? null}::int,
             ${finalCustomerName ?? null}::text,
@@ -583,9 +607,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${paymentTerms}::text,
             ${data.notes ?? null}::text
           from sales s
-          where s.invoice_no like ${typePrefix + "-%"}
-            and s.date >= ${fyStartIso}::timestamptz
-            and s.date <= ${fyEndIso}::timestamptz
+          where ${invoiceNoWhere}
           returning *
         ),
         ins_items as (

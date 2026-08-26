@@ -6,5 +6,19 @@ export function getIndianFinancialYearBounds(date = new Date()) {
   const startYear = month >= 3 ? year : year - 1;
   const start = new Date(startYear, 3, 1, 0, 0, 0, 0);
   const end = new Date(startYear + 1, 2, 31, 23, 59, 59, 999);
-  return { start, end, label: `${startYear}-${String(startYear + 1).slice(-2)}` };
+  const endYearShort = String(startYear + 1).slice(-2);
+  const startYearShort = String(startYear).slice(-2);
+  return {
+    start,
+    end,
+    /** e.g. 2026-27 */
+    label: `${startYear}-${endYearShort}`,
+    /** e.g. 26-27 — used in wholesale invoice series SKYA/####/YY-YY */
+    shortLabel: `${startYearShort}-${endYearShort}`,
+  };
 }
+
+/** Wholesale invoice series: SKYA/0379/26-27 */
+export const WHOLESALE_INVOICE_PREFIX = "SKYA";
+/** Floor so the next allocated number is at least 379. */
+export const WHOLESALE_INVOICE_SEQ_FLOOR = 378;
