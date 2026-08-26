@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test lib/session.test.ts lib/api-auth.test.ts lib/skywin-client-fixes.test.ts",
+    "test:skywin": "tsx --env-file=.env.local scripts/test-skywin-client-fixes.ts",
     "test:security": "tsx --test lib/session.test.ts lib/api-auth.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",

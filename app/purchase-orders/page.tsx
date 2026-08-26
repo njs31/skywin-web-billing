@@ -21,7 +21,7 @@ export default async function PurchaseOrdersPage() {
         <div>
           <h1 className="text-2xl font-bold">Purchase Orders</h1>
           <p className="text-sm text-slate-500">
-            Customer purchase orders for fulfilment and printing
+            Supplier purchase orders for stock inward and printing
           </p>
         </div>
         <Button asChild>
@@ -44,7 +44,7 @@ export default async function PurchaseOrdersPage() {
                 <TableRow>
                   <TableHead>PO No</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Customer</TableHead>
+                  <TableHead>Supplier</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead></TableHead>
@@ -56,7 +56,7 @@ export default async function PurchaseOrdersPage() {
                     <TableCell className="font-medium">{po.poNumber}</TableCell>
                     <TableCell>{formatDateTimeIST(po.date)}</TableCell>
                     <TableCell>
-                      {po.customerRecordName ?? po.customerName ?? "-"}
+                      {po.supplierRecordName ?? po.supplierName ?? "-"}
                     </TableCell>
                     <TableCell className="capitalize">{po.status}</TableCell>
                     <TableCell className="text-right font-semibold">

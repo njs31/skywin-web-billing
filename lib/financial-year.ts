@@ -22,3 +22,12 @@ export function getIndianFinancialYearBounds(date = new Date()) {
 export const WHOLESALE_INVOICE_PREFIX = "SKYA";
 /** Floor so the next allocated number is at least 379. */
 export const WHOLESALE_INVOICE_SEQ_FLOOR = 378;
+
+export function nextWholesaleSequence(maxExistingSeq = 0) {
+  return Math.max(maxExistingSeq, WHOLESALE_INVOICE_SEQ_FLOOR) + 1;
+}
+
+/** Format a wholesale invoice number, e.g. SKYA/0379/26-27 */
+export function formatWholesaleInvoiceNo(seq: number, fyShortLabel: string) {
+  return `${WHOLESALE_INVOICE_PREFIX}/${String(seq).padStart(4, "0")}/${fyShortLabel}`;
+}

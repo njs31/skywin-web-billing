@@ -363,6 +363,8 @@ export const purchaseOrders = pgTable("purchase_orders", {
   customerId: integer("customer_id").references(() => customers.id),
   customerName: text("customer_name"),
   customerPhone: text("customer_phone"),
+  supplierId: integer("supplier_id").references(() => suppliers.id),
+  supplierName: text("supplier_name"),
   date: timestamp("date").defaultNow().notNull(),
   notes: text("notes"),
   subtotal: numeric("subtotal", { precision: 14, scale: 2 }).default("0").notNull(),

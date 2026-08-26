@@ -4,7 +4,10 @@ import {
   saleItems,
   products,
   customers,
+  partyPayments,
+  partyPaymentAllocations,
 } from "@/db/schema";
+import { buildAutoReceiptParts } from "@/lib/sale-settlement";
 import {
   calculateGstBreakdown,
   calculateLineAmount,
@@ -14,7 +17,7 @@ import {
 import { getSettings } from "@/lib/settings";
 import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR } from "@/lib/financial-year";
 import { format } from "date-fns";
-import { desc, eq, gte, lte, sql, and, inArray } from "drizzle-orm";
+import { desc, asc, eq, gte, lte, sql, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 const saleItemSchema = z.object({
@@ -630,6 +633,35 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
 
       const created = mapSaleRow(createdRows[0]);
 
+      // Cash / card / UPI (and cheque) sales credit the party ledger automatically
+      // so Tally receipts and customer outstanding stay in sync with the invoice.
+      if (finalCustomerId && paidAmount > 0) {
+        const receiptParts = buildAutoReceiptParts({
+          paymentMode: data.paymentMode,
+          paidAmount,
+          cashAmount,
+          upiAmount,
+        });
+        for (const part of receiptParts) {
+          const [payment] = await tx
+            .insert(partyPayments)
+            .values({
+              type: "receipt",
+              customerId: finalCustomerId,
+              amount: part.amount.toFixed(2),
+              paymentMode: part.paymentMode,
+              referenceNo: created.invoiceNo,
+              notes: `Auto receipt for ${created.invoiceNo} (${part.paymentMode.toUpperCase()})`,
+            })
+            .returning();
+          await tx.insert(partyPaymentAllocations).values({
+            paymentId: payment.id,
+            saleId: created.id,
+            amount: part.amount.toFixed(2),
+          });
+        }
+      }
+
       // Apply all batch deductions and product stock/expiry updates in one statement.
       const batchTakes = new Map<number, number>();
       for (const deductions of itemDeductions) {
@@ -700,6 +732,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   revalidatePath("/");
   revalidatePath("/reports");
   revalidatePath("/accounts/outstanding");
+  revalidatePath("/accounts/receipts");
 
   const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
   scheduleQwicksStockPush(productIds);
@@ -1130,7 +1163,7 @@ export async function getSalesReport(
     .from(sales)
     .leftJoin(customers, eq(sales.customerId, customers.id))
     .where(and(...conditions))
-    .orderBy(desc(sales.date));
+    .orderBy(asc(sales.date), asc(sales.invoiceNo), asc(sales.id));
 
   const invoices: SalesReportInvoice[] = invoiceRows.map((row) => ({
     id: row.id,
@@ -1179,7 +1212,7 @@ export async function getSalesReport(
       .leftJoin(products, eq(saleItems.productId, products.id))
       .leftJoin(customers, eq(sales.customerId, customers.id))
       .where(inArray(saleItems.saleId, saleIds))
-      .orderBy(desc(sales.date), saleItems.id);
+      .orderBy(asc(sales.date), asc(sales.invoiceNo), asc(saleItems.id));
 
     lineItems = itemRows.map((row) => ({
       invoiceNo: row.invoiceNo,

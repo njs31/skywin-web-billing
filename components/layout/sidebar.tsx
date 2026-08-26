@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import { useState, useEffect } from "react";
 
-const PURCHASE_ROUTES = ["/purchases", "/suppliers"];
+const PURCHASE_ROUTES = ["/purchases", "/suppliers", "/purchase-orders"];
 
 function isPurchaseNavItem(href: string) {
   return PURCHASE_ROUTES.some(
@@ -55,7 +55,6 @@ const navGroups: NavGroup[] = [
     label: "Sales",
     items: [
       { href: "/invoices", label: "Sale Book", icon: Receipt },
-      { href: "/purchase-orders", label: "Purchase Orders", icon: FileText },
       { href: "/quotations", label: "Quotations", icon: FileText },
       { href: "/returns", label: "Sales Return", icon: RotateCcw },
       { href: "/customers", label: "Customers", icon: Users },
@@ -66,6 +65,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/purchases", label: "Purchase Book", icon: FileText },
       { href: "/purchases/new", label: "Purchase Entry", icon: FileText },
+      { href: "/purchase-orders", label: "Purchase Orders", icon: FileText },
       { href: "/suppliers", label: "Suppliers", icon: Truck },
     ],
   },

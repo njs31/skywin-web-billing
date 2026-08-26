@@ -5,6 +5,7 @@ import {
   toNumber,
 } from "@/lib/utils";
 import { amountInIndianWords } from "@/lib/print-helpers";
+import { invoiceSettlement } from "@/lib/sale-settlement";
 
 type InvoiceSale = {
   invoiceNo: string;
@@ -213,6 +214,13 @@ export function InvoiceTemplate({
     toNumber(sale.cgst) + toNumber(sale.sgst) + toNumber(sale.igst);
   const roundOff = toNumber(sale.roundOff);
   const invoiceDate = formatDateIST(sale.date);
+  const settlement = invoiceSettlement({
+    paymentMode: sale.paymentMode,
+    grandTotal: toNumber(sale.grandTotal),
+    paidAmount: toNumber(sale.paidAmount),
+    cashAmount: toNumber(sale.cashAmount),
+    upiAmount: toNumber(sale.upiAmount),
+  });
 
   return (
     <div className="mx-auto max-w-[210mm] bg-white p-3 text-slate-900 print-sheet print:p-2">
@@ -409,6 +417,30 @@ export function InvoiceTemplate({
                 {formatCurrency(sale.grandTotal)}
               </td>
             </tr>
+            {settlement.received > 0 ? (
+              <tr className="border-b border-slate-300">
+                <td className="border-r border-slate-900 px-1 py-1" />
+                <td className="border-r border-slate-900 px-1 py-1 text-right font-semibold">
+                  Less : {settlement.label} RECEIVED
+                </td>
+                <td className="border-r border-slate-900" colSpan={5} />
+                <td className="px-1 py-1 text-right font-semibold">
+                  {formatNumber(settlement.received, 2)}
+                </td>
+              </tr>
+            ) : null}
+            {settlement.received > 0 ? (
+              <tr className="border-b border-slate-900 font-bold">
+                <td className="border-r border-slate-900 px-1 py-1" />
+                <td className="border-r border-slate-900 px-1 py-1 text-right">
+                  Balance Due
+                </td>
+                <td className="border-r border-slate-900" colSpan={5} />
+                <td className="px-1 py-1 text-right">
+                  {formatCurrency(settlement.balance)}
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
 
@@ -567,6 +599,14 @@ export function InvoiceTemplate({
               <p className="mt-1">
                 Cash: {formatCurrency(sale.cashAmount!)} · UPI:{" "}
                 {formatCurrency(sale.upiAmount!)}
+              </p>
+            )}
+            {settlement.received > 0 && (
+              <p className="mt-1">
+                Auto credit: {settlement.label} {formatCurrency(settlement.received)}
+                {settlement.balance > 0.009
+                  ? ` · Balance ${formatCurrency(settlement.balance)}`
+                  : " · Balance NIL"}
               </p>
             )}
           </div>

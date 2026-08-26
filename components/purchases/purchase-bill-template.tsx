@@ -137,7 +137,8 @@ export function PurchaseBillTemplate({
   const sgst = interstate ? 0 : Math.round((gstTotal - halfGst) * 100) / 100;
   const igst = interstate ? gstTotal : 0;
   const hsnRows = buildHsnSummary(items, interstate);
-  const showGst = gstTotal > 0;
+  const showGst =
+    gstTotal > 0 || hsnRows.some((row) => row.rate > 0 || row.totalTax > 0);
 
   return (
     <div className="mx-auto max-w-[210mm] bg-white p-3 text-slate-900 print-sheet print:p-2">

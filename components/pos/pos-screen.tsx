@@ -26,6 +26,7 @@ import {
   applyRupeeRounding,
   calculateLineAmount,
   getProductRate,
+  getBatchBillingRate,
   isInterstateGst,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
@@ -254,8 +255,8 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
         barcode: row.barcode,
         hsnCode: row.hsnCode,
         gstRate: row.gstRate,
-        // Prefer batch sale rate when set (purchase entry can price batches differently).
-        saleRate: row.batchSaleRate ?? row.saleRate,
+        // Bill at this batch's sale rate (fall back to product rate).
+        saleRate: String(getBatchBillingRate(row, "sale")),
         wholesaleRate: row.wholesaleRate,
         purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
         stockQty: row.batchQty || row.productStockQty,

@@ -8,10 +8,9 @@ import {
   applyRupeeRounding,
   calculateGstBreakdown,
   calculateLineAmount,
-  getProductRate,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
-import type { Customer, Product } from "@/db/schema";
+import type { Product, Supplier } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,9 +36,9 @@ type LineItem = {
   hsnCode?: string;
 };
 
-export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
+export function PurchaseOrderForm({ suppliers }: { suppliers: Supplier[] }) {
   const router = useRouter();
-  const [customerId, setCustomerId] = useState("");
+  const [supplierId, setSupplierId] = useState("");
   const [notes, setNotes] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
@@ -73,7 +72,7 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
         product: p,
         name: p.name,
         qty: 1,
-        rate: getProductRate(p, "wholesale"),
+        rate: toNumber(p.purchaseRate),
         gstRate: toNumber(p.gstRate),
         hsnCode: p.hsnCode ?? undefined,
       },
@@ -142,18 +141,17 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
   );
 
   const submit = () => {
-    if (!customerId || items.length === 0) {
-      setError("Select a customer and add at least one item.");
+    if (!supplierId || items.length === 0) {
+      setError("Select a supplier and add at least one item.");
       return;
     }
-    const customer = customers.find((c) => c.id === parseInt(customerId, 10));
+    const supplier = suppliers.find((s) => s.id === parseInt(supplierId, 10));
     setError("");
     startTransition(async () => {
       try {
         const po = await createPurchaseOrder({
-          customerId: parseInt(customerId, 10),
-          customerName: customer?.name,
-          customerPhone: customer?.phone ?? undefined,
+          supplierId: parseInt(supplierId, 10),
+          supplierName: supplier?.name,
           notes: notes || undefined,
           items: items.map((i) => ({
             productId: i.product ? i.product.id : undefined,
@@ -175,16 +173,16 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label>Customer</Label>
-          <Select value={customerId} onValueChange={setCustomerId}>
+          <Label>Supplier</Label>
+          <Select value={supplierId} onValueChange={setSupplierId}>
             <SelectTrigger>
-              <SelectValue placeholder="Select Customer" />
+              <SelectValue placeholder="Select Supplier" />
             </SelectTrigger>
             <SelectContent>
-              {customers.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                  {c.phone ? ` (${c.phone})` : ""}
+              {suppliers.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>
+                  {s.name}
+                  {s.phone ? ` (${s.phone})` : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -210,7 +208,7 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
           <div className="absolute z-10 mt-1 w-full">
             <ProductBatchSearchResults
               results={results}
-              rateMode="wholesale"
+              rateMode="purchase"
               onSelect={addBatchRow}
             />
           </div>
@@ -402,7 +400,7 @@ export function PurchaseOrderForm({ customers }: { customers: Customer[] }) {
           </div>
           <div className="flex justify-end">
             <Button
-              disabled={isPending || !customerId}
+              disabled={isPending || !supplierId}
               onClick={submit}
               className="bg-emerald-600 hover:bg-emerald-700"
             >

@@ -190,3 +190,28 @@ export function getProductRate(
   }
   return toNumber(product.saleRate);
 }
+
+/**
+ * POS / sale-entry rate for a specific batch. Prefers the batch sale rate so
+ * different lots can bill at their own price; wholesale still uses the
+ * product wholesale rate when set.
+ */
+export function getBatchBillingRate(
+  row: {
+    saleRate: string | number | null;
+    wholesaleRate?: string | number | null;
+    batchSaleRate?: string | number | null;
+  },
+  billType: "retail" | "wholesale" | "sale" | "purchase"
+) {
+  const productSale = toNumber(row.saleRate);
+  const batchSale = toNumber(row.batchSaleRate);
+  const wholesale = toNumber(row.wholesaleRate);
+  if (billType === "wholesale") {
+    if (wholesale > 0) return wholesale;
+    if (batchSale > 0) return batchSale;
+    return productSale;
+  }
+  if (batchSale > 0) return batchSale;
+  return productSale;
+}

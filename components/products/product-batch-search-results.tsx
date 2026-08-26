@@ -1,6 +1,7 @@
 "use client";
 
 import { formatCurrency, toNumber } from "@/lib/utils";
+import { getBatchBillingRate } from "@/lib/gst";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 
 type Props = {
@@ -40,9 +41,10 @@ export function ProductBatchSearchResults({
           const rate =
             rateMode === "purchase"
               ? toNumber(row.batchPurchaseRate ?? row.purchaseRate)
-              : rateMode === "wholesale"
-                ? toNumber(row.wholesaleRate ?? row.batchSaleRate ?? row.saleRate)
-                : toNumber(row.batchSaleRate ?? row.saleRate);
+              : getBatchBillingRate(
+                  row,
+                  rateMode === "wholesale" ? "wholesale" : "sale"
+                );
 
           return (
             <button

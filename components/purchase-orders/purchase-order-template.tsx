@@ -15,18 +15,14 @@ type PurchaseOrder = {
   poNumber: string;
   date: Date | string;
   notes?: string | null;
-  customerName?: string | null;
-  customerRecordName?: string | null;
-  customerPhone?: string | null;
-  customerRecordPhone?: string | null;
-  customerGstin?: string | null;
-  customerAddress?: string | null;
-  customerAcre?: string | null;
-  customerCrop?: string | null;
-  customerPinCode?: string | null;
-  customerVillage?: string | null;
-  customerTaluk?: string | null;
-  customerDistrict?: string | null;
+  supplierName?: string | null;
+  supplierRecordName?: string | null;
+  supplierPhone?: string | null;
+  supplierGstin?: string | null;
+  supplierAddress?: string | null;
+  supplierCity?: string | null;
+  supplierState?: string | null;
+  supplierPinCode?: string | null;
   subtotal: string;
   grandTotal: string;
 };
@@ -115,27 +111,20 @@ function buildHsnSummary(
 
 function PartyBlock({
   label,
-  purchaseOrder,
-  customer,
-  agriBits,
+  name,
+  lines,
 }: {
   label: string;
-  purchaseOrder: PurchaseOrder;
-  customer: string;
-  agriBits: string[];
+  name: string;
+  lines: string[];
 }) {
-  const phone =
-    purchaseOrder.customerRecordPhone ?? purchaseOrder.customerPhone ?? null;
   return (
     <div className="border-b border-slate-900 p-2 text-[11px] leading-snug">
       <p className="mb-1 font-semibold">{label}</p>
-      <p className="font-bold uppercase">{customer}</p>
-      {purchaseOrder.customerAddress && <p>{purchaseOrder.customerAddress}</p>}
-      {agriBits.length > 0 && <p>{agriBits.join(", ")}</p>}
-      {phone && <p>Cell.No: {phone}</p>}
-      {purchaseOrder.customerGstin && (
-        <p>GSTIN/UIN : {purchaseOrder.customerGstin}</p>
-      )}
+      <p className="font-bold uppercase">{name}</p>
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
     </div>
   );
 }
@@ -162,22 +151,23 @@ export function PurchaseOrderTemplate({
   purchaseOrder,
   items,
 }: PurchaseOrderTemplateProps) {
-  const customer =
-    purchaseOrder.customerRecordName ??
-    purchaseOrder.customerName ??
-    "Customer";
-  const agriBits = [
-    purchaseOrder.customerAcre && `Acre: ${purchaseOrder.customerAcre}`,
-    purchaseOrder.customerCrop && `Crop: ${purchaseOrder.customerCrop}`,
-    purchaseOrder.customerVillage && `Village: ${purchaseOrder.customerVillage}`,
-    purchaseOrder.customerTaluk && `Taluk: ${purchaseOrder.customerTaluk}`,
-    purchaseOrder.customerDistrict &&
-      `District: ${purchaseOrder.customerDistrict}`,
-    purchaseOrder.customerPinCode && `PIN: ${purchaseOrder.customerPinCode}`,
+  const supplier =
+    purchaseOrder.supplierRecordName ??
+    purchaseOrder.supplierName ??
+    "Supplier";
+  const supplierLines = [
+    purchaseOrder.supplierAddress,
+    [purchaseOrder.supplierCity, purchaseOrder.supplierState, purchaseOrder.supplierPinCode]
+      .filter(Boolean)
+      .join(", ") || null,
+    purchaseOrder.supplierPhone ? `Phone: ${purchaseOrder.supplierPhone}` : null,
+    purchaseOrder.supplierGstin
+      ? `GSTIN/UIN : ${purchaseOrder.supplierGstin}`
+      : null,
   ].filter(Boolean) as string[];
 
   const interstate = isInterstateGst(
-    purchaseOrder.customerGstin,
+    purchaseOrder.supplierGstin,
     business.stateCode
   );
   const gst = applyRupeeRounding(
@@ -220,16 +210,19 @@ export function PurchaseOrderTemplate({
               <p>Phone: {business.phone}</p>
             </div>
             <PartyBlock
-              label="Consignee (Ship to)"
-              purchaseOrder={purchaseOrder}
-              customer={customer}
-              agriBits={agriBits}
+              label="Supplier (Order to)"
+              name={supplier}
+              lines={supplierLines}
             />
             <PartyBlock
-              label="Buyer (Bill to)"
-              purchaseOrder={purchaseOrder}
-              customer={customer}
-              agriBits={agriBits}
+              label="Consignee (Ship to)"
+              name={business.name}
+              lines={[
+                business.address,
+                `GSTIN/UIN: ${business.gstin}`,
+                `State Name : ${business.state}, Code : ${business.stateCode}`,
+                `Phone: ${business.phone}`,
+              ]}
             />
           </div>
 
