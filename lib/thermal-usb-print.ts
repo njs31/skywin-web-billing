@@ -1,80 +1,54 @@
 /**
- * Send labels to TagPro over USB as ESC/POS commands (text + QR).
+ * Send labels to TagPro over USB as ESC/POS raster graphics.
  * Does NOT use browser Print — that sends PostScript the printer prints as garbage.
  */
-import { BUSINESS } from "@/lib/business";
-import { getLabelFields, type LabelProduct } from "@/lib/label-render";
+import { renderLabelRaster, type LabelProduct } from "@/lib/label-render";
 
-function asciiLine(text: string): number[] {
-  const safe = text.replace(/[^\x20-\x7E]/g, " ").trim();
-  return [...new TextEncoder().encode(safe), 0x0a];
-}
+export type EscPosRaster = {
+  bytesPerRow: number;
+  height: number;
+  bytes: Uint8Array;
+};
 
-/** ESC/POS QR code (model 2) for the product code. */
-function escPosQr(data: string): number[] {
-  const store = new TextEncoder().encode(data.slice(0, 200));
-  const len = store.length + 3;
-  return [
-    // Model 2
-    0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00,
-    // Module size 4
-    0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x04,
-    // Error correction M
-    0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31,
-    // Store data
+/** Encode a monochrome image with the ESC/POS GS v 0 raster-image command. */
+export function buildEscPosRasterCommand({
+  bytesPerRow,
+  height,
+  bytes: raster,
+}: EscPosRaster): Uint8Array {
+  if (bytesPerRow < 1 || bytesPerRow > 0xffff || height < 1 || height > 0xffff) {
+    throw new Error("Label image dimensions are outside the printer's supported range.");
+  }
+  if (raster.length !== bytesPerRow * height) {
+    throw new Error("Label image data does not match its declared dimensions.");
+  }
+
+  return new Uint8Array([
+    0x1b,
+    0x40, // initialize
+    0x1b,
+    0x33,
+    0x18, // compact line spacing after the image
+    // GS v 0: print a monochrome raster image, native 203 DPI label pixels.
     0x1d,
-    0x28,
-    0x6b,
-    len & 0xff,
-    (len >> 8) & 0xff,
-    0x31,
-    0x50,
+    0x76,
     0x30,
-    ...store,
-    // Print QR
-    0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30,
-  ];
-}
-
-/** Build one label as native ESC/POS bytes (not PostScript, not PDF). */
-export function buildEscPosLabel(product: LabelProduct): Uint8Array {
-  const { code, rate, exp, name } = getLabelFields(product);
-  const bytes: number[] = [
-    0x1b,
-    0x40, // init
-    0x1b,
-    0x61,
-    0x01, // center
-    0x1b,
-    0x45,
-    0x01, // bold on
-    ...asciiLine(BUSINESS.name),
-    0x1b,
-    0x45,
     0x00,
-    ...asciiLine(`(${BUSINESS.tagline})`),
-    0x1b,
-    0x45,
-    0x01,
-    ...asciiLine(name.slice(0, 36)),
-    0x1b,
-    0x45,
-    0x00,
-    0x1b,
-    0x61,
-    0x00, // left
-    ...asciiLine(code),
-    ...asciiLine(`EXP: ${exp}`),
-    ...asciiLine(`RATE: ${rate.toFixed(2)}`),
-    0x1b,
-    0x61,
-    0x01, // center QR
-    ...escPosQr(code),
+    bytesPerRow & 0xff,
+    (bytesPerRow >> 8) & 0xff,
+    height & 0xff,
+    (height >> 8) & 0xff,
+    ...raster,
+    0x0a,
     0x1b,
     0x64,
-    0x04, // feed
-  ];
-  return new Uint8Array(bytes);
+    0x02, // feed just enough to clear the tear edge
+  ]);
+}
+
+/** Build one label as native ESC/POS raster bytes (not PostScript or HTML). */
+export async function buildEscPosLabel(product: LabelProduct): Promise<Uint8Array> {
+  return buildEscPosRasterCommand(await renderLabelRaster(product));
 }
 
 async function findBulkOutEndpoint(device: USBDevice) {
@@ -130,7 +104,7 @@ export async function printLabelsViaUsb(products: LabelProduct[]) {
       const chunk = Math.max(ep.packetSize, 64);
 
       for (const product of products) {
-        const payload = buildEscPosLabel(product);
+        const payload = await buildEscPosLabel(product);
         for (let i = 0; i < payload.length; i += chunk) {
           const slice = payload.subarray(i, i + chunk);
           await device.transferOut(ep.endpointNumber, new Uint8Array(slice));

@@ -76,7 +76,6 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
   useEffect(() => {
     let cancelled = false;
-    setReady(false);
     (async () => {
       try {
         const map = await renderLabelPngMap(products);
@@ -86,7 +85,10 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         }
       } catch (error) {
         console.error(error);
-        if (!cancelled) setReady(false);
+        if (!cancelled) {
+          setLabelPngMap({});
+          setReady(false);
+        }
       }
     })();
     return () => {
@@ -158,7 +160,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           disabled={!ready}
           onClick={handleDownloadAll}
         >
-          {ready ? "Download label PNG" : "Preparing label…"}
+          {ready ? "Download label image (PNG)" : "Preparing label…"}
         </button>
         {usbSupported ? (
           <button
@@ -167,7 +169,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
             disabled={!ready || usbPrinting}
             onClick={handleUsbPrint}
           >
-            {usbPrinting ? "Sending to printer…" : "Print to TagPro (USB)"}
+            {usbPrinting ? "Sending label image…" : "Print to POSiFLOW (USB)"}
           </button>
         ) : null}
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
@@ -182,24 +184,23 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           />
         </label>
         <p className="w-full text-xs text-slate-600">
-          <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 50
-          × 25 mm. The preview below is what the PNG will look like.
+          <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 35
+          × 22 mm at 203 DPI. The preview below is exactly what will print.
         </p>
         <p className="w-full rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900">
-          <strong>Why you see garbage text:</strong> Mac/Chrome{" "}
-          <strong>Print (⌘P)</strong> sends PostScript code to the TagPro. The
-          printer prints that code as text — not your label.{" "}
-          <strong>Never use ⌘P or File → Print on this page.</strong>
+          <strong>Do not use browser Print (⌘P / File → Print):</strong> it can
+          send PostScript source code to this POSiFLOW printer. Use the USB button
+          above, or download the PNG and print it through the POSiFLOW app/driver.
         </p>
         <p className="w-full rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-          <strong>From computer (USB):</strong> Google Chrome → TagPro on USB →
-          click <strong>Print to TagPro (USB)</strong> → pick the printer. This
-          sends native printer commands, not browser Print.
+          <strong>From computer (USB):</strong> Google Chrome or Edge → connect
+          POSiFLOW by USB → click <strong>Print to POSiFLOW (USB)</strong> → pick
+          the printer. This sends a 35 × 22 mm raster label, not text commands.
         </p>
         <p className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           <strong>From phone:</strong> Download PNG → open{" "}
-          <strong>Shreyans / POSiFLOW Easy Label</strong> app → import image →
-          print on Bluetooth.
+          <strong>Shreyans / POSiFLOW Easy Label</strong> → import image → set
+          label size to <strong>35 × 22 mm</strong> → print on Bluetooth.
         </p>
       </div>
       <div className="thermal-label-preview-grid">

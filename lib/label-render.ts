@@ -90,11 +90,7 @@ function drawCentered(
   ctx.fillText(line, x, y);
 }
 
-/**
- * 50×25 mm label — matches Skywin reference layout:
- * centered header, product name, code/EXP/RATE on left, QR on right.
- */
-export async function renderLabelPng(product: LabelProduct): Promise<string> {
+async function renderLabelCanvas(product: LabelProduct) {
   const canvas = document.createElement("canvas");
   canvas.width = THERMAL_LABEL_W_PX;
   canvas.height = THERMAL_LABEL_H_PX;
@@ -104,7 +100,7 @@ export async function renderLabelPng(product: LabelProduct): Promise<string> {
   const code = productCode(product);
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   const exp = formatExp(product.expiryDate);
-  const pad = 8;
+  const pad = 6;
   const innerW = canvas.width - pad * 2;
 
   ctx.fillStyle = "#ffffff";
@@ -112,23 +108,23 @@ export async function renderLabelPng(product: LabelProduct): Promise<string> {
   ctx.fillStyle = "#000000";
   ctx.textBaseline = "top";
 
-  drawCentered(ctx, BUSINESS.name, 6, "bold 13px Arial, Helvetica, sans-serif", innerW);
+  drawCentered(ctx, BUSINESS.name, 5, "bold 10px Arial, Helvetica, sans-serif", innerW);
   drawCentered(
     ctx,
     `(${BUSINESS.tagline})`,
-    20,
-    "9px Arial, Helvetica, sans-serif",
+    17,
+    "7px Arial, Helvetica, sans-serif",
     innerW
   );
   drawCentered(
     ctx,
     product.name.toUpperCase(),
-    32,
-    "bold 10px Arial, Helvetica, sans-serif",
+    29,
+    "bold 9px Arial, Helvetica, sans-serif",
     innerW
   );
 
-  const qrSize = 82;
+  const qrSize = 70;
   const qrX = canvas.width - pad - qrSize;
   const qrY = canvas.height - pad - qrSize;
   const qrSrc = await qrDataUrl(code);
@@ -136,24 +132,62 @@ export async function renderLabelPng(product: LabelProduct): Promise<string> {
   ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
   const textRight = qrX - 6;
-  let y = qrY + 2;
+  let y = qrY + 1;
 
   ctx.textAlign = "left";
-  ctx.font = "bold 15px Arial, Helvetica, sans-serif";
-  ctx.fillText(code, pad, y);
-  y += 20;
-
-  ctx.font = "10px Arial, Helvetica, sans-serif";
-  ctx.fillText(`EXP: ${exp}`, pad, y);
+  ctx.font = "bold 11px Arial, Helvetica, sans-serif";
+  let codeLine = code;
+  while (codeLine.length > 1 && ctx.measureText(codeLine).width > textRight - pad) {
+    codeLine = codeLine.slice(0, -1);
+  }
+  ctx.fillText(codeLine === code ? codeLine : `${codeLine}…`, pad, y);
   y += 16;
 
+  ctx.font = "8px Arial, Helvetica, sans-serif";
+  ctx.fillText(exp ? `EXP: ${exp}` : "EXP: —", pad, y);
+  y += 14;
+
   ctx.fillText("RATE:", pad, y);
-  ctx.font = "bold 11px Arial, Helvetica, sans-serif";
+  ctx.font = "bold 10px Arial, Helvetica, sans-serif";
   const rateText = rate.toFixed(2);
   const rateW = ctx.measureText(rateText).width;
   ctx.fillText(rateText, textRight - rateW, y);
 
+  return canvas;
+}
+
+/** Render one 35×22 mm label at the printer's native 203 DPI. */
+export async function renderLabelPng(product: LabelProduct): Promise<string> {
+  const canvas = await renderLabelCanvas(product);
   return canvas.toDataURL("image/png");
+}
+
+/** Convert a rendered label into the monochrome bytes required by ESC/POS raster mode. */
+export async function renderLabelRaster(product: LabelProduct) {
+  const canvas = await renderLabelCanvas(product);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not available");
+
+  const { width, height } = canvas;
+  const pixels = ctx.getImageData(0, 0, width, height).data;
+  const bytesPerRow = Math.ceil(width / 8);
+  const bytes = new Uint8Array(bytesPerRow * height);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const pixel = (y * width + x) * 4;
+      const luminance =
+        pixels[pixel]! * 0.2126 +
+        pixels[pixel + 1]! * 0.7152 +
+        pixels[pixel + 2]! * 0.0722;
+      if (luminance < 160) {
+        const byteIndex = y * bytesPerRow + Math.floor(x / 8);
+        bytes[byteIndex]! |= 0x80 >> (x % 8);
+      }
+    }
+  }
+
+  return { width, height, bytesPerRow, bytes };
 }
 
 export async function renderLabelPngMap(products: LabelProduct[]) {

@@ -172,7 +172,7 @@ body {
   }
 }
 
-/* Product barcode labels — POSiFLOW TagPro, 50×25 mm thermal stickers */
+/* Product barcode labels — POSiFLOW TagPro, 35×22 mm thermal stickers */
 .label-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -192,8 +192,8 @@ body {
 
 .thermal-label-preview-img {
   display: block;
-  width: 50mm;
-  height: 25mm;
+  width: 35mm;
+  height: 22mm;
   border: 1px dashed #cbd5e1;
   border-radius: 1mm;
   object-fit: fill;
@@ -202,8 +202,8 @@ body {
 
 .thermal-label {
   box-sizing: border-box;
-  width: 50mm;
-  height: 25mm;
+  width: 35mm;
+  height: 22mm;
   overflow: hidden;
   border: 1px dashed #cbd5e1;
   border-radius: 1mm;
@@ -281,5 +281,4 @@ body {
 .thermal-label-rate {
   font-weight: 700;
 }
-
 
