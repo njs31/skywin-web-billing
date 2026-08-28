@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test lib/session.test.ts lib/api-auth.test.ts lib/skywin-client-fixes.test.ts",
+    "test": "tsx --test lib/session.test.ts lib/api-auth.test.ts lib/skywin-client-fixes.test.ts lib/code128.test.ts lib/thermal-usb-print.test.ts",
     "test:skywin": "tsx --env-file=.env.local scripts/test-skywin-client-fixes.ts",
     "test:skywin:latest": "tsx --env-file=.env.local scripts/test-latest-skywin-changes.ts",
     "test:security": "tsx --test lib/session.test.ts lib/api-auth.test.ts",

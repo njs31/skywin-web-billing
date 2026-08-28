@@ -1,5 +1,5 @@
 /**
- * Smoke test: thermal label bitmap is 35×22 mm at 203 DPI.
+ * Smoke test: thermal label bitmap is 50×25 mm at 203 DPI.
  * Run: npx tsx scripts/test-label-pdf.ts
  */
 import {

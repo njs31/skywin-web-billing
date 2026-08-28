@@ -1,5 +1,5 @@
 /**
- * Send labels to TagPro over USB as ESC/POS raster graphics.
+ * Send labels to POSiFLOW PSF20 over USB as ESC/POS raster graphics.
  * Does NOT use browser Print — that sends PostScript the printer prints as garbage.
  */
 import { renderLabelRaster, type LabelProduct } from "@/lib/label-render";
@@ -86,7 +86,7 @@ export function isUsbPrintSupported() {
 export async function printLabelsViaUsb(products: LabelProduct[]) {
   if (!isUsbPrintSupported()) {
     throw new Error(
-      "USB print needs Google Chrome on a computer with the TagPro plugged in by USB."
+      "USB print needs Google Chrome on a computer with the POSiFLOW plugged in by USB."
     );
   }
   if (products.length === 0) return;

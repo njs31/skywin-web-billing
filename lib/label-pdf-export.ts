@@ -1,21 +1,13 @@
 import { jsPDF } from "jspdf";
-import QRCode from "qrcode";
 import { BUSINESS } from "@/lib/business";
+import { layoutCode128Bars } from "@/lib/code128";
+import {
+  LABEL_LAYOUT,
+  THERMAL_LABEL_H_MM,
+  THERMAL_LABEL_W_MM,
+  THERMAL_LABEL_W_PX,
+} from "@/lib/label-print-config";
 import { toNumber } from "@/lib/utils";
-
-/** Sticker sheet: 105 × 297 mm with 2 × 10 labels of 38 × 25 mm. */
-export const LABEL_COLS = 2;
-export const LABEL_ROWS = 10;
-export const LABELS_PER_SHEET = LABEL_COLS * LABEL_ROWS;
-export const SHEET_W_MM = 105;
-export const SHEET_H_MM = 297;
-export const LABEL_W_MM = 38;
-export const LABEL_H_MM = 25;
-const PAD_TOP = 5.5;
-const COL_OFFSET = (SHEET_W_MM - LABEL_COLS * LABEL_W_MM) / (LABEL_COLS + 1);
-const ROW_GAP = (SHEET_H_MM - PAD_TOP - LABEL_ROWS * LABEL_H_MM) / LABEL_ROWS;
-const QR_MM = 8;
-const CONTENT_H = 17;
 
 export type LabelPdfProduct = {
   id: number;
@@ -42,126 +34,105 @@ function formatExp(value: string | null) {
 
 export function labelSku(product: LabelPdfProduct) {
   return (
-    product.sku?.trim() ||
     product.barcode?.trim() ||
+    product.sku?.trim() ||
     `SW${String(product.id).padStart(6, "0")}`
   );
 }
 
 export function labelScanCode(product: LabelPdfProduct) {
-  return product.barcode?.trim() || product.sku?.trim() || labelSku(product);
+  return labelSku(product);
 }
 
-async function qrDataUrl(code: string) {
-  return QRCode.toDataURL(code, {
-    margin: 0,
-    width: 256,
-    errorCorrectionLevel: "M",
-    color: { dark: "#000000", light: "#ffffff" },
+function drawLabel(doc: jsPDF, product: LabelPdfProduct) {
+  const padX = 1.5;
+  const innerW = THERMAL_LABEL_W_MM - padX * 2;
+  const code = labelScanCode(product);
+  const rate = inclusiveRate(product.saleRate, product.gstRate);
+  const exp = formatExp(product.expiryDate);
+
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, THERMAL_LABEL_W_MM, THERMAL_LABEL_H_MM, "F");
+  doc.setTextColor(0, 0, 0);
+  doc.setDrawColor(0, 0, 0);
+  doc.setFillColor(0, 0, 0);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text(BUSINESS.name, THERMAL_LABEL_W_MM / 2, 2.8, {
+    align: "center",
+    maxWidth: innerW,
+  });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5.5);
+  doc.text(BUSINESS.tagline, THERMAL_LABEL_W_MM / 2, 5.0, {
+    align: "center",
+    maxWidth: innerW,
+  });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  const nameLines = doc
+    .splitTextToSize(product.name.toUpperCase(), innerW)
+    .slice(0, 2) as string[];
+  nameLines.forEach((line, index) => {
+    doc.text(line, THERMAL_LABEL_W_MM / 2, 7.2 + index * 2.3, {
+      align: "center",
+    });
+  });
+
+  const barcodeY = 10.4;
+  const barcodeH = 9.4;
+  const pxToMm = THERMAL_LABEL_W_MM / THERMAL_LABEL_W_PX;
+  const { bars } = layoutCode128Bars(
+    code,
+    LABEL_LAYOUT.padX,
+    THERMAL_LABEL_W_PX - LABEL_LAYOUT.padX * 2
+  );
+  for (const bar of bars) {
+    doc.rect(bar.x * pxToMm, barcodeY, bar.width * pxToMm, barcodeH, "F");
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.text(code, THERMAL_LABEL_W_MM / 2, 20.6, { align: "center" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.text(exp ? `EXP ${exp}` : "EXP —", padX, 23.4);
+  doc.setFont("helvetica", "bold");
+  doc.text(`MRP ${rate.toFixed(2)}`, THERMAL_LABEL_W_MM - padX, 23.4, {
+    align: "right",
   });
 }
 
-function drawLabel(
-  doc: jsPDF,
-  product: LabelPdfProduct,
-  qrImg: string,
-  x: number,
-  y: number
-) {
-  const padX = 1.0;
-  const padY = 1.0;
-  const textW = LABEL_W_MM - padX * 2 - QR_MM - 1.0;
-  const topPad = padY;
-  const sku = labelSku(product);
-  const rate = inclusiveRate(product.saleRate, product.gstRate);
-
-  const nameLine =
-    (doc
-      .setFont("helvetica", "bold")
-      .setFontSize(5.2)
-      .splitTextToSize(product.name.toUpperCase(), textW)
-      .slice(0, 1)[0] as string) || "";
-
-  type Line = {
-    text: string;
-    dy: number;
-    size: number;
-    bold?: boolean;
-    full?: boolean;
-  };
-
-  const lines: Line[] = [
-    { text: BUSINESS.name, dy: 2.0, size: 6.0, bold: true, full: true },
-    { text: `(${BUSINESS.tagline})`, dy: 4.4, size: 4.4, full: true },
-    { text: nameLine, dy: 7.6, size: 5.2, bold: true },
-    { text: `SKU: ${sku}`, dy: 10.6, size: 6.2, bold: true },
-    { text: `EXP: ${formatExp(product.expiryDate)}`, dy: 13.2, size: 5.2 },
-    { text: `MRP: ${rate.toFixed(2)}`, dy: 16.0, size: 6.4, bold: true },
-  ];
-
-  doc.setTextColor(0, 0, 0);
-
-  for (const line of lines) {
-    doc.setFont("helvetica", line.bold ? "bold" : "normal");
-    doc.setFontSize(line.size);
-    const maxW = line.full ? LABEL_W_MM - padX * 2 : textW;
-    if (line.full) {
-      /* Center full-width lines */
-      const textWidth = doc.getTextWidth(line.text);
-      const centerX = x + (LABEL_W_MM - textWidth) / 2;
-      doc.text(line.text, centerX, y + topPad + line.dy, { maxWidth: maxW });
-    } else {
-      doc.text(line.text, x + padX, y + topPad + line.dy, { maxWidth: maxW });
-    }
-  }
-
-  /* Separator line below tagline */
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.15);
-  doc.line(x + padX, y + topPad + 5.6, x + LABEL_W_MM - padX, y + topPad + 5.6);
-
-  if (qrImg) {
-    doc.addImage(
-      qrImg,
-      "PNG",
-      x + LABEL_W_MM - padX - QR_MM,
-      y + topPad + 7.0,
-      QR_MM,
-      QR_MM
-    );
-  }
-}
-
-/** Build a multi-page PDF — one 105×297 mm sheet per 30 labels (35×22 mm each). */
+/** One 50×25 mm page per product — matches the thermal sticker. */
 export async function buildAllLabelsPdf(products: LabelPdfProduct[]) {
-  const qrMap = new Map<number, string>();
-  for (const product of products) {
-    qrMap.set(product.id, await qrDataUrl(labelScanCode(product)));
-  }
-
   const doc = new jsPDF({
-    orientation: "portrait",
+    orientation: "landscape",
     unit: "mm",
-    format: [SHEET_W_MM, SHEET_H_MM],
+    format: [THERMAL_LABEL_W_MM, THERMAL_LABEL_H_MM],
     compress: true,
   });
 
-  const totalSlots = Math.max(products.length, 1);
-  let slot = 0;
-
-  while (slot < totalSlots) {
-    if (slot > 0) {
-      doc.addPage([SHEET_W_MM, SHEET_H_MM], "portrait");
+  products.forEach((product, index) => {
+    if (index > 0) {
+      doc.addPage([THERMAL_LABEL_W_MM, THERMAL_LABEL_H_MM], "landscape");
     }
+    drawLabel(doc, product);
+  });
 
-    for (let i = 0; i < LABELS_PER_SHEET && slot < products.length; i++, slot++) {
-      const product = products[slot]!;
-      const col = i % LABEL_COLS;
-      const row = Math.floor(i / LABEL_COLS);
-      const x = col * LABEL_W_MM;
-      const y = PAD_TOP + row * (LABEL_H_MM + ROW_GAP);
-      drawLabel(doc, product, qrMap.get(product.id) || "", x, y);
-    }
+  if (products.length === 0) {
+    drawLabel(doc, {
+      id: 0,
+      name: "SAMPLE",
+      sku: "SW000000",
+      barcode: "SW000000",
+      saleRate: "0",
+      gstRate: "0",
+      expiryDate: null,
+    });
   }
 
   return Buffer.from(doc.output("arraybuffer"));

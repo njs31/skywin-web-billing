@@ -16,7 +16,7 @@ export async function GET() {
   return new Response(pdf, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="skywin-all-labels-35x22-${date}.pdf"`,
+      "Content-Disposition": `attachment; filename="skywin-all-labels-50x25-${date}.pdf"`,
       "Cache-Control": "no-store",
     },
   });

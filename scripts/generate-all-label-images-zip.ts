@@ -13,7 +13,7 @@ async function main() {
   const zip = await buildAllLabelPngZip(products);
   const outputDir = join(process.cwd(), "tmp");
   mkdirSync(outputDir, { recursive: true });
-  const outputPath = join(outputDir, "skywin-all-label-images-35x22.zip");
+  const outputPath = join(outputDir, "skywin-all-label-images-50x25.zip");
   writeFileSync(outputPath, zip);
   console.log(`Wrote ${outputPath} (${zip.length} bytes).`);
 }

@@ -36,7 +36,7 @@ export default async function ProductsPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="outline">
-            <a href="/products/labels/all">All labels PDF (35×22 mm)</a>
+            <a href="/products/labels/all">All labels PDF (50×25 mm)</a>
           </Button>
           <Button asChild variant="outline">
             <a href="/products/labels/images">

@@ -1,6 +1,7 @@
-import QRCode from "qrcode";
 import { BUSINESS } from "@/lib/business";
+import { layoutCode128Bars } from "@/lib/code128";
 import {
+  LABEL_LAYOUT,
   THERMAL_LABEL_H_PX,
   THERMAL_LABEL_W_PX,
 } from "@/lib/label-print-config";
@@ -55,22 +56,16 @@ export function expandProducts(products: LabelProduct[], copies = 1) {
   return out;
 }
 
-async function qrDataUrl(code: string): Promise<string> {
-  return QRCode.toDataURL(code, {
-    margin: 0,
-    width: 256,
-    errorCorrectionLevel: "M",
-    color: { dark: "#000000", light: "#ffffff" },
-  });
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
+function fitLine(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+) {
+  let line = text;
+  while (line.length > 1 && ctx.measureText(line).width > maxWidth) {
+    line = line.slice(0, -1);
+  }
+  return line === text ? line : `${line}…`;
 }
 
 function drawCentered(
@@ -81,103 +76,119 @@ function drawCentered(
   maxWidth: number
 ) {
   ctx.font = font;
-  let line = text;
-  while (line.length > 1 && ctx.measureText(line).width > maxWidth) {
-    line = line.slice(0, -1);
-  }
-  if (line !== text) line = `${line}…`;
+  const line = fitLine(ctx, text, maxWidth);
   const x = (ctx.canvas.width - ctx.measureText(line).width) / 2;
   ctx.fillText(line, x, y);
 }
 
-async function renderLabelCanvas(product: LabelProduct) {
+function wrapName(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number
+) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const trial = current ? `${current} ${word}` : word;
+    if (ctx.measureText(trial).width <= maxWidth) {
+      current = trial;
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  if (lines.length <= maxLines) return lines;
+  const kept = lines.slice(0, maxLines);
+  kept[maxLines - 1] = fitLine(ctx, kept[maxLines - 1]!, maxWidth);
+  return kept;
+}
+
+function renderLabelCanvas(product: LabelProduct) {
   const canvas = document.createElement("canvas");
   canvas.width = THERMAL_LABEL_W_PX;
   canvas.height = THERMAL_LABEL_H_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not available");
 
-  const code = productCode(product);
-  const rate = inclusiveRate(product.saleRate, product.gstRate);
-  const exp = formatExp(product.expiryDate);
+  const { code, rate, exp, name } = getLabelFields(product);
+  const {
+    padX,
+    companyY,
+    companySize,
+    taglineY,
+    taglineSize,
+    nameY,
+    nameSize,
+    nameLineHeight,
+    barcodeY,
+    barcodeH,
+    codeY,
+    codeSize,
+    footerY,
+    footerSize,
+  } = LABEL_LAYOUT;
+  const innerW = canvas.width - padX * 2;
 
-  /* Safe margins — keep content well inside the sticker edges */
-  const margin = 8;
-  const innerW = canvas.width - margin * 2;
-
-  /* White background */
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#000000";
   ctx.textBaseline = "top";
 
-  /* ── Row 1: Company name (centered) ── */
-  let y = margin;
-  drawCentered(ctx, BUSINESS.name, y, "bold 12px Arial, Helvetica, sans-serif", innerW);
-  y += 14;
+  drawCentered(
+    ctx,
+    BUSINESS.name,
+    companyY,
+    `bold ${companySize}px Arial, Helvetica, sans-serif`,
+    innerW
+  );
+  drawCentered(
+    ctx,
+    BUSINESS.tagline,
+    taglineY,
+    `${taglineSize}px Arial, Helvetica, sans-serif`,
+    innerW
+  );
 
-  /* ── Row 2: Tagline (centered) ── */
-  drawCentered(ctx, `(${BUSINESS.tagline})`, y, "8px Arial, Helvetica, sans-serif", innerW);
-  y += 12;
+  ctx.font = `bold ${nameSize}px Arial, Helvetica, sans-serif`;
+  const nameLines = wrapName(ctx, name, innerW, LABEL_LAYOUT.nameLines);
+  nameLines.forEach((line, index) => {
+    const width = ctx.measureText(line).width;
+    ctx.fillText(line, (canvas.width - width) / 2, nameY + index * nameLineHeight);
+  });
 
-  /* ── Separator line ── */
-  ctx.strokeStyle = "#000000";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(margin, y);
-  ctx.lineTo(canvas.width - margin, y);
-  ctx.stroke();
-  y += 4;
-
-  /* ── Row 3: Product name (left-aligned, bold, truncated) ── */
-  ctx.textAlign = "left";
-  drawCentered(ctx, product.name.toUpperCase(), y, "bold 10px Arial, Helvetica, sans-serif", innerW);
-  y += 14;
-
-  /* ── Bottom section: text on left, QR on right ── */
-  const qrSize = 72;
-  const qrPad = 4;
-  const qrX = canvas.width - margin - qrSize;
-  const qrY = canvas.height - margin - qrSize;
-  const textRight = qrX - qrPad;
-  const textMaxW = textRight - margin;
-
-  /* QR code */
-  const qrSrc = await qrDataUrl(code);
-  const qrImg = await loadImage(qrSrc);
-  ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
-
-  /* SKU / Barcode */
-  ctx.textAlign = "left";
-  ctx.font = "bold 11px Arial, Helvetica, sans-serif";
-  let codeLine = code;
-  while (codeLine.length > 1 && ctx.measureText(codeLine).width > textMaxW) {
-    codeLine = codeLine.slice(0, -1);
+  const { bars } = layoutCode128Bars(code, padX, innerW);
+  for (const bar of bars) {
+    ctx.fillRect(bar.x, barcodeY, bar.width, barcodeH);
   }
-  ctx.fillText(codeLine === code ? codeLine : `${codeLine}…`, margin, y);
-  y += 16;
 
-  /* Expiry date */
-  ctx.font = "9px Arial, Helvetica, sans-serif";
-  ctx.fillText(exp ? `EXP: ${exp}` : "EXP: —", margin, y);
-  y += 14;
+  drawCentered(
+    ctx,
+    code,
+    codeY,
+    `bold ${codeSize}px Arial, Helvetica, sans-serif`,
+    innerW
+  );
 
-  /* MRP rate */
-  ctx.font = "bold 12px Arial, Helvetica, sans-serif";
-  ctx.fillText(`MRP: ${rate.toFixed(2)}`, margin, y);
+  ctx.font = `${footerSize}px Arial, Helvetica, sans-serif`;
+  ctx.fillText(exp ? `EXP ${exp}` : "EXP —", padX, footerY);
+  ctx.font = `bold ${footerSize}px Arial, Helvetica, sans-serif`;
+  const mrp = `MRP ${rate.toFixed(2)}`;
+  ctx.fillText(mrp, canvas.width - padX - ctx.measureText(mrp).width, footerY);
 
   return canvas;
 }
 
-/** Render one 38×25 mm label at the printer's native 203 DPI. */
+/** Render one 50×25 mm label at the printer's native 203 DPI. */
 export async function renderLabelPng(product: LabelProduct): Promise<string> {
-  const canvas = await renderLabelCanvas(product);
-  return canvas.toDataURL("image/png");
+  return renderLabelCanvas(product).toDataURL("image/png");
 }
 
 /** Convert a rendered label into the monochrome bytes required by ESC/POS raster mode. */
 export async function renderLabelRaster(product: LabelProduct) {
-  const canvas = await renderLabelCanvas(product);
+  const canvas = renderLabelCanvas(product);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not available");
 
@@ -233,7 +244,7 @@ function triggerDownload(dataUrl: string, filename: string) {
   link.click();
 }
 
-/** Download label PNG file(s). Safe for TagPro — never sends PostScript. */
+/** Download label PNG file(s). Safe for POSiFLOW — never sends PostScript. */
 export function downloadLabelPngFiles(
   products: LabelProduct[],
   pngMap: Record<number, string>,

@@ -57,7 +57,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
         event.preventDefault();
         window.alert(
-          "Browser Print does not work on the TagPro — it prints garbage text.\n\nUse “Download label PNG” (phone app) or “Print to TagPro (USB)” in Chrome with USB cable."
+          "Browser Print does not work on the POSiFLOW — it prints garbage text.\n\nUse “Download label PNG” (phone app) or “Print to POSiFLOW (USB)” in Chrome with USB cable."
         );
       }
     };
@@ -184,8 +184,9 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           />
         </label>
         <p className="w-full text-xs text-slate-600">
-          <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 35
-          × 22 mm at 203 DPI. The preview below is exactly what will print.
+          <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 50
+          × 25 mm (5 × 2.5 cm) CODE128 barcode at 203 DPI. The preview below is
+          exactly what will print.
         </p>
         <p className="w-full rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900">
           <strong>Do not use browser Print (⌘P / File → Print):</strong> it can
@@ -195,12 +196,12 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         <p className="w-full rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
           <strong>From computer (USB):</strong> Google Chrome or Edge → connect
           POSiFLOW by USB → click <strong>Print to POSiFLOW (USB)</strong> → pick
-          the printer. This sends a 35 × 22 mm raster label, not text commands.
+          the printer. This sends a 50 × 25 mm raster label, not text commands.
         </p>
         <p className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           <strong>From phone:</strong> Download PNG → open{" "}
           <strong>Shreyans / POSiFLOW Easy Label</strong> → import image → set
-          label size to <strong>35 × 22 mm</strong> → print on Bluetooth.
+          label size to <strong>50 × 25 mm</strong> → print on Bluetooth.
         </p>
       </div>
       <div className="thermal-label-preview-grid">
