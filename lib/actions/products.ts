@@ -48,6 +48,7 @@ export async function updateProduct(
   id: number,
   data: {
     saleRate: number;
+    purchaseRate?: number;
     gstRate: number;
     stockQty?: number;
     hsnCode?: string;

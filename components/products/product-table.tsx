@@ -53,6 +53,7 @@ export function ProductTable({ products }: { products: Product[] }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [saleRate, setSaleRate] = useState("");
+  const [purchaseRate, setPurchaseRate] = useState("");
   const [mrp, setMrp] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
   const [gstRate, setGstRate] = useState("");
@@ -65,6 +66,7 @@ export function ProductTable({ products }: { products: Product[] }) {
     setEditingId(product.id);
     setName(product.name);
     setSaleRate(String(toNumber(product.saleRate)));
+    setPurchaseRate(String(toNumber(product.purchaseRate)));
     setMrp(product.mrp != null ? String(toNumber(product.mrp)) : "");
     setDiscountPercent(String(toNumber(product.discountPercent)));
     setGstRate(String(toNumber(product.gstRate)));
@@ -87,6 +89,11 @@ export function ProductTable({ products }: { products: Product[] }) {
       alert("Stock must be a number greater than or equal to 0.");
       return;
     }
+    const parsedPurchase = parseFloat(purchaseRate);
+    if (!Number.isFinite(parsedPurchase) || parsedPurchase < 0) {
+      alert("Purchase rate must be a number greater than or equal to 0.");
+      return;
+    }
     startTransition(async () => {
       try {
         const pinRequired = await isInventoryPinRequired();
@@ -105,6 +112,7 @@ export function ProductTable({ products }: { products: Product[] }) {
         await updateProduct(id, {
           name: name.trim(),
           saleRate: Number.isFinite(parsedSale) ? parsedSale : 0,
+          purchaseRate: parsedPurchase,
           mrp: parsedMrp != null && Number.isFinite(parsedMrp) ? parsedMrp : null,
           discountPercent: Number.isFinite(parsedDisc) ? parsedDisc : 0,
           gstRate: Number.isFinite(parseFloat(gstRate)) ? parseFloat(gstRate) : 0,
@@ -244,7 +252,19 @@ export function ProductTable({ products }: { products: Product[] }) {
                 )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap text-slate-600">
-                {formatCurrency(product.purchaseRate)}
+                {editingId === product.id ? (
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
+                    value={purchaseRate}
+                    onChange={(e) => setPurchaseRate(e.target.value)}
+                    aria-label={`Purchase rate for ${product.name}`}
+                  />
+                ) : (
+                  formatCurrency(product.purchaseRate)
+                )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap">
                 {editingId === product.id ? (

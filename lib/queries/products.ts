@@ -257,6 +257,7 @@ export async function updateProduct(
   id: number,
   data: {
     saleRate: number;
+    purchaseRate?: number;
     wholesaleRate?: number;
     gstRate: number;
     stockQty?: number;
@@ -278,6 +279,9 @@ export async function updateProduct(
   if (data.stockQty !== undefined && data.stockQty < 0) {
     throw new Error("Stock cannot be negative.");
   }
+  if (data.purchaseRate !== undefined && data.purchaseRate < 0) {
+    throw new Error("Purchase rate cannot be negative.");
+  }
   const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
 
   // Capture current stock before other updates so batch sync uses the right delta.
@@ -298,6 +302,9 @@ export async function updateProduct(
     .set({
       saleRate: data.saleRate.toFixed(2),
       gstRate: data.gstRate.toFixed(2),
+      ...(data.purchaseRate !== undefined
+        ? { purchaseRate: data.purchaseRate.toFixed(2) }
+        : {}),
       ...(data.wholesaleRate !== undefined
         ? { wholesaleRate: data.wholesaleRate.toFixed(2) }
         : {}),
@@ -320,7 +327,9 @@ export async function updateProduct(
     .where(eq(products.id, id));
 
   // Keep batch selling rates in sync so POS never shows a stale batch price
-  // after the product sale rate / MRP is updated.
+  // after the product sale rate / MRP is updated. Batch *purchase* rates are
+  // deliberately left alone: each is the actual cost of that lot, and
+  // overwriting them would rewrite cost history and distort margin reports.
   await db
     .update(productBatches)
     .set({
