@@ -1,16 +1,14 @@
 import sharp from "sharp";
-import { BUSINESS } from "@/lib/business";
-import { layoutCode128Bars } from "@/lib/code128";
+import { buildLabelPlan } from "@/lib/label-layout";
 import {
-  LABEL_LAYOUT,
-  THERMAL_LABEL_H_PX,
-  THERMAL_LABEL_W_PX,
+  LABEL_H_DOTS,
+  LABEL_W_DOTS,
   THERMAL_PRINTER_DPI,
 } from "@/lib/label-print-config";
 import { toNumber } from "@/lib/utils";
 
-export const LABEL_IMAGE_W_PX = THERMAL_LABEL_W_PX;
-export const LABEL_IMAGE_H_PX = THERMAL_LABEL_H_PX;
+export const LABEL_IMAGE_W_PX = LABEL_W_DOTS;
+export const LABEL_IMAGE_H_PX = LABEL_H_DOTS;
 
 export type LabelPngProduct = {
   id: number;
@@ -53,78 +51,36 @@ function formatExpiry(value: string | null) {
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
-function wrapName(value: string, maxChars: number, maxLines: number) {
-  const words = value.trim().toUpperCase().split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    const trial = current ? `${current} ${word}` : word;
-    if (trial.length <= maxChars) {
-      current = trial;
-    } else {
-      if (current) lines.push(current);
-      current = word.length > maxChars ? `${word.slice(0, maxChars - 1)}…` : word;
-    }
-  }
-  if (current) lines.push(current);
-  if (lines.length <= maxLines) return lines;
-  const kept = lines.slice(0, maxLines);
-  const last = kept[maxLines - 1]!;
-  kept[maxLines - 1] = last.length > maxChars ? `${last.slice(0, maxChars - 1)}…` : last;
-  return kept;
-}
-
-/** Render one standalone PNG that is ready to send to the POSiFLOW printer. */
+/**
+ * Render one standalone PNG, pixel-for-pixel the same label the USB path
+ * prints — both are drawn from the shared plan in `label-layout`.
+ */
 export async function renderLabelPng(product: LabelPngProduct): Promise<Buffer> {
-  const W = LABEL_IMAGE_W_PX;
-  const H = LABEL_IMAGE_H_PX;
-  const {
-    padX,
-    companyY,
-    companySize,
-    taglineY,
-    taglineSize,
-    nameY,
-    nameSize,
-    nameLineHeight,
-    barcodeY,
-    barcodeH,
-    codeY,
-    codeSize,
-    footerY,
-    footerSize,
-  } = LABEL_LAYOUT;
-  const innerW = W - padX * 2;
-  const code = productCode(product);
-  const rate = inclusiveRate(product.saleRate, product.gstRate).toFixed(2);
-  const expiry = formatExpiry(product.expiryDate) || "—";
-  const nameLines = wrapName(product.name, 34, 2);
-  const { bars } = layoutCode128Bars(code, padX, innerW);
-  const barRects = bars
+  const plan = buildLabelPlan({
+    code: productCode(product),
+    name: product.name.toUpperCase(),
+    mrp: inclusiveRate(product.saleRate, product.gstRate).toFixed(2),
+    exp: formatExpiry(product.expiryDate),
+  });
+
+  const bars = plan.bars
     .map(
       (bar) =>
-        `<rect x="${bar.x}" y="${barcodeY}" width="${bar.width}" height="${barcodeH}" fill="#000000"/>`
+        `<rect x="${bar.x}" y="${bar.y}" width="${bar.width}" height="${bar.height}" fill="#000000" shape-rendering="crispEdges"/>`
     )
     .join("");
 
-  const svg = `
-    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="100%" height="100%" fill="#ffffff"/>
-      <g fill="#000000" font-family="Arial, Helvetica, sans-serif">
-        <text x="${W / 2}" y="${companyY + companySize - 2}" text-anchor="middle" font-size="${companySize}" font-weight="700">${escapeXml(BUSINESS.name)}</text>
-        <text x="${W / 2}" y="${taglineY + taglineSize - 1}" text-anchor="middle" font-size="${taglineSize}">${escapeXml(BUSINESS.tagline)}</text>
-        ${nameLines
-          .map(
-            (line, index) =>
-              `<text x="${W / 2}" y="${nameY + nameSize - 2 + index * nameLineHeight}" text-anchor="middle" font-size="${nameSize}" font-weight="700">${escapeXml(line)}</text>`
-          )
-          .join("")}
-        ${barRects}
-        <text x="${W / 2}" y="${codeY + codeSize - 2}" text-anchor="middle" font-size="${codeSize}" font-weight="700">${escapeXml(code)}</text>
-        <text x="${padX}" y="${footerY + footerSize - 2}" font-size="${footerSize}">EXP ${escapeXml(expiry)}</text>
-        <text x="${W - padX}" y="${footerY + footerSize - 2}" text-anchor="end" font-size="${footerSize}" font-weight="700">MRP ${escapeXml(rate)}</text>
-      </g>
-    </svg>`;
+  const texts = plan.texts
+    .map(
+      (item) =>
+        `<text x="${item.x}" y="${item.baseline}" text-anchor="${item.anchor}" font-size="${item.size}"${item.bold ? ' font-weight="700"' : ""}>${escapeXml(item.text)}</text>`
+    )
+    .join("");
+
+  const svg = `<svg width="${plan.widthDots}" height="${plan.heightDots}" viewBox="0 0 ${plan.widthDots} ${plan.heightDots}" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect width="100%" height="100%" fill="#ffffff"/>` +
+    `<g fill="#000000" font-family="Arial, Helvetica, sans-serif">${bars}${texts}</g>` +
+    `</svg>`;
 
   return sharp(Buffer.from(svg))
     .png({ compressionLevel: 9 })

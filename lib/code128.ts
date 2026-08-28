@@ -112,8 +112,16 @@ const PATTERNS = [
   "1100011101011",
 ];
 
+const CODE_C = 99;
+const CODE_B = 100;
 const START_B = 104;
+const START_C = 105;
 const STOP = 106;
+
+/**
+ * Quiet zone in modules on each side. ISO/IEC 15417 asks for at least 10×
+ * the module width; scanners reject barcodes printed hard against artwork.
+ */
 const QUIET_MODULES = 10;
 
 export type Code128Bar = { x: number; width: number };
@@ -126,33 +134,98 @@ export function sanitizeCode128Text(value: string) {
   return cleaned || "0";
 }
 
-/** Binary modules including ISO quiet zones (10 modules each side). */
-export function encodeCode128(text: string) {
-  const data = sanitizeCode128Text(text);
-  const values = [START_B];
-  for (const char of data) {
-    values.push(char.charCodeAt(0) - 32);
+function digitRunLength(data: string, from: number) {
+  let run = 0;
+  while (from + run < data.length) {
+    const char = data.charCodeAt(from + run);
+    if (char < 48 || char > 57) break;
+    run += 1;
+  }
+  return run;
+}
+
+/**
+ * Encode to code values, switching into subset C for digit runs.
+ *
+ * Subset C packs two digits per symbol, so a numeric barcode needs roughly
+ * half the modules. On a 50 mm label that is the difference between a 1-dot
+ * and a 2-dot module, which is the difference between a barcode that scans
+ * and one that does not.
+ */
+export function encodeCode128Values(data: string): number[] {
+  const values: number[] = [];
+  const lead = digitRunLength(data, 0);
+  const allDigits = lead === data.length;
+
+  let mode: "B" | "C";
+  if (lead >= 4 || (allDigits && lead >= 2 && lead % 2 === 0)) {
+    mode = "C";
+    values.push(START_C);
+  } else {
+    mode = "B";
+    values.push(START_B);
   }
 
-  let checksum = START_B;
-  for (let i = 1; i < values.length; i++) {
-    checksum += values[i]! * i;
+  let i = 0;
+  while (i < data.length) {
+    const run = digitRunLength(data, i);
+    if (mode === "C") {
+      if (run >= 2) {
+        values.push(Number(data.slice(i, i + 2)));
+        i += 2;
+      } else {
+        values.push(CODE_B);
+        mode = "B";
+      }
+      continue;
+    }
+
+    const endsData = i + run === data.length;
+    if (run >= 6 || (endsData && run >= 4)) {
+      // An odd run has to shed one digit in subset B before the pairs line up.
+      if (run % 2 === 1) {
+        values.push(data.charCodeAt(i) - 32);
+        i += 1;
+      }
+      values.push(CODE_C);
+      mode = "C";
+      continue;
+    }
+
+    values.push(data.charCodeAt(i) - 32);
+    i += 1;
+  }
+
+  let checksum = values[0]!;
+  for (let position = 1; position < values.length; position++) {
+    checksum += values[position]! * position;
   }
   values.push(checksum % 103);
   values.push(STOP);
 
+  return values;
+}
+
+/** Binary modules including ISO quiet zones (10 modules each side). */
+export function encodeCode128(text: string) {
+  const values = encodeCode128Values(sanitizeCode128Text(text));
   const quiet = "0".repeat(QUIET_MODULES);
   return quiet + values.map((value) => PATTERNS[value]!).join("") + quiet;
 }
 
-export function layoutCode128Bars(
-  text: string,
-  x: number,
-  width: number
-): { bars: Code128Bar[]; moduleWidth: number; encoded: string } {
+/**
+ * Lay the symbol out on a whole number of printer dots.
+ *
+ * Thermal heads can only burn whole dots. A fractional module width gets
+ * rounded differently from bar to bar, so nominally equal bars come out one
+ * dot apart and the scanner cannot recover the widths. Snapping the module to
+ * an integer and centring the leftover space keeps every bar exact.
+ */
+export function layoutCode128Dots(text: string, availableDots: number) {
   const encoded = encodeCode128(text);
-  const moduleWidth = width / encoded.length;
-  const origin = x;
+  const moduleDots = Math.max(1, Math.floor(availableDots / encoded.length));
+  const totalDots = moduleDots * encoded.length;
+  const originDots = Math.max(0, Math.round((availableDots - totalDots) / 2));
 
   const bars: Code128Bar[] = [];
   let i = 0;
@@ -163,7 +236,35 @@ export function layoutCode128Bars(
     }
     let run = 0;
     while (i + run < encoded.length && encoded[i + run] === "1") run += 1;
-    bars.push({ x: origin + i * moduleWidth, width: run * moduleWidth });
+    bars.push({
+      x: originDots + i * moduleDots,
+      width: run * moduleDots,
+    });
+    i += run;
+  }
+
+  return { bars, moduleDots, totalDots, originDots, encoded };
+}
+
+/** Fractional-width layout kept for renderers that scale to a non-dot grid (PDF). */
+export function layoutCode128Bars(
+  text: string,
+  x: number,
+  width: number
+): { bars: Code128Bar[]; moduleWidth: number; encoded: string } {
+  const encoded = encodeCode128(text);
+  const moduleWidth = width / encoded.length;
+
+  const bars: Code128Bar[] = [];
+  let i = 0;
+  while (i < encoded.length) {
+    if (encoded[i] !== "1") {
+      i += 1;
+      continue;
+    }
+    let run = 0;
+    while (i + run < encoded.length && encoded[i + run] === "1") run += 1;
+    bars.push({ x: x + i * moduleWidth, width: run * moduleWidth });
     i += run;
   }
 

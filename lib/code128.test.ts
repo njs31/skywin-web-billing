@@ -1,57 +1,99 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { encodeCode128, layoutCode128Bars, sanitizeCode128Text } from "./code128";
 import {
-  LABEL_LAYOUT,
-  THERMAL_LABEL_H_MM,
-  THERMAL_LABEL_H_PX,
-  THERMAL_LABEL_W_MM,
-  THERMAL_LABEL_W_PX,
-  mmToPx,
+  encodeCode128,
+  layoutCode128Dots,
+  sanitizeCode128Text,
+} from "./code128";
+import {
+  CONTENT_W_DOTS,
+  LABEL_H_DOTS,
+  LABEL_W_DOTS,
+  PRINT_W_DOTS,
+  PRINT_X_DOTS,
+  mmToDots,
 } from "./label-print-config";
 
-describe("CODE128-B", () => {
-  it("uses Start B and the ISO stop pattern", () => {
-    const bits = encodeCode128("SW000001");
-    assert.match(bits, /^0{10}11010010000/);
-    assert.match(bits, /11000111010110{10}$/);
+function symbolsOf(modules: string) {
+  assert.match(modules, /^0{10}/, "missing leading quiet zone");
+  assert.match(modules, /0{10}$/, "missing trailing quiet zone");
+  const body = modules.slice(10, -10);
+  assert.equal((body.length - 13) % 11, 0, "symbol count is not whole");
+  return (body.length - 13) / 11 + 1;
+}
+
+describe("CODE128", () => {
+  it("uses Start B for alphanumeric codes", () => {
+    assert.match(encodeCode128("SW000001"), /^0{10}11010010000/);
   });
 
-  it("keeps bars inside the 50×25 mm printable width", () => {
-    const inner = THERMAL_LABEL_W_PX - LABEL_LAYOUT.padX * 2;
-    const { bars, encoded, moduleWidth } = layoutCode128Bars(
-      "SW000001",
-      LABEL_LAYOUT.padX,
-      inner
-    );
-    assert.ok(moduleWidth > 0);
-    assert.ok(encoded.length > 40);
-    const right = Math.max(...bars.map((bar) => bar.x + bar.width));
-    assert.ok(bars[0]!.x >= LABEL_LAYOUT.padX);
-    assert.ok(right <= LABEL_LAYOUT.padX + inner + 0.01);
+  it("uses Start C for numeric codes, halving the symbol count", () => {
+    assert.match(encodeCode128("8901234567890"), /^0{10}11010011100/);
+    // 13 digits in subset B would need 17 symbols; subset C needs 10.
+    assert.ok(symbolsOf(encodeCode128("8901234567890")) <= 11);
+  });
+
+  it("ends with the ISO stop pattern", () => {
+    assert.match(encodeCode128("SW000001"), /11000111010110{10}$/);
   });
 
   it("sanitizes non-ASCII so the barcode still encodes", () => {
     assert.equal(sanitizeCode128Text("  SW 0001  "), "SW 0001");
     assert.ok(encodeCode128("यूरिया SW1").includes("11010010000"));
   });
+
+  it("never emits an empty symbol for empty input", () => {
+    assert.ok(encodeCode128("").length > 40);
+  });
+});
+
+describe("barcode dot layout", () => {
+  const codes = ["SW000001", "8901234567890", "SKW-ABCDEF", "SW999999"];
+
+  it("snaps every bar to whole printer dots", () => {
+    for (const code of codes) {
+      const { bars, moduleDots } = layoutCode128Dots(code, CONTENT_W_DOTS);
+      assert.ok(moduleDots >= 1, `${code} has no module width`);
+      for (const bar of bars) {
+        assert.equal(bar.x, Math.trunc(bar.x), `${code} bar x is fractional`);
+        assert.equal(bar.width, Math.trunc(bar.width), `${code} bar is fractional`);
+        assert.equal(bar.width % moduleDots, 0, `${code} bar is not a whole module`);
+      }
+    }
+  });
+
+  it("keeps a scannable module width for real product codes", () => {
+    // 1 dot at 8 dots/mm is 0.125 mm, too fine to scan reliably off thermal.
+    for (const code of ["SW000001", "8901234567890"]) {
+      assert.ok(
+        layoutCode128Dots(code, CONTENT_W_DOTS).moduleDots >= 2,
+        `${code} would print a 1-dot module`
+      );
+    }
+  });
+
+  it("stays inside the content width", () => {
+    for (const code of codes) {
+      const { bars, totalDots } = layoutCode128Dots(code, CONTENT_W_DOTS);
+      assert.ok(totalDots <= CONTENT_W_DOTS, `${code} overflows`);
+      const right = Math.max(...bars.map((bar) => bar.x + bar.width));
+      assert.ok(bars[0]!.x >= 0);
+      assert.ok(right <= CONTENT_W_DOTS);
+    }
+  });
 });
 
 describe("thermal sticker geometry", () => {
-  it("is 50×25 mm at 203 DPI (400×200 px)", () => {
-    assert.equal(THERMAL_LABEL_W_MM, 50);
-    assert.equal(THERMAL_LABEL_H_MM, 25);
-    assert.equal(THERMAL_LABEL_W_PX, 400);
-    assert.equal(THERMAL_LABEL_H_PX, 200);
-    assert.equal(mmToPx(50), 400);
-    assert.equal(mmToPx(25), 200);
+  it("is 50 × 25 mm at 8 dots/mm (400 × 200 dots)", () => {
+    assert.equal(LABEL_W_DOTS, 400);
+    assert.equal(LABEL_H_DOTS, 200);
+    assert.equal(mmToDots(50), 400);
+    assert.equal(mmToDots(25), 200);
   });
 
-  it("keeps header, barcode, and footer inside the 200 px height", () => {
-    const bottom = LABEL_LAYOUT.footerY + LABEL_LAYOUT.footerSize;
-    assert.ok(LABEL_LAYOUT.barcodeY + LABEL_LAYOUT.barcodeH < LABEL_LAYOUT.codeY);
-    assert.ok(LABEL_LAYOUT.codeY + LABEL_LAYOUT.codeSize < LABEL_LAYOUT.footerY);
-    assert.ok(bottom <= THERMAL_LABEL_H_PX - 4);
-    assert.ok(LABEL_LAYOUT.barcodeH >= 80);
+  it("centres a 384-dot printable window inside the label", () => {
+    assert.equal(PRINT_W_DOTS, 384);
+    assert.equal(PRINT_X_DOTS, 8);
+    assert.equal(PRINT_X_DOTS * 2 + PRINT_W_DOTS, LABEL_W_DOTS);
   });
 });

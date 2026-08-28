@@ -1,25 +1,26 @@
 /**
- * Send labels to POSiFLOW PSF20 over USB as ESC/POS raster graphics.
- * Does NOT use browser Print — that sends PostScript the printer prints as garbage.
+ * Send labels to the POSiFLOW label printer over USB.
+ *
+ * Never uses the browser's Print dialog: that hands the printer a PDF or
+ * PostScript stream, which a raw thermal printer happily prints as pages of
+ * source code. We build the printer's own command language and push the bytes
+ * down a bulk endpoint ourselves.
  */
-import { renderLabelRaster, type LabelProduct } from "@/lib/label-render";
+import { renderLabelRaster, type LabelProduct, type LabelRaster } from "@/lib/label-render";
+import {
+  buildTsplCalibration,
+  buildTsplJob,
+  concatBytes,
+  type TsplOptions,
+} from "@/lib/tspl-print";
+
+export type PrinterLanguage = "tspl" | "escpos";
 
 export type EscPosRaster = {
   bytesPerRow: number;
   height: number;
   bytes: Uint8Array;
 };
-
-function concatBytes(...parts: Uint8Array[]) {
-  const total = parts.reduce((sum, part) => sum + part.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-}
 
 /** Encode a monochrome image with the ESC/POS GS v 0 raster-image command. */
 export function buildEscPosRasterCommand({
@@ -35,33 +36,44 @@ export function buildEscPosRasterCommand({
   }
 
   const header = Uint8Array.from([
-    0x1b,
-    0x40, // initialize
-    0x1b,
-    0x33,
-    0x18, // compact line spacing after the image
-    // GS v 0: print a monochrome raster image, native 203 DPI label pixels.
-    0x1d,
-    0x76,
-    0x30,
-    0x00,
+    0x1b, 0x40, // initialize
+    0x1b, 0x33, 0x18, // compact line spacing after the image
+    // GS v 0: print a monochrome raster image at native dot pitch.
+    0x1d, 0x76, 0x30, 0x00,
     bytesPerRow & 0xff,
     (bytesPerRow >> 8) & 0xff,
     height & 0xff,
     (height >> 8) & 0xff,
   ]);
-  const footer = Uint8Array.from([
-    0x0a,
-    0x1b,
-    0x64,
-    0x02, // feed just enough to clear the tear edge
-  ]);
-  return concatBytes(header, raster, footer);
+  const footer = Uint8Array.from([0x0a, 0x1b, 0x64, 0x02]);
+  return concatBytes([header, raster, footer]);
 }
 
-/** Build one label as native ESC/POS raster bytes (not PostScript or HTML). */
-export async function buildEscPosLabel(product: LabelProduct): Promise<Uint8Array> {
-  return buildEscPosRasterCommand(await renderLabelRaster(product));
+export function buildEscPosJob(rasters: LabelRaster[], copies = 1) {
+  const qty = Math.max(1, Math.min(99, Math.trunc(copies)));
+  const parts: Uint8Array[] = [];
+  for (const raster of rasters) {
+    const label = buildEscPosRasterCommand(raster);
+    for (let i = 0; i < qty; i++) parts.push(label);
+  }
+  return concatBytes(parts);
+}
+
+export type PrintJobOptions = TsplOptions & { language?: PrinterLanguage };
+
+/** Turn products into a finished byte stream for the chosen printer language. */
+export async function buildLabelJob(
+  products: LabelProduct[],
+  options: PrintJobOptions = {}
+) {
+  const { language = "tspl", copies = 1 } = options;
+  const rasters: LabelRaster[] = [];
+  for (const product of products) {
+    rasters.push(await renderLabelRaster(product));
+  }
+  return language === "escpos"
+    ? buildEscPosJob(rasters, copies)
+    : buildTsplJob(rasters, options);
 }
 
 async function findBulkOutEndpoint(device: USBDevice) {
@@ -95,36 +107,43 @@ export function isUsbPrintSupported() {
   );
 }
 
-/** Print labels over USB using ESC/POS. Chrome/Edge + USB cable only. */
-export async function printLabelsViaUsb(products: LabelProduct[]) {
-  if (!isUsbPrintSupported()) {
-    throw new Error(
-      "USB print needs Google Chrome on a computer with the POSiFLOW plugged in by USB."
-    );
-  }
-  if (products.length === 0) return;
+/**
+ * Reuse a printer the user already picked. Chrome remembers the grant per
+ * site, so after the first time there is no chooser dialog at all.
+ */
+async function acquirePrinter() {
+  const granted = await navigator.usb!.getDevices();
+  const remembered = granted.find((device) =>
+    device.configurations.some((config) =>
+      config.interfaces.some((iface) =>
+        iface.alternates.some((alt) => alt.interfaceClass === 7)
+      )
+    )
+  );
+  return remembered ?? (await navigator.usb!.requestDevice({ filters: [] }));
+}
 
-  const device = await navigator.usb!.requestDevice({ filters: [] });
+async function sendToPrinter(payload: Uint8Array) {
+  const device = await acquirePrinter();
   await device.open();
   try {
     const ep = await findBulkOutEndpoint(device);
-    await device.claimInterface(ep.interfaceNumber);
     try {
-      await device.selectAlternateInterface(
-        ep.interfaceNumber,
-        ep.alternateSetting
+      await device.claimInterface(ep.interfaceNumber);
+    } catch {
+      throw new Error(
+        "The printer is held by the system print driver. Remove the POSiFLOW from " +
+          "your computer's Printers list (or unplug and replug it), then try again."
       );
+    }
+    try {
+      await device.selectAlternateInterface(ep.interfaceNumber, ep.alternateSetting);
       const chunk = Math.max(ep.packetSize, 64);
-
-      for (const product of products) {
-        const payload = await buildEscPosLabel(product);
-        for (let i = 0; i < payload.length; i += chunk) {
-          const slice = payload.subarray(i, i + chunk);
-          await device.transferOut(ep.endpointNumber, new Uint8Array(slice));
-        }
-        if (products.length > 1) {
-          await new Promise((r) => setTimeout(r, 500));
-        }
+      for (let i = 0; i < payload.length; i += chunk) {
+        await device.transferOut(
+          ep.endpointNumber,
+          new Uint8Array(payload.subarray(i, i + chunk))
+        );
       }
     } finally {
       await device.releaseInterface(ep.interfaceNumber);
@@ -132,4 +151,31 @@ export async function printLabelsViaUsb(products: LabelProduct[]) {
   } finally {
     await device.close();
   }
+}
+
+function assertSupported() {
+  if (!isUsbPrintSupported()) {
+    throw new Error(
+      "USB print needs Google Chrome or Edge on a computer with the POSiFLOW plugged in by USB."
+    );
+  }
+}
+
+/** Print labels over USB. Chrome/Edge + USB cable only. */
+export async function printLabelsViaUsb(
+  products: LabelProduct[],
+  options: PrintJobOptions = {}
+) {
+  assertSupported();
+  if (products.length === 0) return;
+  await sendToPrinter(await buildLabelJob(products, options));
+}
+
+/**
+ * Ask the printer to re-measure the gap between stickers. Run this when
+ * labels start creeping up or down the roll.
+ */
+export async function calibrateLabelGap(options: TsplOptions = {}) {
+  assertSupported();
+  await sendToPrinter(buildTsplCalibration(options));
 }

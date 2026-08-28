@@ -6,6 +6,8 @@ interface Navigator {
 
 interface USB {
   requestDevice(options: { filters: USBDeviceFilter[] }): Promise<USBDevice>;
+  /** Printers the user has already granted this site access to. */
+  getDevices(): Promise<USBDevice[]>;
 }
 
 interface USBDeviceFilter {
@@ -15,6 +17,8 @@ interface USBDeviceFilter {
 
 interface USBDevice {
   configuration: USBConfiguration | null;
+  configurations: USBConfiguration[];
+  productName?: string;
   open(): Promise<void>;
   close(): Promise<void>;
   selectConfiguration(configurationValue: number): Promise<void>;
@@ -41,6 +45,8 @@ interface USBInterface {
 
 interface USBAlternateInterface {
   alternateSetting: number;
+  /** USB class code; 7 is the printer class. */
+  interfaceClass: number;
   endpoints: USBEndpoint[];
 }
 

@@ -23,16 +23,34 @@ body {
     background: white;
   }
 
-  /* Thermal label pages must never become a PDF/PostScript print job. */
-  body.thermal-label-page * {
+  /*
+   * Printing the label page through a driver must emit only the stickers.
+   * Anything else on the page ends up as extra pages of chrome, and on a raw
+   * thermal printer that is what came out as pages of source code.
+   */
+  body.thermal-label-page {
+    margin: 0;
+  }
+  body.thermal-label-page .label-toolbar,
+  body.thermal-label-page .thermal-label-actions {
     display: none !important;
   }
-  body.thermal-label-page::after {
-    display: block !important;
-    content: "Do not print this page. The POSiFLOW printer will print source code. Close this dialog and use Print to POSiFLOW (USB), or download the PNG for the POSiFLOW app.";
-    padding: 24px;
-    font: 16px/1.4 Arial, sans-serif;
-    color: #111;
+  body.thermal-label-page .thermal-label-preview-grid {
+    display: block;
+    padding: 0;
+    gap: 0;
+  }
+  body.thermal-label-page .thermal-label-preview-img {
+    width: 50mm;
+    height: 25mm;
+    border: 0;
+    border-radius: 0;
+    break-after: page;
+    page-break-after: always;
+  }
+  body.thermal-label-page .thermal-label-preview-img:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 
   aside,

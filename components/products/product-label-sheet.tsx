@@ -4,17 +4,26 @@ import { useEffect, useMemo, useState } from "react";
 import {
   downloadLabelPng,
   downloadLabelPngFiles,
-  expandProducts,
   productCode,
   renderLabelPngMap,
   type LabelProduct,
 } from "@/lib/label-render";
-import { isUsbPrintSupported, printLabelsViaUsb } from "@/lib/thermal-usb-print";
+import { LABEL_GAP_MM } from "@/lib/label-print-config";
+import {
+  calibrateLabelGap,
+  isUsbPrintSupported,
+  printLabelsViaUsb,
+  type PrinterLanguage,
+} from "@/lib/thermal-usb-print";
 
 export type { LabelProduct };
 
-const PRINT_BLOCK_MESSAGE =
-  "Do not use File → Print, Ctrl+P, or a PDF. That sends source code to the POSiFLOW printer.\n\nUse “Print to POSiFLOW (USB)” in Chrome, or download the PNG and print it only from the POSiFLOW / Easy Label app.";
+/**
+ * The sticker roll is 50 × 25 mm die-cut, so the browser must be told the page
+ * is one sticker. Without this a driver print lays the label on A4 and the
+ * printer spits blank stock between every one.
+ */
+const PAGE_RULE = "@page { size: 50mm 25mm; margin: 0; }";
 
 function LabelPreview({
   product,
@@ -49,30 +58,22 @@ function LabelPreview({
 export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const [labelPngMap, setLabelPngMap] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
-  const [usbPrinting, setUsbPrinting] = useState(false);
+  const [busy, setBusy] = useState<"" | "print" | "calibrate">("");
   const [copies, setCopies] = useState(1);
+  const [language, setLanguage] = useState<PrinterLanguage>("tspl");
+  const [gapMm, setGapMm] = useState(LABEL_GAP_MM);
+  const [density, setDensity] = useState(8);
+  const [upright, setUpright] = useState(true);
   const usbSupported = isUsbPrintSupported();
 
   useEffect(() => {
     document.body.classList.add("thermal-label-page");
-    const blockKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
-        event.preventDefault();
-        event.stopPropagation();
-        window.alert(PRINT_BLOCK_MESSAGE);
-      }
-    };
-    const blockPrint = (event: Event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      window.alert(PRINT_BLOCK_MESSAGE);
-    };
-    window.addEventListener("keydown", blockKey, true);
-    window.addEventListener("beforeprint", blockPrint, true);
+    const style = document.createElement("style");
+    style.textContent = PAGE_RULE;
+    document.head.appendChild(style);
     return () => {
       document.body.classList.remove("thermal-label-page");
-      window.removeEventListener("keydown", blockKey, true);
-      window.removeEventListener("beforeprint", blockPrint, true);
+      style.remove();
     };
   }, []);
 
@@ -98,34 +99,42 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     };
   }, [products]);
 
-  const labelCount = useMemo(() => {
-    const qty = Math.max(1, Math.min(99, copies));
-    return products.length * qty;
-  }, [products, copies]);
+  const labelCount = useMemo(
+    () => products.length * Math.max(1, Math.min(99, copies)),
+    [products, copies]
+  );
+
+  const printerOptions = { language, copies, gapMm, density, upright };
+
+  function reportError(error: unknown, fallback: string) {
+    // The user dismissed the Chrome device chooser; not an error.
+    if (error instanceof DOMException && error.name === "NotFoundError") return;
+    console.error(error);
+    alert(error instanceof Error ? error.message : fallback);
+  }
 
   async function handleUsbPrint() {
-    if (!ready || usbPrinting) return;
-    setUsbPrinting(true);
+    if (!ready || busy) return;
+    setBusy("print");
     try {
-      await printLabelsViaUsb(expandProducts(products, copies));
+      await printLabelsViaUsb(products, printerOptions);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "NotFoundError") {
-        return;
-      }
-      console.error(error);
-      alert(
-        error instanceof Error
-          ? error.message
-          : "USB print failed. Use Download PNG and print from the POSiFLOW app — not from Windows/Mac Print."
-      );
+      reportError(error, "USB print failed. Check the cable and try again.");
     } finally {
-      setUsbPrinting(false);
+      setBusy("");
     }
   }
 
-  function handleDownloadAll() {
-    if (!ready) return;
-    downloadLabelPngFiles(products, labelPngMap, copies);
+  async function handleCalibrate() {
+    if (busy) return;
+    setBusy("calibrate");
+    try {
+      await calibrateLabelGap(printerOptions);
+    } catch (error) {
+      reportError(error, "Could not calibrate the label gap.");
+    } finally {
+      setBusy("");
+    }
   }
 
   async function handleDownloadOne(product: LabelProduct) {
@@ -140,8 +149,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       }
       await downloadLabelPng(product);
     } catch (error) {
-      console.error(error);
-      alert("Could not download label image.");
+      reportError(error, "Could not download label image.");
     }
   }
 
@@ -155,63 +163,128 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
   return (
     <div className="label-print-root">
-      <div className="no-print label-toolbar">
+      <div className="label-toolbar">
         {usbSupported ? (
           <button
             type="button"
             className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            disabled={!ready || usbPrinting}
+            disabled={!ready || busy !== ""}
             onClick={handleUsbPrint}
           >
-            {usbPrinting ? "Sending label image…" : "Print to POSiFLOW (USB)"}
+            {busy === "print"
+              ? "Sending to printer…"
+              : `Print ${labelCount} label${labelCount === 1 ? "" : "s"} (USB)`}
           </button>
         ) : (
           <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-            USB print needs Google Chrome or Edge on a computer. On a phone,
-            download the PNG and print from the POSiFLOW app.
+            Direct printing needs Chrome or Edge on a computer. On a phone,
+            download the PNG and print it from the POSiFLOW app.
           </p>
         )}
-        <button
-          type="button"
-          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 disabled:opacity-50"
-          disabled={!ready}
-          onClick={handleDownloadAll}
-        >
-          {ready ? "Download PNG for POSiFLOW app" : "Preparing label…"}
-        </button>
+
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          Copies per product
+          Copies each
           <input
             type="number"
             min={1}
             max={99}
             value={copies}
-            onChange={(e) => setCopies(Number(e.target.value) || 1)}
+            onChange={(e) =>
+              setCopies(Math.max(1, Math.min(99, Number(e.target.value) || 1)))
+            }
             className="h-8 w-14 rounded border border-slate-300 px-2 text-sm"
           />
         </label>
+
+        <button
+          type="button"
+          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 disabled:opacity-50"
+          disabled={!ready}
+          onClick={() => downloadLabelPngFiles(products, labelPngMap, copies)}
+        >
+          {ready ? "Download PNG" : "Preparing label…"}
+        </button>
+
+        <details className="w-full text-xs text-slate-700">
+          <summary className="cursor-pointer select-none py-1 font-medium">
+            Printer settings
+          </summary>
+          <div className="mt-2 flex flex-wrap items-end gap-4 rounded border border-slate-200 bg-slate-50 px-3 py-3">
+            <label className="flex flex-col gap-1">
+              Label language
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as PrinterLanguage)}
+                className="h-8 rounded border border-slate-300 bg-white px-2"
+              >
+                <option value="tspl">TSPL — label roll (default)</option>
+                <option value="escpos">ESC/POS — receipt mode</option>
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1">
+              Gap between labels (mm)
+              <input
+                type="number"
+                min={0}
+                max={10}
+                step={0.5}
+                value={gapMm}
+                onChange={(e) => setGapMm(Number(e.target.value) || 0)}
+                className="h-8 w-20 rounded border border-slate-300 px-2"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              Darkness (0–15)
+              <input
+                type="number"
+                min={0}
+                max={15}
+                value={density}
+                onChange={(e) =>
+                  setDensity(Math.max(0, Math.min(15, Number(e.target.value) || 0)))
+                }
+                className="h-8 w-20 rounded border border-slate-300 px-2"
+              />
+            </label>
+
+            <label className="flex items-center gap-2 pb-1.5">
+              <input
+                type="checkbox"
+                checked={!upright}
+                onChange={(e) => setUpright(!e.target.checked)}
+              />
+              Rotate 180°
+            </label>
+
+            {usbSupported && (
+              <button
+                type="button"
+                className="h-8 rounded border border-slate-300 bg-white px-3 disabled:opacity-50"
+                disabled={busy !== ""}
+                onClick={handleCalibrate}
+              >
+                {busy === "calibrate" ? "Calibrating…" : "Calibrate label gap"}
+              </button>
+            )}
+
+            <p className="w-full text-slate-600">
+              Leave the language on <strong>TSPL</strong>. If the sticker comes
+              out as lines of text or code, the printer is in the other mode —
+              switch to ESC/POS. If labels creep up or down the roll, press{" "}
+              <strong>Calibrate label gap</strong>.
+            </p>
+          </div>
+        </details>
+
         <p className="w-full text-xs text-slate-600">
-          <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 50
-          × 25 mm barcode image. Preview only — this page cannot be printed.
-        </p>
-        <p className="w-full rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-950">
-          <strong>If the sticker shows source code, a PDF was sent.</strong> Never
-          use File → Print, Ctrl+P, “All labels PDF”, Preview, or the Windows/Mac
-          printer dialog. Those wrap the label in PDF/PostScript, and this
-          printer prints that code as text.
-        </p>
-        <p className="w-full rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-          <strong>Computer:</strong> Chrome/Edge + USB cable →{" "}
-          <strong>Print to POSiFLOW (USB)</strong>. That sends a picture, not a
-          document.
-        </p>
-        <p className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          <strong>Phone:</strong> Download PNG → open{" "}
-          <strong>POSiFLOW / Easy Label</strong> → import image → size{" "}
-          <strong>50 × 25 mm</strong> → print over Bluetooth. Do not share the file
-          to a system printer.
+          <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} ·
+          50 × 25 mm. Printing sends the sticker as a picture in the printer&rsquo;s
+          own language, so nothing is passed through a PDF.
         </p>
       </div>
+
       <div className="thermal-label-preview-grid">
         {products.map((product) => (
           <div key={product.id} className="flex flex-col items-start gap-2">
@@ -222,7 +295,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
             />
             <button
               type="button"
-              className="no-print text-xs text-emerald-700 underline"
+              className="thermal-label-actions text-xs text-emerald-700 underline"
               onClick={() => handleDownloadOne(product)}
               disabled={!labelPngMap[product.id]}
             >
