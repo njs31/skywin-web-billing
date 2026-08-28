@@ -139,6 +139,24 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     }
   }
 
+  /**
+   * Printing through Windows only works when a genuine TSPL driver is
+   * installed. Without one, Windows dumps raw data at the printer, which
+   * prints it as characters and feeds until the roll runs out — so make the
+   * user confirm rather than discover that a roll later.
+   */
+  function handleDriverPrint() {
+    const confirmed = window.confirm(
+      "This prints through the printer driver installed on this computer.\n\n" +
+        "It only works if a real POSiFLOW / TSPL driver is installed and " +
+        "healthy. If Windows shows the printer as “Driver is unavailable”, " +
+        "this will print pages of code and feed the whole roll.\n\n" +
+        "Use “Print via Bluetooth / COM” instead — that needs no driver.\n\n" +
+        "Continue anyway?"
+    );
+    if (confirmed) window.print();
+  }
+
   async function handleSerialPrint() {
     if (!ready || busy) return;
     setBusy("serial");
@@ -229,8 +247,8 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           type="button"
           className="rounded border border-slate-400 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 disabled:opacity-50"
           disabled={!ready}
-          onClick={() => window.print()}
-          title="Prints the same label through the POSiFLOW driver installed on this computer"
+          onClick={handleDriverPrint}
+          title="Only works if a genuine POSiFLOW / TSPL driver is installed on this computer"
         >
           Print via printer driver
         </button>
@@ -238,7 +256,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         {serialSupported && (
           <button
             type="button"
-            className="rounded border border-slate-400 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 disabled:opacity-50"
+            className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             disabled={!ready || busy !== ""}
             onClick={handleSerialPrint}
             title="Sends the label to the printer's Bluetooth or COM port — works on Windows with no driver"
@@ -331,14 +349,13 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
         <p className="w-full text-xs text-slate-600">
           <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} ·
-          50 × 25 mm. <strong>Print (USB)</strong> talks to the printer directly
-          and gives the sharpest barcode. If that says access denied, the
-          printer is installed as a Windows/Mac printer and Windows will not
-          release it. On Windows the reliable way round that is{" "}
-          <strong>Print via Bluetooth / COM</strong> — pair the printer over
-          Bluetooth once, pick its COM port, and it prints with no driver at
-          all. <strong>Print via printer driver</strong> works too, if the
-          POSiFLOW driver is installed and healthy.
+          50 × 25 mm. On Windows, use{" "}
+          <strong>Print via Bluetooth / COM</strong> — pair the printer once and
+          it prints with no driver at all. Windows will not release the printer
+          for <strong>Print (USB)</strong>, and{" "}
+          <strong>Print via printer driver</strong> only works if a real
+          POSiFLOW / TSPL driver is installed; without one it prints pages of
+          code and feeds the whole roll.
         </p>
       </div>
 
