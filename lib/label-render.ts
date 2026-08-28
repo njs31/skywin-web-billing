@@ -37,6 +37,24 @@ export function productCode(product: LabelProduct) {
   );
 }
 
+export function getLabelFields(product: LabelProduct) {
+  return {
+    code: productCode(product),
+    rate: inclusiveRate(product.saleRate, product.gstRate),
+    exp: formatExp(product.expiryDate),
+    name: product.name.toUpperCase(),
+  };
+}
+
+export function expandProducts(products: LabelProduct[], copies = 1) {
+  const qty = Math.max(1, Math.min(99, copies));
+  const out: LabelProduct[] = [];
+  for (const product of products) {
+    for (let i = 0; i < qty; i++) out.push(product);
+  }
+  return out;
+}
+
 async function qrDataUrl(code: string): Promise<string> {
   return QRCode.toDataURL(code, {
     margin: 0,
@@ -183,16 +201,6 @@ export function downloadLabelPngFiles(
       const name = qty > 1 ? `${base}-${i + 1}.png` : `${base}.png`;
       triggerDownload(png, name);
     }
-  }
-}
-
-/** Open label PNG in a new tab (image only — no browser print). */
-export function openLabelPngInNewTab(dataUrl: string) {
-  const opened = window.open(dataUrl, "_blank", "noopener,noreferrer");
-  if (!opened) {
-    throw new Error(
-      "Popup blocked. Allow popups for this site or use Download label."
-    );
   }
 }
 

@@ -4,16 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   downloadLabelPng,
   downloadLabelPngFiles,
-  expandLabelUrls,
-  openLabelPngInNewTab,
+  expandProducts,
   productCode,
   renderLabelPngMap,
   type LabelProduct,
 } from "@/lib/label-render";
-import {
-  isUsbPrintSupported,
-  printLabelPngsViaUsb,
-} from "@/lib/thermal-usb-print";
+import { isUsbPrintSupported, printLabelsViaUsb } from "@/lib/thermal-usb-print";
 
 export type { LabelProduct };
 
@@ -57,6 +53,19 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const usbSupported = isUsbPrintSupported();
 
   useEffect(() => {
+    const blockBrowserPrint = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        window.alert(
+          "Browser Print does not work on the TagPro — it prints garbage text.\n\nUse “Download label PNG” (phone app) or “Print to TagPro (USB)” in Chrome with USB cable."
+        );
+      }
+    };
+    window.addEventListener("keydown", blockBrowserPrint);
+    return () => window.removeEventListener("keydown", blockBrowserPrint);
+  }, []);
+
+  useEffect(() => {
     try {
       localStorage.removeItem(LEGACY_OFFSET_KEY);
       localStorage.removeItem(LEGACY_FLIP_KEY);
@@ -92,14 +101,9 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
   async function handleUsbPrint() {
     if (!ready || usbPrinting) return;
-    const urls = expandLabelUrls(products, labelPngMap, copies);
-    if (urls.length === 0) {
-      alert("Label is not ready yet. Wait a moment and try again.");
-      return;
-    }
     setUsbPrinting(true);
     try {
-      await printLabelPngsViaUsb(urls);
+      await printLabelsViaUsb(expandProducts(products, copies));
     } catch (error) {
       if (error instanceof DOMException && error.name === "NotFoundError") {
         return;
@@ -108,7 +112,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       alert(
         error instanceof Error
           ? error.message
-          : "USB print failed. Check the cable and try again."
+          : "USB print failed. Use Download label PNG instead."
       );
     } finally {
       setUsbPrinting(false);
@@ -118,25 +122,6 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   function handleDownloadAll() {
     if (!ready) return;
     downloadLabelPngFiles(products, labelPngMap, copies);
-  }
-
-  function handleOpenImage() {
-    if (!ready) return;
-    const urls = expandLabelUrls(products, labelPngMap, copies);
-    if (urls.length === 0) {
-      alert("Label is not ready yet. Wait a moment and try again.");
-      return;
-    }
-    try {
-      openLabelPngInNewTab(urls[0]);
-    } catch (error) {
-      console.error(error);
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Could not open label image. Use Download instead."
-      );
-    }
   }
 
   async function handleDownloadOne(product: LabelProduct) {
@@ -167,40 +152,24 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   return (
     <div className="label-print-root">
       <div className="no-print label-toolbar">
-        {usbSupported ? (
-          <button
-            type="button"
-            className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-            disabled={!ready || usbPrinting}
-            onClick={handleUsbPrint}
-          >
-            {usbPrinting
-              ? "Printing…"
-              : ready
-                ? "Print to TagPro (USB)"
-                : "Preparing label…"}
-          </button>
-        ) : null}
         <button
           type="button"
-          className={`rounded px-3 py-1.5 text-sm disabled:opacity-50 ${
-            usbSupported
-              ? "border border-slate-300 bg-white text-slate-700"
-              : "bg-emerald-700 text-white"
-          }`}
+          className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
           disabled={!ready}
           onClick={handleDownloadAll}
         >
-          Download label PNG
+          {ready ? "Download label PNG" : "Preparing label…"}
         </button>
-        <button
-          type="button"
-          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
-          disabled={!ready}
-          onClick={handleOpenImage}
-        >
-          Open label image
-        </button>
+        {usbSupported ? (
+          <button
+            type="button"
+            className="rounded border border-emerald-700 bg-white px-3 py-1.5 text-sm font-medium text-emerald-800 disabled:opacity-50"
+            disabled={!ready || usbPrinting}
+            onClick={handleUsbPrint}
+          >
+            {usbPrinting ? "Sending to printer…" : "Print to TagPro (USB)"}
+          </button>
+        ) : null}
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
           Copies per product
           <input
@@ -214,25 +183,23 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         </label>
         <p className="w-full text-xs text-slate-600">
           <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 50
-          × 25 mm. Check the preview matches your sample before printing.
+          × 25 mm. The preview below is what the PNG will look like.
         </p>
-        {usbSupported ? (
-          <p className="w-full rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-            <strong>Print from PC:</strong> connect TagPro by USB cable → use{" "}
-            <strong>Chrome or Edge</strong> → click{" "}
-            <strong>Print to TagPro (USB)</strong> → pick your printer in the
-            list. Do not use Ctrl+P in the browser.
-          </p>
-        ) : (
-          <p className="w-full rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            For direct PC printing, open this page in <strong>Chrome or Edge</strong>{" "}
-            with the printer on USB. Or download the PNG and print from{" "}
-            <strong>Paint</strong> / the POSiFLOW phone app.
-          </p>
-        )}
-        <p className="w-full rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
-          <strong>Never use browser Print (Ctrl+P)</strong> on the TagPro — it
-          prints garbage text, not the label.
+        <p className="w-full rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900">
+          <strong>Why you see garbage text:</strong> Mac/Chrome{" "}
+          <strong>Print (⌘P)</strong> sends PostScript code to the TagPro. The
+          printer prints that code as text — not your label.{" "}
+          <strong>Never use ⌘P or File → Print on this page.</strong>
+        </p>
+        <p className="w-full rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+          <strong>From computer (USB):</strong> Google Chrome → TagPro on USB →
+          click <strong>Print to TagPro (USB)</strong> → pick the printer. This
+          sends native printer commands, not browser Print.
+        </p>
+        <p className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          <strong>From phone:</strong> Download PNG → open{" "}
+          <strong>Shreyans / POSiFLOW Easy Label</strong> app → import image →
+          print on Bluetooth.
         </p>
       </div>
       <div className="thermal-label-preview-grid">
