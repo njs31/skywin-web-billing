@@ -17,7 +17,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <main className="h-screen w-screen overflow-auto bg-[#050605]">{children}</main>;
   }
 
-  // Bare shell for label printer pages — no sidebar/header chrome in print preview.
+  // Bare shell for label pages — never designed for browser print.
   if (pathname.startsWith("/products/labels")) {
     return <main className="label-print-shell min-h-screen w-screen bg-white">{children}</main>;
   }

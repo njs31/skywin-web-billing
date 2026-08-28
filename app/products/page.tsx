@@ -36,11 +36,8 @@ export default async function ProductsPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="outline">
-            <a href="/products/labels/all">All labels PDF (50×25 mm)</a>
-          </Button>
-          <Button asChild variant="outline">
             <a href="/products/labels/images">
-              Download all label images (ZIP)
+              Download all label images (PNG ZIP)
             </a>
           </Button>
           <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">

@@ -23,6 +23,18 @@ body {
     background: white;
   }
 
+  /* Thermal label pages must never become a PDF/PostScript print job. */
+  body.thermal-label-page * {
+    display: none !important;
+  }
+  body.thermal-label-page::after {
+    display: block !important;
+    content: "Do not print this page. The POSiFLOW printer will print source code. Close this dialog and use Print to POSiFLOW (USB), or download the PNG for the POSiFLOW app.";
+    padding: 24px;
+    font: 16px/1.4 Arial, sans-serif;
+    color: #111;
+  }
+
   aside,
   nav,
   .no-print {

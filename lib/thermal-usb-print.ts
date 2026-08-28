@@ -10,6 +10,17 @@ export type EscPosRaster = {
   bytes: Uint8Array;
 };
 
+function concatBytes(...parts: Uint8Array[]) {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
 /** Encode a monochrome image with the ESC/POS GS v 0 raster-image command. */
 export function buildEscPosRasterCommand({
   bytesPerRow,
@@ -23,7 +34,7 @@ export function buildEscPosRasterCommand({
     throw new Error("Label image data does not match its declared dimensions.");
   }
 
-  return new Uint8Array([
+  const header = Uint8Array.from([
     0x1b,
     0x40, // initialize
     0x1b,
@@ -38,12 +49,14 @@ export function buildEscPosRasterCommand({
     (bytesPerRow >> 8) & 0xff,
     height & 0xff,
     (height >> 8) & 0xff,
-    ...raster,
+  ]);
+  const footer = Uint8Array.from([
     0x0a,
     0x1b,
     0x64,
     0x02, // feed just enough to clear the tear edge
   ]);
+  return concatBytes(header, raster, footer);
 }
 
 /** Build one label as native ESC/POS raster bytes (not PostScript or HTML). */

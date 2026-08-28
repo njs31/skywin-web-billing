@@ -13,8 +13,8 @@ import { isUsbPrintSupported, printLabelsViaUsb } from "@/lib/thermal-usb-print"
 
 export type { LabelProduct };
 
-const LEGACY_OFFSET_KEY = "skywin-label-offset-mm";
-const LEGACY_FLIP_KEY = "skywin-label-flip-180";
+const PRINT_BLOCK_MESSAGE =
+  "Do not use File → Print, Ctrl+P, or a PDF. That sends source code to the POSiFLOW printer.\n\nUse “Print to POSiFLOW (USB)” in Chrome, or download the PNG and print it only from the POSiFLOW / Easy Label app.";
 
 function LabelPreview({
   product,
@@ -32,6 +32,7 @@ function LabelPreview({
         src={previewSrc}
         alt={`Label for ${product.name}`}
         className="thermal-label-preview-img"
+        draggable={false}
       />
     );
   }
@@ -53,25 +54,26 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const usbSupported = isUsbPrintSupported();
 
   useEffect(() => {
-    const blockBrowserPrint = (event: KeyboardEvent) => {
+    document.body.classList.add("thermal-label-page");
+    const blockKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
         event.preventDefault();
-        window.alert(
-          "Browser Print does not work on the POSiFLOW — it prints garbage text.\n\nUse “Download label PNG” (phone app) or “Print to POSiFLOW (USB)” in Chrome with USB cable."
-        );
+        event.stopPropagation();
+        window.alert(PRINT_BLOCK_MESSAGE);
       }
     };
-    window.addEventListener("keydown", blockBrowserPrint);
-    return () => window.removeEventListener("keydown", blockBrowserPrint);
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.removeItem(LEGACY_OFFSET_KEY);
-      localStorage.removeItem(LEGACY_FLIP_KEY);
-    } catch {
-      /* ignore */
-    }
+    const blockPrint = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.alert(PRINT_BLOCK_MESSAGE);
+    };
+    window.addEventListener("keydown", blockKey, true);
+    window.addEventListener("beforeprint", blockPrint, true);
+    return () => {
+      document.body.classList.remove("thermal-label-page");
+      window.removeEventListener("keydown", blockKey, true);
+      window.removeEventListener("beforeprint", blockPrint, true);
+    };
   }, []);
 
   useEffect(() => {
@@ -114,7 +116,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       alert(
         error instanceof Error
           ? error.message
-          : "USB print failed. Use Download label PNG instead."
+          : "USB print failed. Use Download PNG and print from the POSiFLOW app — not from Windows/Mac Print."
       );
     } finally {
       setUsbPrinting(false);
@@ -154,24 +156,29 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   return (
     <div className="label-print-root">
       <div className="no-print label-toolbar">
-        <button
-          type="button"
-          className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-          disabled={!ready}
-          onClick={handleDownloadAll}
-        >
-          {ready ? "Download label image (PNG)" : "Preparing label…"}
-        </button>
         {usbSupported ? (
           <button
             type="button"
-            className="rounded border border-emerald-700 bg-white px-3 py-1.5 text-sm font-medium text-emerald-800 disabled:opacity-50"
+            className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             disabled={!ready || usbPrinting}
             onClick={handleUsbPrint}
           >
             {usbPrinting ? "Sending label image…" : "Print to POSiFLOW (USB)"}
           </button>
-        ) : null}
+        ) : (
+          <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            USB print needs Google Chrome or Edge on a computer. On a phone,
+            download the PNG and print from the POSiFLOW app.
+          </p>
+        )}
+        <button
+          type="button"
+          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 disabled:opacity-50"
+          disabled={!ready}
+          onClick={handleDownloadAll}
+        >
+          {ready ? "Download PNG for POSiFLOW app" : "Preparing label…"}
+        </button>
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
           Copies per product
           <input
@@ -185,23 +192,24 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         </label>
         <p className="w-full text-xs text-slate-600">
           <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 50
-          × 25 mm (5 × 2.5 cm) CODE128 barcode at 203 DPI. The preview below is
-          exactly what will print.
+          × 25 mm barcode image. Preview only — this page cannot be printed.
         </p>
-        <p className="w-full rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900">
-          <strong>Do not use browser Print (⌘P / File → Print):</strong> it can
-          send PostScript source code to this POSiFLOW printer. Use the USB button
-          above, or download the PNG and print it through the POSiFLOW app/driver.
+        <p className="w-full rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-950">
+          <strong>If the sticker shows source code, a PDF was sent.</strong> Never
+          use File → Print, Ctrl+P, “All labels PDF”, Preview, or the Windows/Mac
+          printer dialog. Those wrap the label in PDF/PostScript, and this
+          printer prints that code as text.
         </p>
         <p className="w-full rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-          <strong>From computer (USB):</strong> Google Chrome or Edge → connect
-          POSiFLOW by USB → click <strong>Print to POSiFLOW (USB)</strong> → pick
-          the printer. This sends a 50 × 25 mm raster label, not text commands.
+          <strong>Computer:</strong> Chrome/Edge + USB cable →{" "}
+          <strong>Print to POSiFLOW (USB)</strong>. That sends a picture, not a
+          document.
         </p>
         <p className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          <strong>From phone:</strong> Download PNG → open{" "}
-          <strong>Shreyans / POSiFLOW Easy Label</strong> → import image → set
-          label size to <strong>50 × 25 mm</strong> → print on Bluetooth.
+          <strong>Phone:</strong> Download PNG → open{" "}
+          <strong>POSiFLOW / Easy Label</strong> → import image → size{" "}
+          <strong>50 × 25 mm</strong> → print over Bluetooth. Do not share the file
+          to a system printer.
         </p>
       </div>
       <div className="thermal-label-preview-grid">
@@ -218,7 +226,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
               onClick={() => handleDownloadOne(product)}
               disabled={!labelPngMap[product.id]}
             >
-              Download this label
+              Download this PNG
             </button>
           </div>
         ))}
