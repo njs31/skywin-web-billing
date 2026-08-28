@@ -35,12 +35,14 @@ body {
   body.thermal-label-page .thermal-label-actions {
     display: none !important;
   }
+  /* Screen preview is hidden; the print sheet carries the real copies. */
   body.thermal-label-page .thermal-label-preview-grid {
-    display: block;
-    padding: 0;
-    gap: 0;
+    display: none !important;
   }
-  body.thermal-label-page .thermal-label-preview-img {
+  body.thermal-label-page .label-print-sheet {
+    display: block !important;
+  }
+  body.thermal-label-page .label-print-sheet img {
     width: 50mm;
     height: 25mm;
     border: 0;
@@ -48,7 +50,7 @@ body {
     break-after: page;
     page-break-after: always;
   }
-  body.thermal-label-page .thermal-label-preview-img:last-child {
+  body.thermal-label-page .label-print-sheet img:last-child {
     break-after: auto;
     page-break-after: auto;
   }
@@ -312,3 +314,8 @@ body {
   font-weight: 700;
 }
 
+
+/* Only ever visible inside @media print. */
+.label-print-sheet {
+  display: none;
+}

@@ -123,17 +123,60 @@ async function acquirePrinter() {
   return remembered ?? (await navigator.usb!.requestDevice({ filters: [] }));
 }
 
+/**
+ * Where to go to release the printer from the OS.
+ *
+ * A printer installed as a system printer is owned by the kernel print
+ * driver, and Chrome is then refused access to it entirely. This is the
+ * single most common reason direct printing fails.
+ */
+function releaseInstructions() {
+  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  if (/Windows/i.test(ua)) {
+    return (
+      "On Windows: Settings → Bluetooth & devices → Printers & scanners → " +
+      "POSiFLOW → Remove. Then unplug the USB cable and plug it back in."
+    );
+  }
+  if (/Mac OS X|Macintosh/i.test(ua)) {
+    return (
+      "On Mac: System Settings → Printers & Scanners → POSiFLOW → Remove " +
+      "Printer. Then unplug the USB cable and plug it back in."
+    );
+  }
+  if (/Linux|X11/i.test(ua)) {
+    return "On Linux: remove the printer from CUPS, or add a udev rule granting access.";
+  }
+  return "Remove the POSiFLOW from your computer's printer list, then replug the cable.";
+}
+
+async function openDevice(device: USBDevice) {
+  try {
+    await device.open();
+  } catch {
+    throw new Error(
+      "Your computer's printing system is holding the POSiFLOW, so the browser " +
+        "cannot talk to it directly.\n\n" +
+        releaseInstructions() +
+        "\n\nAlso close the POSiFLOW / Easy Label app and any other tab printing " +
+        "to it.\n\nIf you would rather keep the printer installed, use " +
+        "“Print via printer driver” instead — that prints the same label through " +
+        "the driver you already have."
+    );
+  }
+}
+
 async function sendToPrinter(payload: Uint8Array) {
   const device = await acquirePrinter();
-  await device.open();
+  await openDevice(device);
   try {
     const ep = await findBulkOutEndpoint(device);
     try {
       await device.claimInterface(ep.interfaceNumber);
     } catch {
       throw new Error(
-        "The printer is held by the system print driver. Remove the POSiFLOW from " +
-          "your computer's Printers list (or unplug and replug it), then try again."
+        "The printer opened but is still held by the system print driver.\n\n" +
+          releaseInstructions()
       );
     }
     try {

@@ -99,10 +99,21 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     };
   }, [products]);
 
-  const labelCount = useMemo(
-    () => products.length * Math.max(1, Math.min(99, copies)),
-    [products, copies]
-  );
+  const qty = Math.max(1, Math.min(99, copies));
+  const labelCount = products.length * qty;
+
+  /** One entry per physical sticker, so a driver print honours "copies each". */
+  const printSheet = useMemo(() => {
+    const out: { key: string; src: string; alt: string }[] = [];
+    for (const product of products) {
+      const src = labelPngMap[product.id];
+      if (!src) continue;
+      for (let i = 0; i < qty; i++) {
+        out.push({ key: `${product.id}-${i}`, src, alt: product.name });
+      }
+    }
+    return out;
+  }, [products, labelPngMap, qty]);
 
   const printerOptions = { language, copies, gapMm, density, upright };
 
@@ -198,6 +209,16 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
         <button
           type="button"
+          className="rounded border border-slate-400 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 disabled:opacity-50"
+          disabled={!ready}
+          onClick={() => window.print()}
+          title="Prints the same label through the POSiFLOW driver installed on this computer"
+        >
+          Print via printer driver
+        </button>
+
+        <button
+          type="button"
           className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 disabled:opacity-50"
           disabled={!ready}
           onClick={() => downloadLabelPngFiles(products, labelPngMap, copies)}
@@ -280,9 +301,19 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
         <p className="w-full text-xs text-slate-600">
           <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} ·
-          50 × 25 mm. Printing sends the sticker as a picture in the printer&rsquo;s
-          own language, so nothing is passed through a PDF.
+          50 × 25 mm. <strong>Print (USB)</strong> talks to the printer directly
+          and gives the sharpest barcode. If that says access denied, the
+          printer is installed as a Windows/Mac printer — either remove it from
+          the printer list, or just use{" "}
+          <strong>Print via printer driver</strong> instead.
         </p>
+      </div>
+
+      <div className="label-print-sheet" aria-hidden="true">
+        {printSheet.map((label) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={label.key} src={label.src} alt={label.alt} />
+        ))}
       </div>
 
       <div className="thermal-label-preview-grid">
