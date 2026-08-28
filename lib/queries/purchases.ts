@@ -6,6 +6,8 @@ import {
   products,
   stockMovements,
   suppliers,
+  purchaseReturns,
+  partyPaymentAllocations,
 } from "@/db/schema";
 import { calculateLineAmount, calculateGstBreakdown, isInterstateGst } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
@@ -68,9 +70,13 @@ export async function getPurchaseById(id: number) {
       qty: purchaseItems.qty,
       rate: purchaseItems.rate,
       amount: purchaseItems.amount,
+      discountType: purchaseItems.discountType,
+      discountValue: purchaseItems.discountValue,
       batchNumber: purchaseItems.batchNumber,
+      expiryDate: purchaseItems.expiryDate,
       hsnCode: sql<string>`coalesce(${purchaseItems.hsnCode}, ${products.hsnCode})`,
       gstRate: sql<string>`coalesce(nullif(${purchaseItems.gstRate}::numeric, 0), ${products.gstRate}::numeric, 0)`,
+      product: products,
     })
     .from(purchaseItems)
     .leftJoin(products, eq(purchaseItems.productId, products.id))
@@ -348,6 +354,302 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
   scheduleQwicksStockPush(purchase.touchedProductIds);
 
   return purchase.created;
+}
+
+const updatePurchaseSchema = createPurchaseSchema.extend({
+  id: z.number().int().positive(),
+});
+
+async function reversePurchaseStock(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  purchaseId: number
+) {
+  const { deductFromBatch } = await import("@/lib/batches");
+  const movements = await tx
+    .select()
+    .from(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.type, "purchase"),
+        eq(stockMovements.referenceId, purchaseId)
+      )
+    );
+
+  const productIds: number[] = [];
+  for (const movement of movements) {
+    const qty = toNumber(movement.qtyDelta);
+    if (qty <= 0) continue;
+    if (movement.batchId) {
+      await deductFromBatch(tx, movement.batchId, qty, movement.productId);
+    } else {
+      const { deductStockFefo } = await import("@/lib/batches");
+      await deductStockFefo(tx, movement.productId, qty);
+    }
+    productIds.push(movement.productId);
+  }
+
+  await tx
+    .delete(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.type, "purchase"),
+        eq(stockMovements.referenceId, purchaseId)
+      )
+    );
+
+  return productIds;
+}
+
+async function applyPurchaseLines(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  purchaseId: number,
+  data: z.infer<typeof createPurchaseSchema>,
+  resolvedItems: Array<
+    (typeof data.items)[number] & { amount: number; gstRate: number; hsnCode: string }
+  >,
+  subtotal: number
+) {
+  const touchedProductIds: number[] = [];
+
+  for (const item of resolvedItems) {
+    let productId = item.productId || null;
+
+    if (!productId && item.customName?.trim()) {
+      const saleRate = item.saleRate ?? item.rate;
+      const [createdProduct] = await tx
+        .insert(products)
+        .values({
+          name: item.customName.trim(),
+          unit: "pcs",
+          purchaseRate: item.rate.toFixed(2),
+          saleRate: saleRate.toFixed(2),
+          wholesaleRate: saleRate.toFixed(2),
+          stockQty: "0.00",
+          hsnCode: item.hsnCode,
+          gstRate: item.gstRate.toFixed(2),
+          expiryDate: item.expiryDate || null,
+          isActive: true,
+        })
+        .returning();
+
+      const barcode = `SW${String(createdProduct.id).padStart(6, "0")}`;
+      await tx
+        .update(products)
+        .set({ barcode, sku: barcode })
+        .where(eq(products.id, createdProduct.id));
+
+      productId = createdProduct.id;
+    }
+
+    await tx.insert(purchaseItems).values({
+      purchaseId,
+      productId,
+      customName: item.customName || null,
+      qty: item.qty.toFixed(2),
+      rate: item.rate.toFixed(2),
+      discountType: item.discountType,
+      discountValue: item.discountValue.toFixed(2),
+      amount: item.amount.toFixed(2),
+      hsnCode: item.hsnCode || null,
+      gstRate: item.gstRate.toFixed(2),
+      batchNumber: item.batchNumber?.trim().toUpperCase() || null,
+      expiryDate: item.expiryDate || null,
+    });
+
+    if (productId) {
+      const effectiveRate = item.amount / item.qty;
+      const landedRate =
+        subtotal > 0 ? effectiveRate * (1 + (data.handlingCharges ?? 0) / subtotal) : effectiveRate;
+
+      const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
+      const batchNumber =
+        item.batchNumber?.trim().toUpperCase() || defaultBatchNumber("PUR");
+
+      const batch = await addStockToBatch(tx, {
+        productId,
+        batchNumber,
+        qty: item.qty,
+        purchaseRate: landedRate,
+        saleRate: item.saleRate ?? item.rate,
+        expiryDate: item.expiryDate || null,
+        notes: data.invoiceNo
+          ? `Purchase ${data.invoiceNo}`
+          : `Purchase #${purchaseId}`,
+      });
+
+      await tx.insert(stockMovements).values({
+        productId,
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        type: "purchase",
+        qtyDelta: item.qty.toFixed(2),
+        referenceId: purchaseId,
+      });
+
+      touchedProductIds.push(productId);
+    }
+  }
+
+  return touchedProductIds;
+}
+
+export async function updatePurchase(input: z.infer<typeof updatePurchaseSchema>) {
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
+  const data = updatePurchaseSchema.parse(input);
+  const settings = await getSettings();
+
+  const [existing] = await db
+    .select()
+    .from(purchases)
+    .where(eq(purchases.id, data.id))
+    .limit(1);
+  if (!existing) throw new Error("Purchase bill not found");
+
+  const [linkedReturn] = await db
+    .select({ id: purchaseReturns.id })
+    .from(purchaseReturns)
+    .where(eq(purchaseReturns.purchaseId, data.id))
+    .limit(1);
+  if (linkedReturn) {
+    throw new Error("Cannot edit a purchase bill that has purchase returns.");
+  }
+
+  const [linkedPayment] = await db
+    .select({ id: partyPaymentAllocations.id })
+    .from(partyPaymentAllocations)
+    .where(eq(partyPaymentAllocations.purchaseId, data.id))
+    .limit(1);
+  if (linkedPayment) {
+    throw new Error(
+      "Cannot edit a purchase bill with payment allocations. Remove payment allocations first."
+    );
+  }
+
+  const [supplier] = await db
+    .select({ gstin: suppliers.gstin })
+    .from(suppliers)
+    .where(eq(suppliers.id, data.supplierId))
+    .limit(1);
+  if (!supplier) throw new Error("Supplier not found");
+
+  const resolvedItems: Array<
+    (typeof data.items)[number] & { amount: number; gstRate: number; hsnCode: string }
+  > = [];
+
+  for (const item of data.items) {
+    let itemHsn = item.hsnCode ?? null;
+    let gstRate = item.gstRate ?? 0;
+    if (item.productId) {
+      const [product] = await db
+        .select()
+        .from(products)
+        .where(eq(products.id, item.productId))
+        .limit(1);
+      if (product) {
+        if (!itemHsn) itemHsn = product.hsnCode;
+        if (!gstRate) gstRate = toNumber(product.gstRate);
+      }
+    }
+    if (!itemHsn || !itemHsn.trim()) {
+      throw new Error(`HSN code is mandatory for all purchase items.`);
+    }
+    const amount = calculateLineAmount(
+      item.qty,
+      item.rate,
+      item.discountValue,
+      item.discountType
+    );
+    resolvedItems.push({
+      ...item,
+      hsnCode: itemHsn.trim(),
+      gstRate,
+      amount,
+    });
+  }
+
+  const interstate = isInterstateGst(supplier.gstin, settings.stateCode);
+  const gst = calculateGstBreakdown(
+    resolvedItems.map((item) => ({
+      qty: item.qty,
+      rate: item.rate,
+      gstRate: item.gstRate,
+      discountType: item.discountType,
+      discountValue: item.discountValue,
+    })),
+    { interstate }
+  );
+  const subtotal = gst.taxableAmount;
+  const gstTotal = Math.round((gst.cgst + gst.sgst + gst.igst) * 100) / 100;
+  const handling = data.handlingCharges ?? 0;
+  const grandTotal = Math.round((gst.grandTotal + handling) * 100) / 100;
+  const paidAmount =
+    data.paymentType === "cash" ? grandTotal : (data.paidAmount ?? 0);
+
+  const oldGrandTotal = toNumber(existing.grandTotal);
+  const oldSupplierId = existing.supplierId;
+
+  const result = await db.transaction(async (tx) => {
+    const reversedProductIds = await reversePurchaseStock(tx, data.id);
+
+    await tx.delete(purchaseItems).where(eq(purchaseItems.purchaseId, data.id));
+
+    await tx
+      .update(purchases)
+      .set({
+        supplierId: data.supplierId,
+        invoiceNo: data.invoiceNo,
+        date: new Date(`${data.date}T12:00:00+05:30`),
+        paymentType: data.paymentType,
+        subtotal: subtotal.toFixed(2),
+        gstTotal: gstTotal.toFixed(2),
+        grandTotal: grandTotal.toFixed(2),
+        paidAmount: paidAmount.toFixed(2),
+        handlingCharges: handling.toFixed(2),
+        notes: data.notes,
+      })
+      .where(eq(purchases.id, data.id));
+
+    const touchedProductIds = await applyPurchaseLines(
+      tx,
+      data.id,
+      data,
+      resolvedItems,
+      subtotal
+    );
+
+    await tx
+      .update(suppliers)
+      .set({
+        totalPurchased: sql`${suppliers.totalPurchased}::numeric - ${oldGrandTotal.toFixed(2)}`,
+      })
+      .where(eq(suppliers.id, oldSupplierId));
+
+    await tx
+      .update(suppliers)
+      .set({
+        totalPurchased: sql`${suppliers.totalPurchased}::numeric + ${grandTotal.toFixed(2)}`,
+      })
+      .where(eq(suppliers.id, data.supplierId));
+
+    return {
+      id: data.id,
+      touchedProductIds: [...new Set([...reversedProductIds, ...touchedProductIds])],
+    };
+  });
+
+  revalidateTag("purchases", "max");
+  revalidateTag("products", "max");
+  revalidateTag("suppliers", "max");
+  revalidatePath("/purchases");
+  revalidatePath(`/purchases/${data.id}`);
+  revalidatePath("/products");
+  revalidatePath("/suppliers");
+  revalidatePath("/");
+
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush(result.touchedProductIds);
+
+  return { id: result.id };
 }
 
 export type PurchaseReportBill = {

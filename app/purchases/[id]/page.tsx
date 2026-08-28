@@ -39,11 +39,16 @@ export default async function PurchaseDetailPage({
         <Button asChild variant="outline">
           <Link href="/purchases">Back to Purchases</Link>
         </Button>
-        <PrintButton
-          autoPrint={print === "1"}
-          initialSize={size}
-          buttonText="Print Purchase Bill"
-        />
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href={`/purchases/${purchase.id}/edit`}>Edit Purchase</Link>
+          </Button>
+          <PrintButton
+            autoPrint={print === "1"}
+            initialSize={size}
+            buttonText="Print Purchase Bill"
+          />
+        </div>
       </div>
       <PurchaseBillTemplate
         business={business}

@@ -3,9 +3,9 @@ import sharp from "sharp";
 import { BUSINESS } from "@/lib/business";
 import { toNumber } from "@/lib/utils";
 
-/** Individual label image: 35 × 22 mm at 300 DPI. */
-export const LABEL_IMAGE_W_PX = 413;
-export const LABEL_IMAGE_H_PX = 260;
+/** Individual label image: 38 × 25 mm at 300 DPI. */
+export const LABEL_IMAGE_W_PX = 449;
+export const LABEL_IMAGE_H_PX = 295;
 
 export type LabelPngProduct = {
   id: number;
@@ -70,20 +70,30 @@ export async function renderLabelPng(product: LabelPngProduct): Promise<Buffer> 
   const rate = inclusiveRate(product.saleRate, product.gstRate).toFixed(2);
   const expiry = formatExpiry(product.expiryDate) || "—";
 
+  /* Safe margins: 12px from each edge at 300 DPI */
+  const M = 12;
+  const W = LABEL_IMAGE_W_PX;
+  const H = LABEL_IMAGE_H_PX;
+  const innerW = W - M * 2;
+  const qrSize = 110;
+  const qrX = W - M - qrSize;
+  const qrY = H - M - qrSize;
+  const textMaxW = qrX - M - 6;
+
   const svg = `
-    <svg width="${LABEL_IMAGE_W_PX}" height="${LABEL_IMAGE_H_PX}" viewBox="0 0 ${LABEL_IMAGE_W_PX} ${LABEL_IMAGE_H_PX}" xmlns="http://www.w3.org/2000/svg">
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
       <rect width="100%" height="100%" fill="#ffffff"/>
-      <rect x="1" y="1" width="411" height="258" fill="none" stroke="#000000" stroke-width="1"/>
+      <rect x="1" y="1" width="${W - 2}" height="${H - 2}" fill="none" stroke="#000000" stroke-width="1"/>
       <g fill="#000000" font-family="Arial, Helvetica, sans-serif">
-        <text x="206.5" y="22" text-anchor="middle" font-size="14" font-weight="700">${escapeXml(BUSINESS.name)}</text>
-        <text x="206.5" y="36" text-anchor="middle" font-size="9">(${escapeXml(BUSINESS.tagline)})</text>
-        <line x1="12" y1="44" x2="401" y2="44" stroke="#000000" stroke-width="1"/>
-        <text x="12" y="63" font-size="13" font-weight="700">${escapeXml(shorten(product.name, 46))}</text>
-        <text x="12" y="91" font-size="15" font-weight="700">SKU: ${escapeXml(shorten(code, 25))}</text>
-        <text x="12" y="115" font-size="12">EXP: ${escapeXml(expiry)}</text>
-        <text x="12" y="143" font-size="16" font-weight="700">RATE: ${escapeXml(rate)}</text>
+        <text x="${W / 2}" y="${M + 16}" text-anchor="middle" font-size="16" font-weight="700">${escapeXml(BUSINESS.name)}</text>
+        <text x="${W / 2}" y="${M + 30}" text-anchor="middle" font-size="10">(${escapeXml(BUSINESS.tagline)})</text>
+        <line x1="${M}" y1="${M + 38}" x2="${W - M}" y2="${M + 38}" stroke="#000000" stroke-width="1"/>
+        <text x="${M}" y="${M + 56}" font-size="13" font-weight="700">${escapeXml(shorten(product.name, 40))}</text>
+        <text x="${M}" y="${M + 80}" font-size="14" font-weight="700">SKU: ${escapeXml(shorten(code, 22))}</text>
+        <text x="${M}" y="${M + 100}" font-size="12">EXP: ${escapeXml(expiry)}</text>
+        <text x="${M}" y="${M + 122}" font-size="16" font-weight="700">MRP: ${escapeXml(rate)}</text>
       </g>
-      <image href="${qrDataUrl}" x="286" y="72" width="108" height="108" preserveAspectRatio="none"/>
+      <image href="${qrDataUrl}" x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}" preserveAspectRatio="none"/>
     </svg>`;
 
   return sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).withMetadata({ density: 300 }).toBuffer();

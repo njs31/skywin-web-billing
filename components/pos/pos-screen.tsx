@@ -335,6 +335,26 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
     });
   };
 
+  const setQty = (id: string, raw: string) => {
+    const parsed = parseFloat(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    const next = Math.round(parsed * 100) / 100;
+    setCart((prev) => {
+      const item = prev.find((c) => c.id === id);
+      if (!item) return prev;
+      if (item.product && next > item.availableQty) {
+        setError(
+          `Insufficient stock for "${item.name}"${
+            item.batchNumber ? ` (batch ${item.batchNumber})` : ""
+          }. Available: ${item.availableQty}`
+        );
+        return prev;
+      }
+      setError("");
+      return prev.map((c) => (c.id === id ? { ...c, qty: next } : c));
+    });
+  };
+
   const updateLineDiscount = (id: string, discountValue: number, discountType: "percent" | "value") => {
     setCart((prev) =>
       prev.map((c) =>
@@ -730,9 +750,21 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                       >
                         <Minus className="h-3 w-3" />
                       </Button>
-                      <span className="w-8 text-center text-sm font-semibold">
-                        {item.qty}
-                      </span>
+                      <input
+                        type="number"
+                        min={0.01}
+                        step="any"
+                        value={item.qty}
+                        onChange={(e) => setQty(item.id, e.target.value)}
+                        onBlur={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (!Number.isFinite(v) || v <= 0) {
+                            setQty(item.id, "1");
+                          }
+                        }}
+                        className="h-7 w-16 rounded border border-slate-200 bg-white px-1 text-center text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        aria-label={`Quantity for ${item.name}`}
+                      />
                       <Button
                         size="icon"
                         variant="outline"

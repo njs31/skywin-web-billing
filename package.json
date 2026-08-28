@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "tsx --test lib/session.test.ts lib/api-auth.test.ts lib/skywin-client-fixes.test.ts",
     "test:skywin": "tsx --env-file=.env.local scripts/test-skywin-client-fixes.ts",
+    "test:skywin:latest": "tsx --env-file=.env.local scripts/test-latest-skywin-changes.ts",
     "test:security": "tsx --test lib/session.test.ts lib/api-auth.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
@@ -25,7 +26,8 @@
     "db:assign-skus": "tsx --env-file=.env.local scripts/assign-skus.ts",
     "db:assign-expiry": "tsx --env-file=.env.local scripts/assign-expiry.ts",
     "db:migrate-batches": "tsx --env-file=.env.local scripts/migrate-batches.ts",
-    "db:add-indexes": "tsx --env-file=.env.local scripts/add-performance-indexes.ts"
+    "db:add-indexes": "tsx --env-file=.env.local scripts/add-performance-indexes.ts",
+    "labels:images": "tsx --env-file=.env.local scripts/generate-all-label-images-zip.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.17",

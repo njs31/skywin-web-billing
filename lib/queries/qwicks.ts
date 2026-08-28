@@ -4,6 +4,7 @@ import { eq, asc } from "drizzle-orm";
 import { getSettings } from "@/lib/settings";
 import { createSale } from "@/lib/queries/sales";
 import { toNumber } from "@/lib/utils";
+import { inclusiveSalePrice } from "@/lib/gst";
 
 export type QwicksProductItem = {
   productCode: string;
@@ -24,15 +25,19 @@ export type QwicksProductItem = {
   isActive: boolean;
 };
 
+
 function mapProductToQwicksItem(
   product: typeof products.$inferSelect,
   categoryName: string | null
 ): QwicksProductItem {
   const code = product.sku || product.barcode || `PROD-${product.id}`;
   const saleRateNum = toNumber(product.saleRate);
-  const mrpNum = product.mrp ? toNumber(product.mrp) : saleRateNum;
-  const stockNum = Math.max(0, Math.floor(toNumber(product.stockQty)));
   const gstNum = toNumber(product.gstRate);
+  const finalPrice = inclusiveSalePrice(saleRateNum, gstNum);
+  const mrpBase = product.mrp ? toNumber(product.mrp) : saleRateNum;
+  const mrpNum = inclusiveSalePrice(mrpBase, gstNum);
+  const stockNum = Math.max(0, Math.floor(toNumber(product.stockQty)));
+
   const cat = categoryName || "General";
 
   return {
@@ -40,8 +45,8 @@ function mapProductToQwicksItem(
     fullName: product.name,
     shortName: product.name,
     description: `HSN: ${product.hsnCode || "-"}`,
-    salePrice: saleRateNum,
-    price: saleRateNum,
+    salePrice: finalPrice,
+    price: finalPrice,
     mrp: mrpNum,
     stock: stockNum,
     categoryName: cat,

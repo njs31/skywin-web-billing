@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Plus, Trash2, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { searchProductBatches, resolveProductsForImport } from "@/lib/actions/products";
 import * as XLSX from "xlsx";
-import { createPurchase } from "@/lib/actions/purchases";
+import { createPurchase, updatePurchase } from "@/lib/actions/purchases";
 import { calculateLineAmount, calculateGstBreakdown, isInterstateGst } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
@@ -106,10 +106,36 @@ function parseExcelFile(file: File): Promise<{ code: string; qty: number; rate?:
   });
 }
 
+type PurchaseEditData = {
+  id: number;
+  supplierId: number;
+  invoiceNo: string | null;
+  date: Date;
+  paymentType: "credit" | "cash";
+  handlingCharges: string;
+  paidAmount: string;
+  notes: string | null;
+  items: Array<{
+    product: Product | null;
+    name: string;
+    qty: number;
+    rate: number;
+    discountType: "percent" | "value";
+    discountValue: number;
+    hsnCode?: string;
+    batchNumber?: string;
+    expiryDate?: string;
+    gstRate?: number;
+    saleRate?: number;
+  }>;
+};
+
 export function PurchaseForm({
   suppliers: initialSuppliers,
+  initialPurchase,
 }: {
   suppliers: Supplier[];
+  initialPurchase?: PurchaseEditData;
 }) {
   const router = useRouter();
   const [suppliers] = useState(initialSuppliers);
@@ -155,6 +181,36 @@ export function PurchaseForm({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!initialPurchase) return;
+    const d = initialPurchase.date;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    setSupplierId(String(initialPurchase.supplierId));
+    setInvoiceNo(initialPurchase.invoiceNo ?? "");
+    setInvoiceDate(`${y}-${m}-${day}`);
+    setPaymentType(initialPurchase.paymentType);
+    setHandlingCharges(String(toNumber(initialPurchase.handlingCharges)));
+    setPaidAmount(String(toNumber(initialPurchase.paidAmount)));
+    setItems(
+      initialPurchase.items.map((row) => ({
+        id: crypto.randomUUID(),
+        product: row.product,
+        name: row.name,
+        qty: row.qty,
+        rate: row.rate,
+        discountType: row.discountType,
+        discountValue: row.discountValue,
+        hsnCode: row.hsnCode,
+        batchNumber: row.batchNumber,
+        expiryDate: row.expiryDate,
+        gstRate: row.gstRate,
+        saleRate: row.saleRate,
+      }))
+    );
+  }, [initialPurchase]);
 
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -408,16 +464,35 @@ export function PurchaseForm({
             gstRate: i.gstRate ?? toNumber(i.product?.gstRate),
             saleRate: i.saleRate,
           }));
-        await createPurchase({
-          supplierId: parseInt(supplierId, 10),
-          invoiceNo: invoiceNo || undefined,
-          date: invoiceDate,
-          paymentType,
-          handlingCharges: parseFloat(handlingCharges) || 0,
-          paidAmount: paymentType === "cash" ? undefined : (parseFloat(paidAmount) || 0),
-          items: payloadItems,
-        });
-        router.push("/purchases");
+        await (initialPurchase
+          ? updatePurchase({
+              id: initialPurchase.id,
+              supplierId: parseInt(supplierId, 10),
+              invoiceNo: invoiceNo || undefined,
+              date: invoiceDate,
+              paymentType,
+              handlingCharges: parseFloat(handlingCharges) || 0,
+              paidAmount:
+                paymentType === "cash"
+                  ? undefined
+                  : parseFloat(paidAmount) || 0,
+              items: payloadItems,
+            })
+          : createPurchase({
+              supplierId: parseInt(supplierId, 10),
+              invoiceNo: invoiceNo || undefined,
+              date: invoiceDate,
+              paymentType,
+              handlingCharges: parseFloat(handlingCharges) || 0,
+              paidAmount:
+                paymentType === "cash"
+                  ? undefined
+                  : parseFloat(paidAmount) || 0,
+              items: payloadItems,
+            }));
+        router.push(
+          initialPurchase ? `/purchases/${initialPurchase.id}` : "/purchases"
+        );
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to save purchase");
       }
@@ -428,8 +503,14 @@ export function PurchaseForm({
     return (
       <div className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
-          <h1 className="text-2xl font-bold">New Purchase</h1>
-          <p className="text-sm text-slate-500">Record stock inward from supplier</p>
+          <h1 className="text-2xl font-bold">
+            {initialPurchase ? "Edit Purchase" : "New Purchase"}
+          </h1>
+          <p className="text-sm text-slate-500">
+            {initialPurchase
+              ? "Update purchase bill and stock inward"
+              : "Record stock inward from supplier"}
+          </p>
         </div>
         <div className="space-y-4">
           <div className="h-40 animate-pulse rounded-xl bg-slate-100" />
@@ -442,8 +523,14 @@ export function PurchaseForm({
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold">New Purchase</h1>
-        <p className="text-sm text-slate-500">Record stock inward from supplier</p>
+        <h1 className="text-2xl font-bold">
+          {initialPurchase ? "Edit Purchase" : "New Purchase"}
+        </h1>
+        <p className="text-sm text-slate-500">
+          {initialPurchase
+            ? "Update purchase bill and stock inward"
+            : "Record stock inward from supplier"}
+        </p>
       </div>
 
       <Card>

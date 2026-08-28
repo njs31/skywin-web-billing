@@ -1,11 +1,11 @@
 /**
- * POSiFLOW TagPro (PSF20) — 2-inch / 58 mm thermal label printer, 203 DPI.
- * Sticker roll: 35 × 22 mm direct thermal labels.
+ * POSiFLOW PSF20 — 2-inch / 58 mm thermal label printer, 203 DPI.
+ * Sticker roll: 38 × 25 mm direct thermal labels (standard retail barcode size).
  *
  * Important: send raster PNG images to this printer — not PDF/PostScript.
  */
-export const THERMAL_LABEL_W_MM = 35;
-export const THERMAL_LABEL_H_MM = 22;
+export const THERMAL_LABEL_W_MM = 38;
+export const THERMAL_LABEL_H_MM = 25;
 export const THERMAL_PRINTER_MAX_WIDTH_MM = 58;
 export const THERMAL_PRINTER_DPI = 203;
 

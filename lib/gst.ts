@@ -215,3 +215,26 @@ export function getBatchBillingRate(
   if (batchSale > 0) return batchSale;
   return productSale;
 }
+
+/** GST-inclusive customer price from exclusive sale rate. */
+export function inclusiveSalePrice(
+  saleRate: number | string,
+  gstRate: number | string
+) {
+  const rate = toNumber(saleRate);
+  const gst = toNumber(gstRate);
+  if (gst <= 0) return rate;
+  return Math.round(rate * (1 + gst / 100) * 100) / 100;
+}
+
+/** Validate POS cart quantity against stock (pure helper for tests/UI). */
+export function normalizeCartQty(
+  raw: number,
+  availableQty: number,
+  hasStockLimit: boolean
+): number | null {
+  if (!Number.isFinite(raw) || raw <= 0) return null;
+  const next = Math.round(raw * 100) / 100;
+  if (hasStockLimit && next > availableQty) return null;
+  return next;
+}

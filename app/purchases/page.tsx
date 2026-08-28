@@ -68,6 +68,9 @@ export default async function PurchasesPage() {
                         <Button asChild variant="outline" size="sm">
                           <Link href={`/purchases/${p.id}`}>Show</Link>
                         </Button>
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/purchases/${p.id}/edit`}>Edit</Link>
+                        </Button>
                         <Button asChild size="sm">
                           <Link href={`/purchases/${p.id}?print=1`}>Print</Link>
                         </Button>

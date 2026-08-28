@@ -5,7 +5,7 @@ import {
   nextWholesaleSequence,
   WHOLESALE_INVOICE_SEQ_FLOOR,
 } from "./financial-year";
-import { getBatchBillingRate } from "./gst";
+import { getBatchBillingRate, inclusiveSalePrice, normalizeCartQty } from "./gst";
 import {
   buildAutoReceiptParts,
   compareSalesReportRows,
@@ -161,5 +161,31 @@ describe("sales report ascending order", () => {
       sorted.map(([mode]) => mode),
       ["cash", "upi", "card", "credit"]
     );
+  });
+});
+
+describe("Qwicks API GST-inclusive price", () => {
+  it("adds GST to sale price for Qwicks payload", () => {
+    assert.equal(inclusiveSalePrice(100, 12), 112);
+    assert.equal(inclusiveSalePrice(47.87, 12), 53.61);
+  });
+
+  it("leaves exempt products unchanged", () => {
+    assert.equal(inclusiveSalePrice(80, 0), 80);
+  });
+});
+
+describe("POS editable quantity", () => {
+  it("accepts large typed quantities within stock", () => {
+    assert.equal(normalizeCartQty(1000, 5000, true), 1000);
+  });
+
+  it("rejects quantity above available stock", () => {
+    assert.equal(normalizeCartQty(1000, 50, true), null);
+  });
+
+  it("rejects zero or invalid input", () => {
+    assert.equal(normalizeCartQty(0, 100, true), null);
+    assert.equal(normalizeCartQty(-5, 100, true), null);
   });
 });

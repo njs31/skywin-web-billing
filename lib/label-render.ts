@@ -100,63 +100,76 @@ async function renderLabelCanvas(product: LabelProduct) {
   const code = productCode(product);
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   const exp = formatExp(product.expiryDate);
-  const pad = 6;
-  const innerW = canvas.width - pad * 2;
 
+  /* Safe margins — keep content well inside the sticker edges */
+  const margin = 8;
+  const innerW = canvas.width - margin * 2;
+
+  /* White background */
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#000000";
   ctx.textBaseline = "top";
 
-  drawCentered(ctx, BUSINESS.name, 5, "bold 10px Arial, Helvetica, sans-serif", innerW);
-  drawCentered(
-    ctx,
-    `(${BUSINESS.tagline})`,
-    17,
-    "7px Arial, Helvetica, sans-serif",
-    innerW
-  );
-  drawCentered(
-    ctx,
-    product.name.toUpperCase(),
-    29,
-    "bold 9px Arial, Helvetica, sans-serif",
-    innerW
-  );
+  /* ── Row 1: Company name (centered) ── */
+  let y = margin;
+  drawCentered(ctx, BUSINESS.name, y, "bold 12px Arial, Helvetica, sans-serif", innerW);
+  y += 14;
 
-  const qrSize = 70;
-  const qrX = canvas.width - pad - qrSize;
-  const qrY = canvas.height - pad - qrSize;
+  /* ── Row 2: Tagline (centered) ── */
+  drawCentered(ctx, `(${BUSINESS.tagline})`, y, "8px Arial, Helvetica, sans-serif", innerW);
+  y += 12;
+
+  /* ── Separator line ── */
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(margin, y);
+  ctx.lineTo(canvas.width - margin, y);
+  ctx.stroke();
+  y += 4;
+
+  /* ── Row 3: Product name (left-aligned, bold, truncated) ── */
+  ctx.textAlign = "left";
+  drawCentered(ctx, product.name.toUpperCase(), y, "bold 10px Arial, Helvetica, sans-serif", innerW);
+  y += 14;
+
+  /* ── Bottom section: text on left, QR on right ── */
+  const qrSize = 72;
+  const qrPad = 4;
+  const qrX = canvas.width - margin - qrSize;
+  const qrY = canvas.height - margin - qrSize;
+  const textRight = qrX - qrPad;
+  const textMaxW = textRight - margin;
+
+  /* QR code */
   const qrSrc = await qrDataUrl(code);
   const qrImg = await loadImage(qrSrc);
   ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
-  const textRight = qrX - 6;
-  let y = qrY + 1;
-
+  /* SKU / Barcode */
   ctx.textAlign = "left";
   ctx.font = "bold 11px Arial, Helvetica, sans-serif";
   let codeLine = code;
-  while (codeLine.length > 1 && ctx.measureText(codeLine).width > textRight - pad) {
+  while (codeLine.length > 1 && ctx.measureText(codeLine).width > textMaxW) {
     codeLine = codeLine.slice(0, -1);
   }
-  ctx.fillText(codeLine === code ? codeLine : `${codeLine}…`, pad, y);
+  ctx.fillText(codeLine === code ? codeLine : `${codeLine}…`, margin, y);
   y += 16;
 
-  ctx.font = "8px Arial, Helvetica, sans-serif";
-  ctx.fillText(exp ? `EXP: ${exp}` : "EXP: —", pad, y);
+  /* Expiry date */
+  ctx.font = "9px Arial, Helvetica, sans-serif";
+  ctx.fillText(exp ? `EXP: ${exp}` : "EXP: —", margin, y);
   y += 14;
 
-  ctx.fillText("RATE:", pad, y);
-  ctx.font = "bold 10px Arial, Helvetica, sans-serif";
-  const rateText = rate.toFixed(2);
-  const rateW = ctx.measureText(rateText).width;
-  ctx.fillText(rateText, textRight - rateW, y);
+  /* MRP rate */
+  ctx.font = "bold 12px Arial, Helvetica, sans-serif";
+  ctx.fillText(`MRP: ${rate.toFixed(2)}`, margin, y);
 
   return canvas;
 }
 
-/** Render one 35×22 mm label at the printer's native 203 DPI. */
+/** Render one 38×25 mm label at the printer's native 203 DPI. */
 export async function renderLabelPng(product: LabelProduct): Promise<string> {
   const canvas = await renderLabelCanvas(product);
   return canvas.toDataURL("image/png");
