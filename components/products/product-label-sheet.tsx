@@ -2,8 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
-import QRCode from "qrcode";
+import JsBarcode from "jsbarcode";
 import { BUSINESS } from "@/lib/business";
+import {
+  THERMAL_LABEL_H_MM,
+  THERMAL_LABEL_W_MM,
+} from "@/lib/label-print-config";
 import { toNumber } from "@/lib/utils";
 
 export type LabelProduct = {
@@ -16,25 +20,12 @@ export type LabelProduct = {
   expiryDate: string | null;
 };
 
-/**
- * Physical sticker sheet: 105 × 297 mm (A4 half), 3 × 10 of 35 × 22 mm.
- * Stickers touch horizontally; rounded corners look like small gaps.
- */
-const LABEL_COLS = 3;
-const LABEL_ROWS = 10;
-const LABELS_PER_SHEET = LABEL_COLS * LABEL_ROWS;
-const PAGE_W = 105;
-const PAGE_H = 297;
-const LABEL_W = 35;
-const LABEL_H = 22;
-const PAD_LEFT = 0;
-const PAD_TOP = 5.5;
-const COL_GAP = 0;
-const ROW_GAP = 7.33;
-const QR_MM = 7;
-const CONTENT_H = 14;
-const OFFSET_KEY = "skywin-label-offset-mm";
-const FLIP_KEY = "skywin-label-flip-180";
+const LABEL_W = THERMAL_LABEL_W_MM;
+const LABEL_H = THERMAL_LABEL_H_MM;
+
+/** Legacy sheet-printer keys — cleared on load. */
+const LEGACY_OFFSET_KEY = "skywin-label-offset-mm";
+const LEGACY_FLIP_KEY = "skywin-label-flip-180";
 
 function inclusiveRate(saleRate: string | number, gstRate: string | number) {
   const rate = toNumber(saleRate);
@@ -57,205 +48,133 @@ function productCode(product: LabelProduct) {
   );
 }
 
-function LabelCard({
-  product,
-  qrDataUrl,
-}: {
-  product: LabelProduct | null;
-  qrDataUrl: string;
-}) {
-  if (!product) {
-    return <div className="product-label product-label-empty" />;
-  }
+async function barcodeDataUrl(code: string): Promise<string> {
+  if (typeof document === "undefined") return "";
+  const canvas = document.createElement("canvas");
+  JsBarcode(canvas, code, {
+    format: "CODE128",
+    width: 1.4,
+    height: 36,
+    displayValue: false,
+    margin: 0,
+    background: "#ffffff",
+    lineColor: "#000000",
+  });
+  return canvas.toDataURL("image/png");
+}
 
+function drawThermalLabel(
+  doc: jsPDF,
+  product: LabelProduct,
+  barcodeImg: string
+) {
+  const padX = 1.2;
   const code = productCode(product);
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   const exp = formatExp(product.expiryDate);
-
-  return (
-    <div className="product-label">
-      <div className="product-label-inner">
-        <p className="label-brand">{BUSINESS.name}</p>
-        <p className="label-tagline">({BUSINESS.tagline})</p>
-        <div className="label-body">
-          <div className="label-text">
-            <p className="label-name">{product.name.toUpperCase()}</p>
-            <p className="label-code">{code}</p>
-            <p className="label-exp">EXP: {exp || ""}</p>
-            <p className="label-rate">RATE: {rate.toFixed(2)}</p>
-          </div>
-          {qrDataUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={qrDataUrl} alt="" className="label-qr" />
-          ) : (
-            <div className="label-qr label-qr-empty" />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function drawPdfLabel(
-  doc: jsPDF,
-  product: LabelProduct,
-  qrDataUrl: string,
-  x: number,
-  y: number,
-  flip180: boolean
-) {
-  const padX = 1.0;
-  const qr = QR_MM;
-  const textW = LABEL_W - padX * 2 - qr - 0.8;
-  const topPad = (LABEL_H - CONTENT_H) / 2;
-
-  const rate = inclusiveRate(product.saleRate, product.gstRate);
-  const nameLine =
-    (doc
-      .setFont("helvetica", "bold")
-      .setFontSize(5.2)
-      .splitTextToSize(product.name.toUpperCase(), textW)
-      .slice(0, 1)[0] as string) || "";
-
-  type Line = {
-    text: string;
-    dy: number;
-    size: number;
-    bold?: boolean;
-    full?: boolean;
-  };
-
-  const lines: Line[] = [
-    { text: BUSINESS.name, dy: 1.6, size: 5.5, bold: true, full: true },
-    { text: `(${BUSINESS.tagline})`, dy: 3.2, size: 4.2 },
-    { text: nameLine, dy: 5.4, size: 5.2, bold: true },
-    { text: productCode(product), dy: 8.0, size: 7, bold: true },
-    {
-      text: `EXP: ${formatExp(product.expiryDate)}`,
-      dy: 10.4,
-      size: 5.2,
-    },
-    { text: `RATE: ${rate.toFixed(2)}`, dy: 13.0, size: 6.2, bold: true },
-  ];
+  const textW = LABEL_W - padX * 2;
 
   doc.setTextColor(0, 0, 0);
 
-  for (const line of lines) {
-    doc.setFont("helvetica", line.bold ? "bold" : "normal");
-    doc.setFontSize(line.size);
-    const maxW = line.full ? LABEL_W - padX * 2 : textW;
-    if (flip180) {
-      // Rotate around the cell so printer/sheet feed comes out upright.
-      doc.text(line.text, x + LABEL_W - padX, y + LABEL_H - (topPad + line.dy), {
-        angle: 180,
-        maxWidth: maxW,
-      });
-    } else {
-      doc.text(line.text, x + padX, y + topPad + line.dy, { maxWidth: maxW });
-    }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5);
+  doc.text(BUSINESS.name, padX, 2.2, { maxWidth: textW });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(3.8);
+  doc.text(`(${BUSINESS.tagline})`, padX, 3.6, { maxWidth: textW });
+
+  const nameLine =
+    (doc
+      .setFont("helvetica", "bold")
+      .setFontSize(4.6)
+      .splitTextToSize(product.name.toUpperCase(), textW)
+      .slice(0, 1)[0] as string) || "";
+  doc.text(nameLine, padX, 5.4, { maxWidth: textW });
+
+  const barcodeH = 9;
+  const barcodeY = 6.2;
+  if (barcodeImg) {
+    doc.addImage(barcodeImg, "PNG", padX, barcodeY, textW, barcodeH);
   }
 
-  if (qrDataUrl) {
-    if (flip180) {
-      doc.addImage(
-        qrDataUrl,
-        "PNG",
-        x + padX,
-        y + LABEL_H - (topPad + 5.0) - qr,
-        qr,
-        qr,
-        undefined,
-        "NONE",
-        180
-      );
-    } else {
-      doc.addImage(
-        qrDataUrl,
-        "PNG",
-        x + LABEL_W - padX - qr,
-        y + topPad + 5.0,
-        qr,
-        qr
-      );
-    }
-  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6);
+  doc.text(code, LABEL_W / 2, barcodeY + barcodeH + 1.8, { align: "center" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(4.8);
+  const bottomY = LABEL_H - 1.4;
+  doc.text(`EXP: ${exp || "—"}`, padX, bottomY);
+  doc.setFont("helvetica", "bold");
+  doc.text(`RATE: ${rate.toFixed(2)}`, LABEL_W - padX, bottomY, {
+    align: "right",
+  });
 }
 
 function buildLabelPdf(
-  pages: (LabelProduct | null)[][],
-  qrMap: Record<number, string>,
-  offsetX: number,
-  offsetY: number,
-  flip180: boolean
+  labels: LabelProduct[],
+  barcodeMap: Record<number, string>
 ) {
   const doc = new jsPDF({
-    orientation: "portrait",
+    orientation: "landscape",
     unit: "mm",
-    format: [PAGE_W, PAGE_H],
+    format: [LABEL_W, LABEL_H],
     compress: true,
   });
 
-  pages.forEach((page, pageIdx) => {
-    if (pageIdx > 0) doc.addPage([PAGE_W, PAGE_H], "portrait");
-    page.forEach((product, idx) => {
-      if (!product) return;
-      const col = idx % LABEL_COLS;
-      const row = Math.floor(idx / LABEL_COLS);
-      const x = PAD_LEFT + offsetX + col * (LABEL_W + COL_GAP);
-      const y = PAD_TOP + offsetY + row * (LABEL_H + ROW_GAP);
-      drawPdfLabel(doc, product, qrMap[product.id] || "", x, y, flip180);
-    });
+  labels.forEach((product, idx) => {
+    if (idx > 0) doc.addPage([LABEL_W, LABEL_H], "landscape");
+    drawThermalLabel(doc, product, barcodeMap[product.id] || "");
   });
 
   return doc;
 }
 
-function chunkPages(slots: (LabelProduct | null)[]) {
-  const pages: (LabelProduct | null)[][] = [];
-  for (let i = 0; i < Math.max(slots.length, 1); i += LABELS_PER_SHEET) {
-    const page = slots.slice(i, i + LABELS_PER_SHEET);
-    while (page.length < LABELS_PER_SHEET) page.push(null);
-    pages.push(page);
-  }
-  return pages;
+function LabelPreview({
+  product,
+  barcodeDataUrl,
+}: {
+  product: LabelProduct;
+  barcodeDataUrl: string;
+}) {
+  const code = productCode(product);
+  const rate = inclusiveRate(product.saleRate, product.gstRate);
+  const exp = formatExp(product.expiryDate);
+
+  return (
+    <div className="thermal-label">
+      <p className="thermal-label-brand">{BUSINESS.name}</p>
+      <p className="thermal-label-tagline">({BUSINESS.tagline})</p>
+      <p className="thermal-label-name">{product.name.toUpperCase()}</p>
+      {barcodeDataUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={barcodeDataUrl} alt="" className="thermal-label-barcode" />
+      ) : (
+        <div className="thermal-label-barcode thermal-label-barcode-empty" />
+      )}
+      <p className="thermal-label-code">{code}</p>
+      <div className="thermal-label-footer">
+        <span>EXP: {exp || "—"}</span>
+        <span className="thermal-label-rate">RATE: {rate.toFixed(2)}</span>
+      </div>
+    </div>
+  );
 }
 
 export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
-  const [qrMap, setQrMap] = useState<Record<number, string>>({});
+  const [barcodeMap, setBarcodeMap] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
-  const [startAt, setStartAt] = useState(1);
   const [copies, setCopies] = useState(1);
-  const [offsetX, setOffsetX] = useState(0);
-  const [offsetY, setOffsetY] = useState(0);
-  // Default on — your sheet was printing upside-down on the top-left sticker.
-  const [flip180, setFlip180] = useState(true);
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(OFFSET_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { x?: number; y?: number };
-        if (Number.isFinite(parsed.x)) setOffsetX(parsed.x as number);
-        if (Number.isFinite(parsed.y)) setOffsetY(parsed.y as number);
-      }
-      const flip = localStorage.getItem(FLIP_KEY);
-      if (flip === "0") setFlip180(false);
-      if (flip === "1") setFlip180(true);
+      localStorage.removeItem(LEGACY_OFFSET_KEY);
+      localStorage.removeItem(LEGACY_FLIP_KEY);
     } catch {
       /* ignore */
     }
   }, []);
-
-  function setOffset(nextX: number, nextY: number) {
-    setOffsetX(nextX);
-    setOffsetY(nextY);
-    localStorage.setItem(OFFSET_KEY, JSON.stringify({ x: nextX, y: nextY }));
-  }
-
-  function setFlip(next: boolean) {
-    setFlip180(next);
-    localStorage.setItem(FLIP_KEY, next ? "1" : "0");
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -263,18 +182,13 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       const entries: Record<number, string> = {};
       for (const p of products) {
         try {
-          entries[p.id] = await QRCode.toDataURL(productCode(p), {
-            margin: 0,
-            width: 256,
-            errorCorrectionLevel: "M",
-            color: { dark: "#000000", light: "#ffffff" },
-          });
+          entries[p.id] = await barcodeDataUrl(productCode(p));
         } catch {
           entries[p.id] = "";
         }
       }
       if (!cancelled) {
-        setQrMap(entries);
+        setBarcodeMap(entries);
         setReady(true);
       }
     })();
@@ -283,18 +197,17 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     };
   }, [products]);
 
-  const pages = useMemo(() => {
-    const skip = Math.max(0, Math.min(LABELS_PER_SHEET - 1, startAt - 1));
-    const qty = Math.max(1, Math.min(LABELS_PER_SHEET, copies));
+  const labels = useMemo(() => {
+    const qty = Math.max(1, Math.min(99, copies));
     const printed: LabelProduct[] = [];
     for (const p of products) {
       for (let i = 0; i < qty; i++) printed.push(p);
     }
-    return chunkPages([...Array(skip).fill(null), ...printed]);
-  }, [products, startAt, copies]);
+    return printed;
+  }, [products, copies]);
 
   function printPdf() {
-    const doc = buildLabelPdf(pages, qrMap, offsetX, offsetY, flip180);
+    const doc = buildLabelPdf(labels, barcodeMap);
     const blob = doc.output("blob");
     const url = URL.createObjectURL(blob);
     const opened = window.open(url, "_blank");
@@ -311,7 +224,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     );
   }
 
-  const labelCount = products.length * Math.max(1, copies);
+  const labelCount = labels.length;
 
   return (
     <div className="label-print-root">
@@ -322,84 +235,36 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           disabled={!ready}
           onClick={printPdf}
         >
-          {ready ? "Open print PDF" : "Preparing QR…"}
+          {ready ? "Open print PDF" : "Preparing barcodes…"}
         </button>
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          Start at
+          Copies per product
           <input
             type="number"
             min={1}
-            max={LABELS_PER_SHEET}
-            value={startAt}
-            onChange={(e) => setStartAt(Number(e.target.value) || 1)}
-            className="h-8 w-14 rounded border border-slate-300 px-2 text-sm"
-          />
-          <span className="text-slate-400">(1 = top-left)</span>
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          Copies
-          <input
-            type="number"
-            min={1}
-            max={LABELS_PER_SHEET}
+            max={99}
             value={copies}
             onChange={(e) => setCopies(Number(e.target.value) || 1)}
             className="h-8 w-14 rounded border border-slate-300 px-2 text-sm"
           />
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          Shift X mm
-          <input
-            type="number"
-            step={0.5}
-            value={offsetX}
-            onChange={(e) => setOffset(Number(e.target.value) || 0, offsetY)}
-            className="h-8 w-16 rounded border border-slate-300 px-2 text-sm"
-          />
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          Shift Y mm
-          <input
-            type="number"
-            step={0.5}
-            value={offsetY}
-            onChange={(e) => setOffset(offsetX, Number(e.target.value) || 0)}
-            className="h-8 w-16 rounded border border-slate-300 px-2 text-sm"
-          />
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600">
-          <input
-            type="checkbox"
-            checked={flip180}
-            onChange={(e) => setFlip(e.target.checked)}
-          />
-          Rotate 180° (fix upside-down print)
-        </label>
         <p className="text-xs text-slate-500">
-          {labelCount} label{labelCount === 1 ? "" : "s"} on a 105 × 297 mm
-          sheet (3 × 10 of 35 × 22 mm). Print at{" "}
-          <strong>100% / Actual size</strong>, paper{" "}
-          <strong>105 × 297 mm</strong> (not A4), margins <strong>None</strong>.
-          Keep “Rotate 180°” on if the text comes out inverted.
+          {labelCount} label{labelCount === 1 ? "" : "s"} · 50 × 25 mm thermal
+          stickers for POSiFLOW TagPro (58 mm). In the print dialog use{" "}
+          <strong>100% / Actual size</strong>, paper <strong>50 × 25 mm</strong>
+          , margins <strong>None</strong>. USB from PC, or open the PDF on your
+          phone with the Shreyans / POSiFLOW label app.
         </p>
       </div>
-      {pages.map((page, pageIdx) => (
-        <div
-          key={pageIdx}
-          className="product-label-sheet"
-          style={{
-            transform: `translate(${offsetX}mm, ${offsetY}mm)`,
-          }}
-        >
-          {page.map((p, idx) => (
-            <LabelCard
-              key={`${pageIdx}-${idx}-${p?.id ?? "empty"}`}
-              product={p}
-              qrDataUrl={p ? qrMap[p.id] || "" : ""}
-            />
-          ))}
-        </div>
-      ))}
+      <div className="thermal-label-preview-grid">
+        {products.map((product) => (
+          <LabelPreview
+            key={product.id}
+            product={product}
+            barcodeDataUrl={barcodeMap[product.id] || ""}
+          />
+        ))}
+      </div>
     </div>
   );
 }
