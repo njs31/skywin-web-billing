@@ -1,10 +1,8 @@
-import JsBarcode from "jsbarcode";
+import QRCode from "qrcode";
 import { BUSINESS } from "@/lib/business";
 import {
   THERMAL_LABEL_H_PX,
-  THERMAL_LABEL_H_MM,
   THERMAL_LABEL_W_PX,
-  THERMAL_LABEL_W_MM,
 } from "@/lib/label-print-config";
 import { toNumber } from "@/lib/utils";
 
@@ -39,18 +37,13 @@ export function productCode(product: LabelProduct) {
   );
 }
 
-export function barcodeDataUrl(code: string): string {
-  const canvas = document.createElement("canvas");
-  JsBarcode(canvas, code, {
-    format: "CODE128",
-    width: 2,
-    height: 56,
-    displayValue: false,
+async function qrDataUrl(code: string): Promise<string> {
+  return QRCode.toDataURL(code, {
     margin: 0,
-    background: "#ffffff",
-    lineColor: "#000000",
+    width: 256,
+    errorCorrectionLevel: "M",
+    color: { dark: "#000000", light: "#ffffff" },
   });
-  return canvas.toDataURL("image/png");
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -62,173 +55,93 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-function truncate(
+function drawCentered(
   ctx: CanvasRenderingContext2D,
   text: string,
+  y: number,
+  font: string,
   maxWidth: number
 ) {
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  let trimmed = text;
-  while (trimmed.length > 1 && ctx.measureText(`${trimmed}…`).width > maxWidth) {
-    trimmed = trimmed.slice(0, -1);
+  ctx.font = font;
+  let line = text;
+  while (line.length > 1 && ctx.measureText(line).width > maxWidth) {
+    line = line.slice(0, -1);
   }
-  return `${trimmed}…`;
+  if (line !== text) line = `${line}…`;
+  const x = (ctx.canvas.width - ctx.measureText(line).width) / 2;
+  ctx.fillText(line, x, y);
 }
 
-/** Draw one 50×25 mm label as a PNG bitmap (203 DPI). */
-export async function renderLabelPng(
-  product: LabelProduct,
-  barcodeImgSrc: string
-): Promise<string> {
+/**
+ * 50×25 mm label — matches Skywin reference layout:
+ * centered header, product name, code/EXP/RATE on left, QR on right.
+ */
+export async function renderLabelPng(product: LabelProduct): Promise<string> {
   const canvas = document.createElement("canvas");
   canvas.width = THERMAL_LABEL_W_PX;
   canvas.height = THERMAL_LABEL_H_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not available");
 
-  const pad = 10;
-  const innerW = canvas.width - pad * 2;
   const code = productCode(product);
   const rate = inclusiveRate(product.saleRate, product.gstRate);
   const exp = formatExp(product.expiryDate);
+  const pad = 8;
+  const innerW = canvas.width - pad * 2;
 
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#000000";
   ctx.textBaseline = "top";
 
-  let y = 6;
+  drawCentered(ctx, BUSINESS.name, 6, "bold 13px Arial, Helvetica, sans-serif", innerW);
+  drawCentered(
+    ctx,
+    `(${BUSINESS.tagline})`,
+    20,
+    "9px Arial, Helvetica, sans-serif",
+    innerW
+  );
+  drawCentered(
+    ctx,
+    product.name.toUpperCase(),
+    32,
+    "bold 10px Arial, Helvetica, sans-serif",
+    innerW
+  );
 
-  ctx.font = "bold 11px Arial, Helvetica, sans-serif";
-  ctx.fillText(truncate(ctx, BUSINESS.name, innerW), pad, y);
-  y += 13;
+  const qrSize = 82;
+  const qrX = canvas.width - pad - qrSize;
+  const qrY = canvas.height - pad - qrSize;
+  const qrSrc = await qrDataUrl(code);
+  const qrImg = await loadImage(qrSrc);
+  ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
 
-  ctx.font = "8px Arial, Helvetica, sans-serif";
-  ctx.fillText(truncate(ctx, `(${BUSINESS.tagline})`, innerW), pad, y);
-  y += 11;
+  const textRight = qrX - 6;
+  let y = qrY + 2;
 
-  ctx.font = "bold 10px Arial, Helvetica, sans-serif";
-  ctx.fillText(truncate(ctx, product.name.toUpperCase(), innerW), pad, y);
-  y += 13;
-
-  const barcodeH = 72;
-  if (barcodeImgSrc) {
-    const barcodeImg = await loadImage(barcodeImgSrc);
-    ctx.drawImage(barcodeImg, pad, y, innerW, barcodeH);
-  }
-  y += barcodeH + 4;
-
-  ctx.font = "bold 12px Arial, Helvetica, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(code, canvas.width / 2, y);
   ctx.textAlign = "left";
-  y += 14;
+  ctx.font = "bold 15px Arial, Helvetica, sans-serif";
+  ctx.fillText(code, pad, y);
+  y += 20;
 
-  ctx.font = "9px Arial, Helvetica, sans-serif";
-  const footerY = canvas.height - pad - 10;
-  ctx.fillText(`EXP: ${exp || "—"}`, pad, footerY);
-  ctx.font = "bold 10px Arial, Helvetica, sans-serif";
-  const rateText = `RATE: ${rate.toFixed(2)}`;
+  ctx.font = "10px Arial, Helvetica, sans-serif";
+  ctx.fillText(`EXP: ${exp}`, pad, y);
+  y += 16;
+
+  ctx.fillText("RATE:", pad, y);
+  ctx.font = "bold 11px Arial, Helvetica, sans-serif";
+  const rateText = rate.toFixed(2);
   const rateW = ctx.measureText(rateText).width;
-  ctx.fillText(rateText, canvas.width - pad - rateW, footerY);
+  ctx.fillText(rateText, textRight - rateW, y);
 
   return canvas.toDataURL("image/png");
 }
 
-export async function renderLabelPngs(
-  products: LabelProduct[],
-  copies = 1
-): Promise<string[]> {
-  const qty = Math.max(1, Math.min(99, copies));
-  const urls: string[] = [];
-  for (const product of products) {
-    const barcodeSrc = barcodeDataUrl(productCode(product));
-    for (let i = 0; i < qty; i++) {
-      urls.push(await renderLabelPng(product, barcodeSrc));
-    }
-  }
-  return urls;
-}
-
-function printHtmlForImages(imageUrls: string[]) {
-  const pages = imageUrls
-    .map(
-      (src) =>
-        `<img class="label-page" src="${src}" alt="Label" width="${THERMAL_LABEL_W_PX}" height="${THERMAL_LABEL_H_PX}" />`
-    )
-    .join("");
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Skywin Label</title>
-<style>
-@page {
-  size: ${THERMAL_LABEL_W_MM}mm ${THERMAL_LABEL_H_MM}mm;
-  margin: 0;
-}
-html, body {
-  margin: 0;
-  padding: 0;
-  background: #fff;
-}
-.label-page {
-  display: block;
-  width: ${THERMAL_LABEL_W_MM}mm;
-  height: ${THERMAL_LABEL_H_MM}mm;
-  page-break-after: always;
-  break-after: page;
-  object-fit: fill;
-}
-.label-page:last-child {
-  page-break-after: auto;
-  break-after: auto;
-}
-</style>
-</head>
-<body>${pages}</body>
-</html>`;
-}
-
-function schedulePrint(win: Window) {
-  const run = () => {
-    win.focus();
-    win.print();
-  };
-  if (win.document.readyState === "complete") {
-    setTimeout(run, 300);
-    return;
-  }
-  win.addEventListener("load", () => setTimeout(run, 300), { once: true });
-}
-
-/**
- * Open a new tab with label PNGs and trigger print.
- * Must be called synchronously from a click handler (no await before this).
- */
-export function printLabelImageUrls(imageUrls: string[]) {
-  if (imageUrls.length === 0 || typeof window === "undefined") return;
-
-  const win = window.open("", "_blank");
-  if (!win) {
-    throw new Error(
-      "Popup blocked. Allow popups for skywin.qwicksapp.com and try again."
-    );
-  }
-
-  win.document.open();
-  win.document.write(printHtmlForImages(imageUrls));
-  win.document.close();
-  schedulePrint(win);
-}
-
-/** Pre-render then call printLabelImageUrls from the click handler. */
 export async function renderLabelPngMap(products: LabelProduct[]) {
   const map: Record<number, string> = {};
   for (const product of products) {
-    const barcodeSrc = barcodeDataUrl(productCode(product));
-    map[product.id] = await renderLabelPng(product, barcodeSrc);
+    map[product.id] = await renderLabelPng(product);
   }
   return map;
 }
@@ -248,12 +161,42 @@ export function expandLabelUrls(
   return urls;
 }
 
-/** Download a single label PNG (e.g. for POSiFLOW mobile app). */
-export async function downloadLabelPng(product: LabelProduct) {
-  const barcodeSrc = barcodeDataUrl(productCode(product));
-  const dataUrl = await renderLabelPng(product, barcodeSrc);
+function triggerDownload(dataUrl: string, filename: string) {
   const link = document.createElement("a");
   link.href = dataUrl;
-  link.download = `label-${productCode(product)}.png`;
+  link.download = filename;
   link.click();
+}
+
+/** Download label PNG file(s). Safe for TagPro — never sends PostScript. */
+export function downloadLabelPngFiles(
+  products: LabelProduct[],
+  pngMap: Record<number, string>,
+  copies = 1
+) {
+  const qty = Math.max(1, Math.min(99, copies));
+  for (const product of products) {
+    const png = pngMap[product.id];
+    if (!png) continue;
+    const base = `label-${productCode(product)}`;
+    for (let i = 0; i < qty; i++) {
+      const name = qty > 1 ? `${base}-${i + 1}.png` : `${base}.png`;
+      triggerDownload(png, name);
+    }
+  }
+}
+
+/** Open label PNG in a new tab (image only — no browser print). */
+export function openLabelPngInNewTab(dataUrl: string) {
+  const opened = window.open(dataUrl, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    throw new Error(
+      "Popup blocked. Allow popups for this site or use Download label."
+    );
+  }
+}
+
+export async function downloadLabelPng(product: LabelProduct) {
+  const dataUrl = await renderLabelPng(product);
+  triggerDownload(dataUrl, `label-${productCode(product)}.png`);
 }

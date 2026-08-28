@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   downloadLabelPng,
+  downloadLabelPngFiles,
   expandLabelUrls,
-  printLabelImageUrls,
+  openLabelPngInNewTab,
   productCode,
   renderLabelPngMap,
   type LabelProduct,
@@ -83,26 +84,31 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     return products.length * qty;
   }, [products, copies]);
 
-  function handlePrint() {
+  function handleDownloadAll() {
+    if (!ready) return;
+    downloadLabelPngFiles(products, labelPngMap, copies);
+  }
+
+  function handleOpenImage() {
     if (!ready) return;
     const urls = expandLabelUrls(products, labelPngMap, copies);
     if (urls.length === 0) {
-      alert("Label image is not ready yet. Wait a moment and try again.");
+      alert("Label is not ready yet. Wait a moment and try again.");
       return;
     }
     try {
-      printLabelImageUrls(urls);
+      openLabelPngInNewTab(urls[0]);
     } catch (error) {
       console.error(error);
       alert(
         error instanceof Error
           ? error.message
-          : "Could not open print. Allow popups and try again."
+          : "Could not open label image. Use Download instead."
       );
     }
   }
 
-  async function handleDownload(product: LabelProduct) {
+  async function handleDownloadOne(product: LabelProduct) {
     try {
       const cached = labelPngMap[product.id];
       if (cached) {
@@ -134,9 +140,17 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           type="button"
           className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
           disabled={!ready}
-          onClick={handlePrint}
+          onClick={handleDownloadAll}
         >
-          {ready ? "Print label" : "Preparing label…"}
+          {ready ? "Download label PNG" : "Preparing label…"}
+        </button>
+        <button
+          type="button"
+          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 disabled:opacity-50"
+          disabled={!ready}
+          onClick={handleOpenImage}
+        >
+          Open label image
         </button>
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
           Copies per product
@@ -151,13 +165,14 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         </label>
         <p className="w-full text-xs text-slate-600">
           <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 50
-          × 25 mm for POSiFLOW TagPro. A new tab opens with the label image —
-          the print dialog appears there. Allow popups if nothing happens.
+          × 25 mm. Preview below must match your sample before printing.
         </p>
-        <p className="w-full rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          In the print dialog: choose <strong>TagPro</strong>, paper{" "}
-          <strong>50 × 25 mm</strong>, scale <strong>100%</strong>, margins{" "}
-          <strong>None</strong>.
+        <p className="w-full rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+          <strong>Do not use browser Print (Ctrl+P) on the TagPro.</strong> It
+          sends code the printer cannot read. Instead: download the PNG → open
+          in the <strong>POSiFLOW / Shreyans Easy Label</strong> app → print via
+          Bluetooth, or open the PNG in <strong>Paint</strong> on PC → Print →
+          TagPro.
         </p>
       </div>
       <div className="thermal-label-preview-grid">
@@ -171,10 +186,10 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
             <button
               type="button"
               className="no-print text-xs text-emerald-700 underline"
-              onClick={() => handleDownload(product)}
+              onClick={() => handleDownloadOne(product)}
               disabled={!labelPngMap[product.id]}
             >
-              Download PNG (for mobile app)
+              Download this label
             </button>
           </div>
         ))}
