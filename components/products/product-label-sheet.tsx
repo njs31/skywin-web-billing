@@ -11,7 +11,9 @@ import {
 import { LABEL_GAP_MM } from "@/lib/label-print-config";
 import {
   calibrateLabelGap,
+  isSerialPrintSupported,
   isUsbPrintSupported,
+  printLabelsViaSerial,
   printLabelsViaUsb,
   type PrinterLanguage,
 } from "@/lib/thermal-usb-print";
@@ -58,13 +60,14 @@ function LabelPreview({
 export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const [labelPngMap, setLabelPngMap] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState<"" | "print" | "calibrate">("");
+  const [busy, setBusy] = useState<"" | "print" | "serial" | "calibrate">("");
   const [copies, setCopies] = useState(1);
   const [language, setLanguage] = useState<PrinterLanguage>("tspl");
   const [gapMm, setGapMm] = useState(LABEL_GAP_MM);
   const [density, setDensity] = useState(8);
   const [upright, setUpright] = useState(true);
   const usbSupported = isUsbPrintSupported();
+  const serialSupported = isSerialPrintSupported();
 
   useEffect(() => {
     document.body.classList.add("thermal-label-page");
@@ -131,6 +134,21 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       await printLabelsViaUsb(products, printerOptions);
     } catch (error) {
       reportError(error, "USB print failed. Check the cable and try again.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function handleSerialPrint() {
+    if (!ready || busy) return;
+    setBusy("serial");
+    try {
+      await printLabelsViaSerial(products, printerOptions);
+    } catch (error) {
+      reportError(
+        error,
+        "Serial print failed. Pair the printer over Bluetooth first, then pick its COM port."
+      );
     } finally {
       setBusy("");
     }
@@ -216,6 +234,18 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         >
           Print via printer driver
         </button>
+
+        {serialSupported && (
+          <button
+            type="button"
+            className="rounded border border-slate-400 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 disabled:opacity-50"
+            disabled={!ready || busy !== ""}
+            onClick={handleSerialPrint}
+            title="Sends the label to the printer's Bluetooth or COM port — works on Windows with no driver"
+          >
+            {busy === "serial" ? "Sending…" : "Print via Bluetooth / COM"}
+          </button>
+        )}
 
         <button
           type="button"
@@ -303,9 +333,12 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} ·
           50 × 25 mm. <strong>Print (USB)</strong> talks to the printer directly
           and gives the sharpest barcode. If that says access denied, the
-          printer is installed as a Windows/Mac printer — either remove it from
-          the printer list, or just use{" "}
-          <strong>Print via printer driver</strong> instead.
+          printer is installed as a Windows/Mac printer and Windows will not
+          release it. On Windows the reliable way round that is{" "}
+          <strong>Print via Bluetooth / COM</strong> — pair the printer over
+          Bluetooth once, pick its COM port, and it prints with no driver at
+          all. <strong>Print via printer driver</strong> works too, if the
+          POSiFLOW driver is installed and healthy.
         </p>
       </div>
 

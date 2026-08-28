@@ -222,3 +222,64 @@ export async function calibrateLabelGap(options: TsplOptions = {}) {
   assertSupported();
   await sendToPrinter(buildTsplCalibration(options));
 }
+
+/* ------------------------------------------------------------------ *
+ * Serial transport
+ *
+ * On Windows a USB printer-class device is owned by usbprint.sys and
+ * WebUSB is refused outright, whether or not a working vendor driver is
+ * installed. A serial port is not locked that way, so pairing the printer
+ * over Bluetooth (it shows up as a COM port) lets the identical TSPL job
+ * through with no driver at all.
+ * ------------------------------------------------------------------ */
+
+export function isSerialPrintSupported() {
+  return (
+    typeof navigator !== "undefined" &&
+    typeof navigator.serial !== "undefined" &&
+    typeof window !== "undefined"
+  );
+}
+
+async function acquireSerialPort() {
+  const granted = await navigator.serial!.getPorts();
+  return granted[0] ?? (await navigator.serial!.requestPort());
+}
+
+async function sendViaSerial(payload: Uint8Array, baudRate: number) {
+  const port = await acquireSerialPort();
+  await port.open({ baudRate });
+  try {
+    const writable = port.writable;
+    if (!writable) throw new Error("The selected serial port cannot be written to.");
+    const writer = writable.getWriter();
+    try {
+      // Bluetooth SPP links drop bytes if a whole label is pushed at once.
+      const chunk = 1024;
+      for (let i = 0; i < payload.length; i += chunk) {
+        await writer.write(new Uint8Array(payload.subarray(i, i + chunk)));
+      }
+    } finally {
+      await writer.close().catch(() => writer.releaseLock());
+    }
+  } finally {
+    await port.close().catch(() => {});
+  }
+}
+
+/**
+ * Print over a serial/Bluetooth port. Same bytes as the USB path — only the
+ * wire differs.
+ */
+export async function printLabelsViaSerial(
+  products: LabelProduct[],
+  options: PrintJobOptions & { baudRate?: number } = {}
+) {
+  if (!isSerialPrintSupported()) {
+    throw new Error(
+      "Serial printing needs Google Chrome or Edge on a computer. Update the browser and try again."
+    );
+  }
+  if (products.length === 0) return;
+  await sendViaSerial(await buildLabelJob(products, options), options.baudRate ?? 9600);
+}
