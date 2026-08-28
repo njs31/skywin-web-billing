@@ -189,6 +189,22 @@ export async function getProductById(id: number) {
   return product ?? null;
 }
 
+export async function getAllProductsForLabelPdf() {
+  return db
+    .select({
+      id: products.id,
+      name: products.name,
+      sku: products.sku,
+      barcode: products.barcode,
+      saleRate: products.saleRate,
+      gstRate: products.gstRate,
+      expiryDate: products.expiryDate,
+    })
+    .from(products)
+    .where(eq(products.isActive, true))
+    .orderBy(asc(products.name));
+}
+
 export const getLowStockProducts = unstable_cache(
   async (threshold = 10) => {
     return db

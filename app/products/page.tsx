@@ -34,9 +34,14 @@ export default async function ProductsPage({
             {!q && totalPages > 1 && ` (page ${page} of ${totalPages})`}
           </p>
         </div>
-        <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
-          <Link href="/products/new">Add Product</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <a href="/products/labels/all">All labels PDF (35×22 mm)</a>
+          </Button>
+          <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Link href="/products/new">Add Product</Link>
+          </Button>
+        </div>
       </div>
 
       <ProductExportButtons />
