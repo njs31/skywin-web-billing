@@ -190,6 +190,16 @@ body {
   padding: 16px;
 }
 
+.thermal-label-preview-img {
+  display: block;
+  width: 50mm;
+  height: 25mm;
+  border: 1px dashed #cbd5e1;
+  border-radius: 1mm;
+  object-fit: fill;
+  background: #fff;
+}
+
 .thermal-label {
   box-sizing: border-box;
   width: 50mm;

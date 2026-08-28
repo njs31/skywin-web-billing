@@ -191,64 +191,61 @@ html, body {
 </html>`;
 }
 
-function waitForImages(doc: Document) {
-  const images = Array.from(doc.images);
-  if (images.length === 0) return Promise.resolve();
-  return Promise.all(
-    images.map(
-      (img) =>
-        new Promise<void>((resolve) => {
-          if (img.complete) {
-            resolve();
-            return;
-          }
-          img.onload = () => resolve();
-          img.onerror = () => resolve();
-        })
-    )
-  );
-}
-
-/** Print raster labels — safe for thermal printers (not PDF). */
-export async function printLabelImages(
-  products: LabelProduct[],
-  copies = 1
-) {
-  if (products.length === 0 || typeof window === "undefined") return;
-
-  const imageUrls = await renderLabelPngs(products, copies);
-
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute(
-    "style",
-    "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden"
-  );
-  document.body.appendChild(iframe);
-
-  const win = iframe.contentWindow;
-  const doc = win?.document;
-  if (!win || !doc) {
-    iframe.remove();
-    throw new Error("Print frame unavailable");
-  }
-
-  doc.open();
-  doc.write(printHtmlForImages(imageUrls));
-  doc.close();
-
-  await waitForImages(doc);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-
-  return new Promise<void>((resolve) => {
-    const cleanup = () => {
-      iframe.remove();
-      resolve();
-    };
-    win.addEventListener("afterprint", cleanup, { once: true });
+function schedulePrint(win: Window) {
+  const run = () => {
     win.focus();
     win.print();
-    setTimeout(cleanup, 60_000);
-  });
+  };
+  if (win.document.readyState === "complete") {
+    setTimeout(run, 300);
+    return;
+  }
+  win.addEventListener("load", () => setTimeout(run, 300), { once: true });
+}
+
+/**
+ * Open a new tab with label PNGs and trigger print.
+ * Must be called synchronously from a click handler (no await before this).
+ */
+export function printLabelImageUrls(imageUrls: string[]) {
+  if (imageUrls.length === 0 || typeof window === "undefined") return;
+
+  const win = window.open("", "_blank");
+  if (!win) {
+    throw new Error(
+      "Popup blocked. Allow popups for skywin.qwicksapp.com and try again."
+    );
+  }
+
+  win.document.open();
+  win.document.write(printHtmlForImages(imageUrls));
+  win.document.close();
+  schedulePrint(win);
+}
+
+/** Pre-render then call printLabelImageUrls from the click handler. */
+export async function renderLabelPngMap(products: LabelProduct[]) {
+  const map: Record<number, string> = {};
+  for (const product of products) {
+    const barcodeSrc = barcodeDataUrl(productCode(product));
+    map[product.id] = await renderLabelPng(product, barcodeSrc);
+  }
+  return map;
+}
+
+export function expandLabelUrls(
+  products: LabelProduct[],
+  pngMap: Record<number, string>,
+  copies = 1
+) {
+  const qty = Math.max(1, Math.min(99, copies));
+  const urls: string[] = [];
+  for (const product of products) {
+    const png = pngMap[product.id];
+    if (!png) continue;
+    for (let i = 0; i < qty; i++) urls.push(png);
+  }
+  return urls;
 }
 
 /** Download a single label PNG (e.g. for POSiFLOW mobile app). */

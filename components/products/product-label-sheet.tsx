@@ -2,69 +2,51 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  barcodeDataUrl,
   downloadLabelPng,
-  printLabelImages,
+  expandLabelUrls,
+  printLabelImageUrls,
   productCode,
+  renderLabelPngMap,
   type LabelProduct,
 } from "@/lib/label-render";
-import { BUSINESS } from "@/lib/business";
-import { toNumber } from "@/lib/utils";
 
 export type { LabelProduct };
 
-/** Legacy sheet-printer keys — cleared on load. */
 const LEGACY_OFFSET_KEY = "skywin-label-offset-mm";
 const LEGACY_FLIP_KEY = "skywin-label-flip-180";
 
-function inclusiveRate(saleRate: string | number, gstRate: string | number) {
-  const rate = toNumber(saleRate);
-  const gst = toNumber(gstRate);
-  return Math.round(rate * (1 + gst / 100) * 100) / 100;
-}
-
-function formatExp(value: string | null) {
-  if (!value) return "";
-  const [y, m, d] = value.split("-");
-  if (!y || !m || !d) return value;
-  return `${d}/${m}/${y}`;
-}
-
 function LabelPreview({
   product,
-  barcodeDataUrl: barcodeSrc,
+  previewSrc,
+  ready,
 }: {
   product: LabelProduct;
-  barcodeDataUrl: string;
+  previewSrc: string;
+  ready: boolean;
 }) {
-  const code = productCode(product);
-  const rate = inclusiveRate(product.saleRate, product.gstRate);
-  const exp = formatExp(product.expiryDate);
+  if (previewSrc) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={previewSrc}
+        alt={`Label for ${product.name}`}
+        className="thermal-label-preview-img"
+      />
+    );
+  }
 
   return (
-    <div className="thermal-label">
-      <p className="thermal-label-brand">{BUSINESS.name}</p>
-      <p className="thermal-label-tagline">({BUSINESS.tagline})</p>
-      <p className="thermal-label-name">{product.name.toUpperCase()}</p>
-      {barcodeSrc ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={barcodeSrc} alt="" className="thermal-label-barcode" />
-      ) : (
-        <div className="thermal-label-barcode thermal-label-barcode-empty" />
-      )}
-      <p className="thermal-label-code">{code}</p>
-      <div className="thermal-label-footer">
-        <span>EXP: {exp || "—"}</span>
-        <span className="thermal-label-rate">RATE: {rate.toFixed(2)}</span>
-      </div>
+    <div className="thermal-label thermal-label-loading">
+      <p className="text-[8px] text-slate-500">
+        {ready ? "Preview unavailable" : "Preparing label…"}
+      </p>
     </div>
   );
 }
 
 export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
-  const [barcodeMap, setBarcodeMap] = useState<Record<number, string>>({});
+  const [labelPngMap, setLabelPngMap] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
-  const [printing, setPrinting] = useState(false);
   const [copies, setCopies] = useState(1);
 
   useEffect(() => {
@@ -78,18 +60,17 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
     (async () => {
-      const entries: Record<number, string> = {};
-      for (const p of products) {
-        try {
-          entries[p.id] = barcodeDataUrl(productCode(p));
-        } catch {
-          entries[p.id] = "";
+      try {
+        const map = await renderLabelPngMap(products);
+        if (!cancelled) {
+          setLabelPngMap(map);
+          setReady(true);
         }
-      }
-      if (!cancelled) {
-        setBarcodeMap(entries);
-        setReady(true);
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) setReady(false);
       }
     })();
     return () => {
@@ -102,21 +83,35 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     return products.length * qty;
   }, [products, copies]);
 
-  async function handlePrint() {
-    if (!ready || printing) return;
-    setPrinting(true);
+  function handlePrint() {
+    if (!ready) return;
+    const urls = expandLabelUrls(products, labelPngMap, copies);
+    if (urls.length === 0) {
+      alert("Label image is not ready yet. Wait a moment and try again.");
+      return;
+    }
     try {
-      await printLabelImages(products, copies);
+      printLabelImageUrls(urls);
     } catch (error) {
       console.error(error);
-      alert("Could not open print. Please try again.");
-    } finally {
-      setPrinting(false);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Could not open print. Allow popups and try again."
+      );
     }
   }
 
   async function handleDownload(product: LabelProduct) {
     try {
+      const cached = labelPngMap[product.id];
+      if (cached) {
+        const link = document.createElement("a");
+        link.href = cached;
+        link.download = `label-${productCode(product)}.png`;
+        link.click();
+        return;
+      }
       await downloadLabelPng(product);
     } catch (error) {
       console.error(error);
@@ -138,14 +133,10 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         <button
           type="button"
           className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-          disabled={!ready || printing}
+          disabled={!ready}
           onClick={handlePrint}
         >
-          {printing
-            ? "Printing…"
-            : ready
-              ? "Print label"
-              : "Preparing barcodes…"}
+          {ready ? "Print label" : "Preparing label…"}
         </button>
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
           Copies per product
@@ -160,14 +151,13 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
         </label>
         <p className="w-full text-xs text-slate-600">
           <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} · 50
-          × 25 mm for POSiFLOW TagPro. Prints as a <strong>picture</strong> (not
-          PDF) so the barcode and product name appear correctly.
+          × 25 mm for POSiFLOW TagPro. A new tab opens with the label image —
+          the print dialog appears there. Allow popups if nothing happens.
         </p>
         <p className="w-full rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          In the print dialog: choose your <strong>TagPro</strong> printer, paper{" "}
+          In the print dialog: choose <strong>TagPro</strong>, paper{" "}
           <strong>50 × 25 mm</strong>, scale <strong>100%</strong>, margins{" "}
-          <strong>None</strong>. Do not print a PDF file on this printer — it
-          will print garbage text.
+          <strong>None</strong>.
         </p>
       </div>
       <div className="thermal-label-preview-grid">
@@ -175,12 +165,14 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           <div key={product.id} className="flex flex-col items-start gap-2">
             <LabelPreview
               product={product}
-              barcodeDataUrl={barcodeMap[product.id] || ""}
+              previewSrc={labelPngMap[product.id] || ""}
+              ready={ready}
             />
             <button
               type="button"
               className="no-print text-xs text-emerald-700 underline"
               onClick={() => handleDownload(product)}
+              disabled={!labelPngMap[product.id]}
             >
               Download PNG (for mobile app)
             </button>
