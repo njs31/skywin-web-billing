@@ -3,10 +3,13 @@ import {
   sales,
   saleItems,
   products,
+  productBatches,
+  categories,
   customers,
   partyPayments,
   partyPaymentAllocations,
 } from "@/db/schema";
+import { stateNameFromGstin } from "@/lib/gst-states";
 import { buildAutoReceiptParts } from "@/lib/sale-settlement";
 import {
   calculateGstBreakdown,
@@ -1056,14 +1059,26 @@ export type SalesReportLineItem = {
   date: Date;
   billType: string;
   customerName: string;
+  customerGstin: string;
+  customerState: string;
   paymentMode: string;
   productName: string;
+  sku: string;
+  category: string;
+  batchNumber: string;
+  unit: string;
   hsnCode: string;
   qty: number;
   rate: number;
   discountType: string;
   discountValue: number;
   gstRate: number;
+  taxableValue: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  cost: number;
+  margin: number;
   amount: number;
   grandTotal: number;
 };
@@ -1196,8 +1211,16 @@ export async function getSalesReport(
         customerName: sales.customerName,
         customerRecordName: customers.name,
         paymentMode: sales.paymentMode,
+        saleIgst: sales.igst,
+        customerGstin: customers.gstin,
         productName: products.name,
         customName: saleItems.customName,
+        sku: products.sku,
+        category: categories.name,
+        unit: products.unit,
+        batchNumber: sql<string>`coalesce(${saleItems.batchNumber}, ${productBatches.batchNumber})`,
+        batchPurchaseRate: productBatches.purchaseRate,
+        productPurchaseRate: products.purchaseRate,
         hsnCode: sql<string>`coalesce(${saleItems.hsnCode}, ${products.hsnCode})`,
         qty: saleItems.qty,
         rate: saleItems.rate,
@@ -1210,26 +1233,52 @@ export async function getSalesReport(
       .from(saleItems)
       .innerJoin(sales, eq(saleItems.saleId, sales.id))
       .leftJoin(products, eq(saleItems.productId, products.id))
+      .leftJoin(categories, eq(products.categoryId, categories.id))
+      .leftJoin(productBatches, eq(saleItems.batchId, productBatches.id))
       .leftJoin(customers, eq(sales.customerId, customers.id))
       .where(inArray(saleItems.saleId, saleIds))
       .orderBy(asc(sales.date), asc(sales.invoiceNo), asc(saleItems.id));
 
-    lineItems = itemRows.map((row) => ({
-      invoiceNo: row.invoiceNo,
-      date: row.date,
-      billType: row.billType,
-      customerName: row.customerRecordName || row.customerName || "Walk-in",
-      paymentMode: row.paymentMode,
-      productName: row.productName || row.customName || "Item",
-      hsnCode: row.hsnCode || "",
-      qty: toNum(row.qty),
-      rate: toNum(row.rate),
-      discountType: row.discountType || "percent",
-      discountValue: toNum(row.discountValue),
-      gstRate: toNum(row.gstRate),
-      amount: toNum(row.amount),
-      grandTotal: toNum(row.grandTotal),
-    }));
+    const settings = await getSettings();
+    lineItems = itemRows.map((row) => {
+      const qty = toNum(row.qty);
+      const taxableValue = toNum(row.amount);
+      const gstRate = toNum(row.gstRate);
+      const tax = Math.round((taxableValue * gstRate) / 100 * 100) / 100;
+      const interstate = toNum(row.saleIgst) > 0;
+      const half = Math.round((tax / 2) * 100) / 100;
+      const unitCost =
+        toNum(row.batchPurchaseRate) || toNum(row.productPurchaseRate);
+      const cost = Math.round(unitCost * qty * 100) / 100;
+      return {
+        invoiceNo: row.invoiceNo,
+        date: row.date,
+        billType: row.billType,
+        customerName: row.customerRecordName || row.customerName || "Walk-in",
+        customerGstin: row.customerGstin || "",
+        customerState: stateNameFromGstin(row.customerGstin, settings.state),
+        paymentMode: row.paymentMode,
+        productName: row.productName || row.customName || "Item",
+        sku: row.sku || "",
+        category: row.category || "",
+        batchNumber: row.batchNumber || "",
+        unit: row.unit || "",
+        hsnCode: row.hsnCode || "",
+        qty,
+        rate: toNum(row.rate),
+        discountType: row.discountType || "percent",
+        discountValue: toNum(row.discountValue),
+        gstRate,
+        taxableValue,
+        cgst: interstate ? 0 : half,
+        sgst: interstate ? 0 : Math.round((tax - half) * 100) / 100,
+        igst: interstate ? tax : 0,
+        cost,
+        margin: Math.round((taxableValue - cost) * 100) / 100,
+        amount: taxableValue,
+        grandTotal: toNum(row.grandTotal),
+      };
+    });
   }
 
   const byPaymentMode: Record<string, { count: number; amount: number }> = {};

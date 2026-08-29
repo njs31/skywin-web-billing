@@ -5,6 +5,7 @@ import { getSettings } from "@/lib/settings";
 import { createSale } from "@/lib/queries/sales";
 import { toNumber } from "@/lib/utils";
 import { inclusiveSalePrice } from "@/lib/gst";
+import { mapQwicksPaymentMode } from "@/lib/qwicks-payment";
 
 export type QwicksProductItem = {
   productCode: string;
@@ -243,14 +244,18 @@ export async function processQwicksOrderPlaced(body: any) {
   }
 
   // 3. Record Sale in Skywin POS DB
+  const { mode: paymentMode, raw: rawPaymentMode } = mapQwicksPaymentMode(body);
+  const notes = rawPaymentMode
+    ? `QwicksApp Order #${orderId} (payment: ${rawPaymentMode})`
+    : `QwicksApp Order #${orderId}`;
   const sale = await createSale({
     billType: "retail",
     customerId,
     customerName: customerName || undefined,
     customerPhone: customerPhone || undefined,
-    paymentMode: "upi",
+    paymentMode,
     operatorName: "QwicksApp API",
-    notes: `QwicksApp Order #${orderId}`,
+    notes,
     items: saleLineItems,
   });
 

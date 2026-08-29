@@ -19,9 +19,15 @@ import {
 import { and, gte, lte, eq, sql } from "drizzle-orm";
 import { format } from "date-fns";
 import { requireNonDealer } from "@/lib/actions/auth";
+import { getSettings } from "@/lib/settings";
+import { stateNameFromGstin } from "@/lib/gst-states";
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
+}
+
+function joinAddress(parts: (string | null | undefined)[]) {
+  return parts.map((p) => p?.trim()).filter(Boolean).join(", ");
 }
 
 function halfTax(tax: number) {
@@ -35,6 +41,8 @@ function ledgerLabel(kind: "sales" | "purchase", rate: number) {
 
 export async function getTallyExportData(startDateStr: string, endDateStr: string) {
   await requireNonDealer();
+  const settings = await getSettings();
+  const businessState = settings.state;
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
   end.setHours(23, 59, 59, 999);
@@ -45,6 +53,13 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       invoiceNo: sales.invoiceNo,
       customerName: sales.customerName,
       customerRecordName: customers.name,
+      paymentMode: sales.paymentMode,
+      customerGstin: customers.gstin,
+      customerAddress: customers.address,
+      customerVillage: customers.village,
+      customerTaluk: customers.taluk,
+      customerDistrict: customers.district,
+      customerPinCode: customers.pinCode,
       productName: products.name,
       customName: saleItems.customName,
       sku: products.sku,
@@ -73,10 +88,18 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
     const tax = round2((taxable * gstRate) / 100);
     const { cgst, sgst } = halfTax(tax);
     const net = round2(taxable + tax);
+    const billedTo = joinAddress([
+      s.customerAddress,
+      s.customerVillage,
+      s.customerTaluk,
+      s.customerDistrict,
+      s.customerPinCode,
+    ]);
     return {
       Date: format(new Date(s.date), "dd/MM/yyyy"),
       "Invoice No./Txn No.": s.invoiceNo,
       "Party Name": s.customerRecordName ?? s.customerName ?? "Walk-in",
+      "Mode of Payment": s.paymentMode,
       "Item Name": s.productName ?? s.customName ?? "Custom Item",
       "Item Code": s.sku ?? "",
       "HSN/SAC": s.hsnCode ?? "",
@@ -96,6 +119,11 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       "taxable amount": taxable,
       "net amount": net,
       "sales ledger": ledgerLabel("sales", gstRate),
+      "GST NO.": s.customerGstin ?? "",
+      STATE: stateNameFromGstin(s.customerGstin, businessState),
+      COUNTRY: "India",
+      "BILLED TO ADDRESS": billedTo,
+      "SHIPPED TO ADDRESS": billedTo,
     };
   });
 
@@ -104,6 +132,8 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       date: purchases.date,
       invoiceNo: purchases.invoiceNo,
       supplierName: suppliers.name,
+      supplierGstin: suppliers.gstin,
+      supplierState: suppliers.state,
       productName: products.name,
       customName: purchaseItems.customName,
       sku: products.sku,
@@ -155,6 +185,9 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       "net amount": net,
       "sales ledger": ledgerLabel("sales", gstRate),
       "purchase ledger": ledgerLabel("purchase", gstRate),
+      "PURCHASER GST NO": p.supplierGstin ?? "",
+      STATE: p.supplierState ?? stateNameFromGstin(p.supplierGstin, businessState),
+      COUNTRY: "India",
     };
   });
 
@@ -163,6 +196,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       date: saleReturns.date,
       returnNo: saleReturns.returnNo,
       customerName: customers.name,
+      customerGstin: sql<string | null>`coalesce(${saleReturns.customerGstin}, ${customers.gstin})`,
       productName: products.name,
       customName: saleReturnItems.customName,
       sku: products.sku,
@@ -213,6 +247,9 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       "taxable amount": taxable,
       "net amount": net,
       "credit note ledger": "sales return",
+      "GST NO.": c.customerGstin ?? "",
+      STATE: stateNameFromGstin(c.customerGstin, businessState),
+      COUNTRY: "India",
     };
   });
 
@@ -221,6 +258,8 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       date: purchaseReturns.date,
       returnNo: purchaseReturns.returnNo,
       supplierName: suppliers.name,
+      supplierGstin: suppliers.gstin,
+      supplierState: suppliers.state,
       productName: products.name,
       customName: purchaseReturnItems.customName,
       sku: products.sku,
@@ -271,6 +310,9 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       "taxable amount": taxable,
       "net amount": net,
       "debit note ledger": "purchase return",
+      "GST NO.": d.supplierGstin ?? "",
+      STATE: d.supplierState ?? stateNameFromGstin(d.supplierGstin, businessState),
+      COUNTRY: "India",
     };
   });
 

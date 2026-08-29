@@ -114,34 +114,59 @@ function lineItemSheetRows(data: SalesReportData) {
     Date: formatDateTimeIST(item.date),
     "Bill Type": item.billType,
     Customer: item.customerName,
+    "Customer GSTIN": item.customerGstin,
+    "Customer State": item.customerState,
     Payment: item.paymentMode,
     Product: item.productName,
+    SKU: item.sku,
+    Category: item.category,
+    Batch: item.batchNumber,
+    Unit: item.unit,
     HSN: item.hsnCode,
     Qty: item.qty,
     Rate: item.rate,
     "Discount Type": item.discountType,
     Discount: item.discountValue,
     "GST %": item.gstRate,
+    "Taxable Value": item.taxableValue,
+    CGST: item.cgst,
+    SGST: item.sgst,
+    IGST: item.igst,
+    Cost: item.cost,
+    Margin: item.margin,
     Amount: item.amount,
     "Grand Total": item.grandTotal,
   }));
   const totals = lineItemTotals(data);
+  const blankNum = "" as unknown as number;
   rows.push({
-    "S.No.": "" as unknown as number,
+    "S.No.": blankNum,
     Invoice: "GRAND TOTAL",
     Date: "",
     "Bill Type": "",
     Customer: "",
+    "Customer GSTIN": "",
+    "Customer State": "",
     Payment: "",
     Product: "",
+    SKU: "",
+    Category: "",
+    Batch: "",
+    Unit: "",
     HSN: "",
     Qty: round2(totals.qty),
-    Rate: "" as unknown as number,
+    Rate: blankNum,
     "Discount Type": "",
-    Discount: "" as unknown as number,
-    "GST %": "" as unknown as number,
+    Discount: blankNum,
+    "GST %": blankNum,
+    "Taxable Value": round2(totals.amount),
+    CGST: blankNum,
+    SGST: blankNum,
+    IGST: blankNum,
+    Cost: blankNum,
+    Margin: blankNum,
     Amount: round2(totals.amount),
-    "Grand Total": "" as unknown as number,
+    "Grand Total": blankNum,
   });
   return rows;
 }
@@ -671,11 +696,19 @@ export function SalesReport() {
                             <TableHead>Date</TableHead>
                             <TableHead>Customer</TableHead>
                             <TableHead>Product</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Batch</TableHead>
                             <TableHead>HSN</TableHead>
                             <TableHead className="text-right">Qty</TableHead>
                             <TableHead className="text-right">Rate</TableHead>
                             <TableHead className="text-right">Disc</TableHead>
                             <TableHead className="text-right">GST %</TableHead>
+                            <TableHead className="text-right">Taxable</TableHead>
+                            <TableHead className="text-right">CGST</TableHead>
+                            <TableHead className="text-right">SGST</TableHead>
+                            <TableHead className="text-right">IGST</TableHead>
+                            <TableHead className="text-right">Cost</TableHead>
+                            <TableHead className="text-right">Margin</TableHead>
                             <TableHead className="text-right">Amount</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -693,6 +726,10 @@ export function SalesReport() {
                               </TableCell>
                               <TableCell>{item.customerName}</TableCell>
                               <TableCell className="max-w-xs">{item.productName}</TableCell>
+                              <TableCell className="text-xs">{item.category || "-"}</TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {item.batchNumber || "-"}
+                              </TableCell>
                               <TableCell className="font-mono text-xs">
                                 {item.hsnCode || "-"}
                               </TableCell>
@@ -705,6 +742,24 @@ export function SalesReport() {
                                 {item.discountType === "percent" ? "%" : ""}
                               </TableCell>
                               <TableCell className="text-right">{item.gstRate}%</TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(item.taxableValue)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(item.cgst)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(item.sgst)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(item.igst)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(item.cost)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(item.margin)}
+                              </TableCell>
                               <TableCell className="text-right font-semibold">
                                 {formatCurrency(item.amount)}
                               </TableCell>
@@ -713,13 +768,13 @@ export function SalesReport() {
                         </TableBody>
                         <TableFooter>
                           <TableRow>
-                            <TableCell colSpan={6}>Grand Total</TableCell>
+                            <TableCell colSpan={8}>Grand Total</TableCell>
                             <TableCell className="text-right">
                               {round2(
                                 report.lineItems.reduce((s, i) => s + i.qty, 0)
                               )}
                             </TableCell>
-                            <TableCell colSpan={3} />
+                            <TableCell colSpan={9} />
                             <TableCell className="text-right text-emerald-700">
                               {formatCurrency(
                                 report.lineItems.reduce((s, i) => s + i.amount, 0)

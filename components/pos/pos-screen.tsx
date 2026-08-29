@@ -17,6 +17,7 @@ import {
   Scan,
   ChevronDown,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { InlineLoader } from "@/components/ui/page-loader";
 import { searchProductBatches } from "@/lib/actions/products";
@@ -30,6 +31,7 @@ import {
   isInterstateGst,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
+import { checkBelowCost } from "@/lib/pricing";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
@@ -63,6 +65,8 @@ type CartItem = {
   discountValue: number;
   hsnCode?: string;
   availableQty: number;
+  /** Landed cost per unit, for the below-cost warning. 0 when unknown. */
+  cost: number;
 };
 
 type PosScreenProps = {
@@ -236,6 +240,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
             discountType: "percent" as const,
             discountValue: toNumber(product.discountPercent ?? 0),
             availableQty: stock,
+            cost: toNumber(product.purchaseRate),
           },
         ];
       });
@@ -298,6 +303,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
         discountValue,
         hsnCode: customHsn.trim(),
         availableQty: 999999,
+        cost: 0,
       },
     ]);
 
@@ -405,6 +411,11 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
       )
       .slice(0, 50);
   }, [customers, customerSearch]);
+
+  const belowCostCount = useMemo(
+    () => cart.filter((c) => checkBelowCost(c).belowCost).length,
+    [cart]
+  );
 
   const billCreditAmount = paymentMode === "credit" ? gst.grandTotal : 0;
   const projectedDebt =
@@ -814,6 +825,16 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                         <Trash2 className="h-3 w-3 text-red-500" />
                       </Button>
                     </div>
+                    {(() => {
+                      const b = checkBelowCost(item);
+                      return b.belowCost ? (
+                        <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-red-600">
+                          <AlertTriangle className="h-3 w-3 shrink-0" />
+                          Below cost: {formatCurrency(b.effectiveRate)} /unit vs
+                          cost {formatCurrency(b.cost)}
+                        </p>
+                      ) : null;
+                    })()}
                   </div>
                 ))}
               </div>
@@ -1175,6 +1196,14 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                 onChange={(e) => setOperatorName(e.target.value)}
               />
             </div>
+
+            {belowCostCount > 0 && (
+              <p className="flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {belowCostCount} item{belowCostCount > 1 ? "s" : ""} priced below
+                cost — you can still complete the sale.
+              </p>
+            )}
 
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 font-medium">
