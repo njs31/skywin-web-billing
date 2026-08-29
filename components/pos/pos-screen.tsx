@@ -119,6 +119,8 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [destination, setDestination] = useState("");
   const [deliveryNote, setDeliveryNote] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
+  const [transporterName, setTransporterName] = useState("");
+  const [eInvoiceRequested, setEInvoiceRequested] = useState(false);
 
   useEffect(() => {
     setCustomers(initialCustomers);
@@ -494,13 +496,22 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
           poNumber: poNumber.trim() || undefined,
           quotationNumber: quotationNumber.trim() || undefined,
           ewayBillNo: needsEway ? ewayBillNo.trim() || undefined : undefined,
-          vehicleNo: needsEway ? vehicleNo.trim() || undefined : undefined,
-          dispatchedThrough: needsEway
-            ? dispatchedThrough.trim() || undefined
-            : undefined,
+          vehicleNo:
+            needsEway || billType === "retail"
+              ? vehicleNo.trim() || undefined
+              : undefined,
+          dispatchedThrough:
+            needsEway || billType === "retail"
+              ? dispatchedThrough.trim() || undefined
+              : undefined,
           destination: needsEway ? destination.trim() || undefined : undefined,
           deliveryNote: deliveryNote.trim() || undefined,
           paymentTerms: paymentTerms.trim() || undefined,
+          transporterName:
+            billType === "retail"
+              ? transporterName.trim() || undefined
+              : undefined,
+          eInvoiceRequested,
           items: cart.map((c) => ({
             productId: c.product ? c.product.id : undefined,
             customName: c.product ? undefined : c.name,
@@ -519,6 +530,9 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
         setBillDiscount("");
         setCashAmountInput("");
         setSplitCashUpi(false);
+        setTransporterName("");
+        setVehicleNo("");
+        setDispatchedThrough("");
         router.push(`/invoices/${sale.id}?print=1`);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to complete sale");
@@ -536,21 +550,31 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
               Retail & wholesale counter billing
             </p>
           </div>
-          <div className="flex rounded-lg border border-slate-200 p-1 bg-white shadow-sm">
-            {(["retail", "wholesale"] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => setBillType(type)}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
-                  billType === type
-                    ? "bg-emerald-600 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {type}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={eInvoiceRequested}
+                onChange={(e) => setEInvoiceRequested(e.target.checked)}
+              />
+              e-Invoice
+            </label>
+            <div className="flex rounded-lg border border-slate-200 p-1 bg-white shadow-sm">
+              {(["retail", "wholesale"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setBillType(type)}
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
+                    billType === type
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1094,7 +1118,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                     </>
                   )}
                 </div>
-              {(!customerId || customerId === "none") && (
+              {billType !== "retail" && (!customerId || customerId === "none") && (
                 <div className="space-y-2">
                   <Input
                     className="h-9"
@@ -1108,6 +1132,45 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
                   />
+                </div>
+              )}
+              {billType === "retail" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Dispatched Through</Label>
+                    <Select
+                      value={dispatchedThrough || undefined}
+                      onValueChange={setDispatchedThrough}
+                    >
+                      <SelectTrigger className="mt-1 h-9">
+                        <SelectValue placeholder="Select" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Road">Road</SelectItem>
+                        <SelectItem value="Rail">Rail</SelectItem>
+                        <SelectItem value="Air">Air</SelectItem>
+                        <SelectItem value="Sea">Sea</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Motor Vehicle No.</Label>
+                    <Input
+                      className="mt-1 h-9"
+                      value={vehicleNo}
+                      onChange={(e) => setVehicleNo(e.target.value)}
+                      placeholder="e.g. TN01AB1234"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Transporter Details</Label>
+                    <Input
+                      className="mt-1 h-9"
+                      value={transporterName}
+                      onChange={(e) => setTransporterName(e.target.value)}
+                      placeholder="Transporter name"
+                    />
+                  </div>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">

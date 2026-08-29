@@ -9,7 +9,10 @@ import {
   categories,
   customers,
 } from "@/db/schema";
-import { eq, sql, desc, asc, gte, lte, and, isNotNull, ilike, or } from "drizzle-orm";
+import { eq, ne, sql, desc, asc, gte, lte, and, isNotNull, ilike, or } from "drizzle-orm";
+
+/** Exclude cancelled invoices from every sales aggregation on this page. */
+const notCancelled = ne(sales.status, "cancelled");
 
 export async function adjustStock(
   productId: number,
@@ -171,7 +174,7 @@ export async function getStockMovements(productId?: number, limit = 50) {
 }
 
 export async function getProductWiseSales(from?: Date, to?: Date) {
-  const conditions = [];
+  const conditions = [notCancelled];
   if (from) conditions.push(gte(sales.date, from));
   if (to) conditions.push(lte(sales.date, to));
 
@@ -193,7 +196,7 @@ export async function getProductWiseSales(from?: Date, to?: Date) {
 }
 
 export async function getPartyWiseSales(from?: Date, to?: Date) {
-  const conditions = [];
+  const conditions = [notCancelled];
   if (from) conditions.push(gte(sales.date, from));
   if (to) conditions.push(lte(sales.date, to));
 
@@ -241,7 +244,7 @@ export async function getDailySummary(from?: Date, to?: Date) {
       billCount: sql<number>`count(*)::int`,
     })
     .from(sales)
-    .where(and(gte(sales.date, start), lte(sales.date, end)))
+    .where(and(gte(sales.date, start), lte(sales.date, end), notCancelled))
     .groupBy(sql`date(${sales.date})`)
     .orderBy(desc(sql`date(${sales.date})`));
 
@@ -268,7 +271,7 @@ export async function getDailySummary(from?: Date, to?: Date) {
     .innerJoin(sales, eq(saleItems.saleId, sales.id))
     .innerJoin(products, eq(saleItems.productId, products.id))
     .leftJoin(productBatches, eq(saleItems.batchId, productBatches.id))
-    .where(and(gte(sales.date, start), lte(sales.date, end)))
+    .where(and(gte(sales.date, start), lte(sales.date, end), notCancelled))
     .groupBy(sql`date(${sales.date})`);
 
   const cogsMap = Object.fromEntries(
@@ -288,7 +291,7 @@ export async function getDailySummary(from?: Date, to?: Date) {
 }
 
 export async function getGrossProfitReport(from?: Date, to?: Date) {
-  const conditions = [];
+  const conditions = [notCancelled];
   if (from) conditions.push(gte(sales.date, from));
   if (to) conditions.push(lte(sales.date, to));
 

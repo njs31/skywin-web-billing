@@ -16,7 +16,7 @@ import {
   purchaseReturnItems,
   partyPayments,
 } from "@/db/schema";
-import { and, gte, lte, eq, sql } from "drizzle-orm";
+import { and, gte, lte, eq, ne, sql } from "drizzle-orm";
 import { format } from "date-fns";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { getSettings } from "@/lib/settings";
@@ -78,7 +78,9 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
     .leftJoin(products, eq(saleItems.productId, products.id))
     .leftJoin(categories, eq(products.categoryId, categories.id))
     .leftJoin(customers, eq(sales.customerId, customers.id))
-    .where(and(gte(sales.date, start), lte(sales.date, end)));
+    .where(
+      and(gte(sales.date, start), lte(sales.date, end), ne(sales.status, "cancelled"))
+    );
 
   const salesRows = dbSales.map((s) => {
     const qty = parseFloat(s.qty);

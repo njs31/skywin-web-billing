@@ -8,6 +8,8 @@ import {
   customers,
   partyPayments,
   partyPaymentAllocations,
+  stockMovements,
+  saleReturns,
 } from "@/db/schema";
 import { stateNameFromGstin } from "@/lib/gst-states";
 import { buildAutoReceiptParts } from "@/lib/sale-settlement";
@@ -20,7 +22,10 @@ import {
 import { getSettings } from "@/lib/settings";
 import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR } from "@/lib/financial-year";
 import { format } from "date-fns";
-import { desc, asc, eq, gte, lte, sql, and, inArray } from "drizzle-orm";
+import { desc, asc, eq, ne, gte, lte, sql, and, inArray } from "drizzle-orm";
+
+/** Reusable predicate: exclude cancelled invoices from reports/totals. */
+export const activeSale = ne(sales.status, "cancelled");
 import { z } from "zod";
 
 const saleItemSchema = z.object({
@@ -57,6 +62,9 @@ const createSaleSchema = z.object({
   destination: z.string().optional(),
   deliveryNote: z.string().optional(),
   paymentTerms: z.string().optional(),
+  transporterName: z.string().optional(),
+  eInvoiceRequested: z.boolean().optional(),
+  externalOrderId: z.string().optional(),
   items: z.array(saleItemSchema).min(1),
 });
 
@@ -102,6 +110,14 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     deliveryNote: (row.delivery_note as string | null) ?? null,
     paymentTerms: (row.payment_terms as string | null) ?? null,
     notes: (row.notes as string | null) ?? null,
+    transporterName: (row.transporter_name as string | null) ?? null,
+    externalOrderId: (row.external_order_id as string | null) ?? null,
+    eInvoiceRequested: Boolean(row.e_invoice_requested),
+    status: (row.status as string | null) ?? "active",
+    cancelledAt:
+      row.cancelled_at == null ? null : new Date(String(row.cancelled_at)),
+    cancelledBy: (row.cancelled_by as string | null) ?? null,
+    cancelReason: (row.cancel_reason as string | null) ?? null,
     createdAt:
       row.created_at instanceof Date
         ? row.created_at
@@ -294,6 +310,9 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const destination = data.destination?.trim() || null;
   const deliveryNote = data.deliveryNote?.trim() || null;
   const paymentTerms = data.paymentTerms?.trim() || null;
+  const transporterName = data.transporterName?.trim() || null;
+  const externalOrderId = data.externalOrderId?.trim() || null;
+  const eInvoiceRequested = data.eInvoiceRequested ?? false;
 
   const executeSale = () =>
     db.transaction(async (tx) => {
@@ -583,7 +602,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             operator_name, subtotal, discount_amount, cgst, sgst, igst,
             grand_total, round_off, paid_amount, cash_amount, upi_amount,
             po_number, purchase_order_id, quotation_number, eway_bill_no, vehicle_no,
-            dispatched_through, destination, delivery_note, payment_terms, notes
+            dispatched_through, destination, delivery_note, payment_terms,
+            transporter_name, e_invoice_requested, external_order_id, notes
           )
           select
             ${invoiceNoSelect},
@@ -611,6 +631,9 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${destination}::text,
             ${deliveryNote}::text,
             ${paymentTerms}::text,
+            ${transporterName}::text,
+            ${eInvoiceRequested}::boolean,
+            ${externalOrderId}::text,
             ${data.notes ?? null}::text
           from sales s
           where ${invoiceNoWhere}
@@ -760,6 +783,7 @@ export async function getSales() {
       grandTotal: sales.grandTotal,
       paidAmount: sales.paidAmount,
       operatorName: sales.operatorName,
+      status: sales.status,
       customerRecordName: customers.name,
     })
     .from(sales)
@@ -805,7 +829,7 @@ export async function searchSalesForReturn(
 
   const q = query.trim();
   const limit = options?.limit ?? 20;
-  const filters = [];
+  const filters = [activeSale];
 
   if (options?.customerId) {
     filters.push(eq(sales.customerId, options.customerId));
@@ -873,6 +897,11 @@ export async function getSaleById(id: number) {
       destination: sales.destination,
       deliveryNote: sales.deliveryNote,
       paymentTerms: sales.paymentTerms,
+      transporterName: sales.transporterName,
+      eInvoiceRequested: sales.eInvoiceRequested,
+      status: sales.status,
+      cancelledAt: sales.cancelledAt,
+      cancelReason: sales.cancelReason,
       customerRecordName: customers.name,
       customerPhone: customers.phone,
       customerGstin: customers.gstin,
@@ -942,7 +971,7 @@ export async function getTodaySalesTotal() {
     })
     .from(sales);
 
-  const baseCondition = gte(sales.date, startOfDay);
+  const baseCondition = and(gte(sales.date, startOfDay), activeSale);
 
   if (customerIds !== null) {
     if (customerIds.length === 0) {
@@ -987,12 +1016,12 @@ export async function getRecentSales(limit = 5) {
   if (customerIds !== null) {
     if (customerIds.length === 0) return [];
     return query
-      .where(inArray(sales.customerId, customerIds))
+      .where(and(inArray(sales.customerId, customerIds), activeSale))
       .orderBy(desc(sales.date))
       .limit(limit);
   }
 
-  return query.orderBy(desc(sales.date)).limit(limit);
+  return query.where(activeSale).orderBy(desc(sales.date)).limit(limit);
 }
 
 export async function getTopSellingProducts(limit = 5) {
@@ -1013,13 +1042,14 @@ export async function getTopSellingProducts(limit = 5) {
   if (customerIds !== null) {
     if (customerIds.length === 0) return [];
     return query
-      .where(inArray(sales.customerId, customerIds))
+      .where(and(inArray(sales.customerId, customerIds), activeSale))
       .groupBy(products.name)
       .orderBy(desc(sql`sum(${saleItems.amount}::numeric)`))
       .limit(limit);
   }
 
   return query
+    .where(activeSale)
     .groupBy(products.name)
     .orderBy(desc(sql`sum(${saleItems.amount}::numeric)`))
     .limit(limit);
@@ -1127,7 +1157,7 @@ export async function getSalesReport(
   const from = new Date(`${fromDate}T00:00:00+05:30`);
   const to = new Date(`${toDate}T23:59:59.999+05:30`);
 
-  const conditions = [gte(sales.date, from), lte(sales.date, to)];
+  const conditions = [gte(sales.date, from), lte(sales.date, to), activeSale];
 
   if (customerIds !== null) {
     if (customerIds.length === 0) {
@@ -1352,4 +1382,120 @@ export async function getSalesReport(
     invoices,
     lineItems,
   };
+}
+
+/**
+ * Cancel a sales invoice: keep the number, mark it cancelled, add the sold
+ * stock back to the batches it came from, and reverse the auto customer
+ * receipt. Excluded from all reports/totals thereafter. Admin-only — the
+ * caller (lib/actions/sales.ts) enforces the role.
+ */
+export async function cancelSale(saleId: number, reason: string, actor: string) {
+  const {
+    safeRevalidatePath: revalidatePath,
+    safeRevalidateTag: revalidateTag,
+  } = await import("@/lib/revalidate");
+
+  const result = await db.transaction(async (tx) => {
+    const [sale] = await tx
+      .select({
+        id: sales.id,
+        invoiceNo: sales.invoiceNo,
+        status: sales.status,
+        customerId: sales.customerId,
+      })
+      .from(sales)
+      .where(eq(sales.id, saleId))
+      .for("update")
+      .limit(1);
+
+    if (!sale) throw new Error("Sale not found.");
+    if (sale.status === "cancelled") {
+      throw new Error(`Invoice ${sale.invoiceNo} is already cancelled.`);
+    }
+
+    const [linkedReturn] = await tx
+      .select({ id: saleReturns.id })
+      .from(saleReturns)
+      .where(eq(saleReturns.saleId, saleId))
+      .limit(1);
+    if (linkedReturn) {
+      throw new Error(
+        `Invoice ${sale.invoiceNo} has a sales return against it — reverse the return first.`
+      );
+    }
+
+    const items = await tx
+      .select({
+        productId: saleItems.productId,
+        batchId: saleItems.batchId,
+        batchNumber: saleItems.batchNumber,
+        qty: saleItems.qty,
+      })
+      .from(saleItems)
+      .where(eq(saleItems.saleId, saleId));
+
+    // Put stock back: per batch where we know it, otherwise just the product.
+    const perProduct = new Map<number, number>();
+    for (const it of items) {
+      if (!it.productId) continue;
+      const qty = toNum(it.qty);
+      perProduct.set(it.productId, (perProduct.get(it.productId) ?? 0) + qty);
+      if (it.batchId) {
+        await tx
+          .update(productBatches)
+          .set({ qty: sql`${productBatches.qty}::numeric + ${qty.toFixed(2)}`, updatedAt: new Date() })
+          .where(eq(productBatches.id, it.batchId));
+      }
+      await tx.insert(stockMovements).values({
+        productId: it.productId,
+        batchId: it.batchId ?? null,
+        batchNumber: it.batchNumber ?? null,
+        type: "return",
+        qtyDelta: qty.toFixed(2),
+        referenceId: saleId,
+        notes: `Cancellation of ${sale.invoiceNo}`,
+      });
+    }
+    for (const [productId, qty] of perProduct) {
+      await tx
+        .update(products)
+        .set({ stockQty: sql`${products.stockQty}::numeric + ${qty.toFixed(2)}` })
+        .where(eq(products.id, productId));
+    }
+
+    // Reverse the auto customer receipt (allocations cascade on delete).
+    const allocations = await tx
+      .select({ paymentId: partyPaymentAllocations.paymentId })
+      .from(partyPaymentAllocations)
+      .where(eq(partyPaymentAllocations.saleId, saleId));
+    const paymentIds = [...new Set(allocations.map((a) => a.paymentId))];
+    for (const pid of paymentIds) {
+      await tx.delete(partyPayments).where(eq(partyPayments.id, pid));
+    }
+
+    await tx
+      .update(sales)
+      .set({
+        status: "cancelled",
+        cancelledAt: new Date(),
+        cancelledBy: actor,
+        cancelReason: reason,
+      })
+      .where(eq(sales.id, saleId));
+
+    return { invoiceNo: sale.invoiceNo, restoredProducts: perProduct.size };
+  });
+
+  revalidateTag("sales", "max");
+  revalidateTag("products", "max");
+  revalidateTag("customers", "max");
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${saleId}`);
+  revalidatePath("/products");
+  revalidatePath("/");
+  revalidatePath("/reports");
+  revalidatePath("/accounts/outstanding");
+
+  return result;
 }

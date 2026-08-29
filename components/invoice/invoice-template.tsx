@@ -44,6 +44,10 @@ type InvoiceSale = {
   deliveryNote?: string | null;
   paymentTerms?: string | null;
   transporterName?: string | null;
+  eInvoiceRequested?: boolean | null;
+  status?: string | null;
+  cancelledAt?: Date | string | null;
+  cancelReason?: string | null;
 };
 
 type InvoiceItem = {
@@ -229,8 +233,16 @@ function WholesaleInvoiceLayout({
     upiAmount: toNumber(sale.upiAmount),
   });
 
+  const cancelled = sale.status === "cancelled";
+
   return (
     <div className="mx-auto max-w-[210mm] bg-white p-3 text-slate-900 print-sheet print:p-2">
+      {cancelled && (
+        <div className="mb-2 border-2 border-red-600 bg-red-50 px-3 py-1.5 text-center text-sm font-bold uppercase tracking-widest text-red-700">
+          Cancelled Invoice
+          {sale.cancelReason ? ` — ${sale.cancelReason}` : ""}
+        </div>
+      )}
       <div className="border border-slate-900">
         <div className="grid grid-cols-[1fr_auto] border-b border-slate-900">
           <div className="px-2 py-1 text-center text-sm font-bold tracking-wide">
@@ -305,6 +317,7 @@ function WholesaleInvoiceLayout({
             />
             <MetaCell label="Destination" value={sale.destination} />
             <MetaCell label="Motor Vehicle No." value={sale.vehicleNo} />
+            <MetaCell label="Transporter" value={sale.transporterName} />
             <MetaCell
               label="Bill Type"
               value={(sale.billType ?? "retail").toUpperCase()}
@@ -709,6 +722,11 @@ function RetailReceiptLayout({
 
   return (
     <div className="mx-auto w-[80mm] max-w-[80mm] bg-white px-2 py-3 text-[11px] leading-tight text-slate-900 print-sheet print:w-[80mm] print:px-0 print:py-0">
+      {sale.status === "cancelled" && (
+        <p className="mb-1 border border-red-600 py-1 text-center text-xs font-bold uppercase tracking-widest text-red-700">
+          Cancelled
+        </p>
+      )}
       <div className="text-center">
         <p className="text-sm font-bold uppercase">{business.name}</p>
         {business.tagline && <p className="text-[10px]">{business.tagline}</p>}

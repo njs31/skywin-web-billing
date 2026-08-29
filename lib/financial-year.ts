@@ -31,3 +31,9 @@ export function nextWholesaleSequence(maxExistingSeq = 0) {
 export function formatWholesaleInvoiceNo(seq: number, fyShortLabel: string) {
   return `${WHOLESALE_INVOICE_PREFIX}/${String(seq).padStart(4, "0")}/${fyShortLabel}`;
 }
+
+/** Sales-return series, continuous per financial year: e.g. SR/0001/26-27 */
+export const SALE_RETURN_PREFIX = "SR";
+export function formatSaleReturnNo(seq: number, fyShortLabel: string) {
+  return `${SALE_RETURN_PREFIX}/${String(seq).padStart(4, "0")}/${fyShortLabel}`;
+}

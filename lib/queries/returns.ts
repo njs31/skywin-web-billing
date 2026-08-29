@@ -15,9 +15,12 @@ import {
   calculateGstBreakdown,
   calculateLineAmount,
 } from "@/lib/gst";
-import { format } from "date-fns";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  getIndianFinancialYearBounds,
+  formatSaleReturnNo,
+} from "@/lib/financial-year";
 
 type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -48,16 +51,24 @@ function isValidGstin(gstin: string) {
   return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstin);
 }
 
+/**
+ * Continuous sales-return series, one running counter per financial year:
+ * e.g. SR/0001/26-27. Mirrors the wholesale invoice series so the number no
+ * longer resets every day. Legacy RET-YYYYMMDD-NNNN rows are ignored by the
+ * pattern, so the new series simply starts at SR/0001/<FY>.
+ */
 async function generateReturnNo(tx: DbOrTx) {
-  const today = format(new Date(), "yyyyMMdd");
-  const prefix = `RET-${today}-`;
+  const { start, end, shortLabel } = getIndianFinancialYearBounds();
+  const like = `SR/%/${shortLabel}`;
   const rows = (await tx.execute(sql`
-    select coalesce(max(nullif(substring(return_no from '([0-9]+)$'), '')::int), 0) + 1 as next_seq
+    select coalesce(max(nullif(substring(return_no from 'SR/0*([0-9]+)/'), '')::int), 0) + 1 as next_seq
     from sale_returns
-    where return_no like ${prefix + "%"}
+    where return_no like ${like}
+      and date >= ${start.toISOString()}::timestamptz
+      and date <= ${end.toISOString()}::timestamptz
   `)) as unknown as Array<{ next_seq: number | string }>;
   const seq = Number(rows[0]?.next_seq ?? 1);
-  return `${prefix}${String(seq).padStart(4, "0")}`;
+  return formatSaleReturnNo(seq, shortLabel);
 }
 
 function lineDiscountFields(item: z.infer<typeof returnItemSchema>) {

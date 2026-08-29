@@ -3,8 +3,10 @@ import Link from "next/link";
 import QRCode from "qrcode";
 import { getSaleById } from "@/lib/queries/sales";
 import { getSettings } from "@/lib/settings";
+import { getCurrentUser } from "@/lib/actions/auth";
 import { InvoiceTemplate } from "@/components/invoice/invoice-template";
 import { PrintButton } from "@/components/invoice/print-button";
+import { CancelInvoiceButton } from "@/components/invoice/cancel-invoice-button";
 import { Button } from "@/components/ui/button";
 import { formatDateIST } from "@/lib/utils";
 
@@ -30,11 +32,13 @@ export default async function InvoiceDetailPage({
 }) {
   const { id } = await params;
   const { print, size } = await searchParams;
-  const [sale, settings] = await Promise.all([
+  const [sale, settings, currentUser] = await Promise.all([
     getSaleById(parseInt(id, 10)),
     getSettings(),
+    getCurrentUser(),
   ]);
   if (!sale) notFound();
+  const canCancel = currentUser?.role === "admin" && sale.status !== "cancelled";
 
   // Retail bills print as an ~80mm thermal receipt unless a size is forced.
   const effectiveSize =
@@ -57,15 +61,17 @@ export default async function InvoiceDetailPage({
     termsOfDelivery: settings.termsOfDelivery,
   };
 
-  const einvoiceQrUrl = await invoiceQrDataUrl(
-    JSON.stringify({
-      invoiceNo: sale.invoiceNo,
-      date: formatDateIST(sale.date),
-      sellerGstin: settings.gstin,
-      buyerGstin: sale.customerGstin || "",
-      grandTotal: sale.grandTotal,
-    })
-  );
+  const einvoiceQrUrl = sale.eInvoiceRequested
+    ? await invoiceQrDataUrl(
+        JSON.stringify({
+          invoiceNo: sale.invoiceNo,
+          date: formatDateIST(sale.date),
+          sellerGstin: settings.gstin,
+          buyerGstin: sale.customerGstin || "",
+          grandTotal: sale.grandTotal,
+        })
+      )
+    : null;
 
   return (
     <div className="p-6">
@@ -73,11 +79,16 @@ export default async function InvoiceDetailPage({
         <Button asChild variant="outline">
           <Link href="/invoices">Back to Sale Book</Link>
         </Button>
-        <PrintButton
-          autoPrint={print === "1"}
-          initialSize={effectiveSize}
-          buttonText="Print Invoice"
-        />
+        <div className="flex items-center gap-3">
+          {canCancel && (
+            <CancelInvoiceButton saleId={sale.id} invoiceNo={sale.invoiceNo} />
+          )}
+          <PrintButton
+            autoPrint={print === "1"}
+            initialSize={effectiveSize}
+            buttonText="Print Invoice"
+          />
+        </div>
       </div>
       <InvoiceTemplate
         business={business}

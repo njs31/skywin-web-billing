@@ -11,7 +11,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 export const paymentTypeEnum = pgEnum("payment_type", ["credit", "cash"]);
 export const paymentModeEnum = pgEnum("payment_mode", [
@@ -241,12 +241,26 @@ export const sales = pgTable(
     destination: text("destination"),
     deliveryNote: text("delivery_note"),
     paymentTerms: text("payment_terms"),
+    transporterName: text("transporter_name"),
     notes: text("notes"),
+    /** External order id for idempotent ingestion (QwicksApp etc.). */
+    externalOrderId: text("external_order_id"),
+    /** Whether an e-invoice / QR was requested for this bill. */
+    eInvoiceRequested: boolean("e_invoice_requested").default(false).notNull(),
+    /** "active" | "cancelled" — cancelled bills keep their number. */
+    status: text("status").default("active").notNull(),
+    cancelledAt: timestamp("cancelled_at"),
+    cancelledBy: text("cancelled_by"),
+    cancelReason: text("cancel_reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
     customerIdIdx: index("sales_customer_id_idx").on(table.customerId),
     dateIdx: index("sales_date_idx").on(table.date),
+    statusIdx: index("sales_status_idx").on(table.status),
+    externalOrderIdUk: uniqueIndex("sales_external_order_id_uk")
+      .on(table.externalOrderId)
+      .where(sql`external_order_id is not null`),
     // Supports the prefix LIKE scan used to compute the next invoice number.
     invoiceNoPatternIdx: index("sales_invoice_no_pattern_idx").using(
       "btree",

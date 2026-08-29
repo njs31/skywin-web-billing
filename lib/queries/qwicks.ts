@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { products, categories, customers } from "@/db/schema";
+import { products, categories, customers, sales } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getSettings } from "@/lib/settings";
 import { createSale } from "@/lib/queries/sales";
@@ -186,6 +186,24 @@ export async function processQwicksOrderPlaced(body: any) {
   const customerName = customerInfo.name || "QwicksApp Customer";
   const customerPhone = customerInfo.phone || "";
 
+  // 0. Idempotency — a retried webhook for the same order must not create a
+  //    second invoice + second stock deduction.
+  const [already] = await db
+    .select({ id: sales.id, invoiceNo: sales.invoiceNo })
+    .from(sales)
+    .where(eq(sales.externalOrderId, orderId))
+    .limit(1);
+  if (already) {
+    return {
+      success: true,
+      orderId,
+      saleId: already.id,
+      invoiceNo: already.invoiceNo,
+      duplicate: true,
+      message: "Order already ingested; returning the existing invoice.",
+    };
+  }
+
   // 1. Find or create QwicksApp customer
   let customerId: number | undefined = undefined;
   if (customerPhone) {
@@ -248,21 +266,48 @@ export async function processQwicksOrderPlaced(body: any) {
   const notes = rawPaymentMode
     ? `QwicksApp Order #${orderId} (payment: ${rawPaymentMode})`
     : `QwicksApp Order #${orderId}`;
-  const sale = await createSale({
-    billType: "retail",
-    customerId,
-    customerName: customerName || undefined,
-    customerPhone: customerPhone || undefined,
-    paymentMode,
-    operatorName: "QwicksApp API",
-    notes,
-    items: saleLineItems,
-  });
+  let sale;
+  try {
+    sale = await createSale({
+      billType: "retail",
+      customerId,
+      customerName: customerName || undefined,
+      customerPhone: customerPhone || undefined,
+      paymentMode,
+      operatorName: "QwicksApp API",
+      notes,
+      externalOrderId: orderId,
+      items: saleLineItems,
+    });
+  } catch (err) {
+    // Concurrent duplicate webhook — the unique index rejected the second
+    // insert. Return the invoice the first one created.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("sales_external_order_id_uk") || msg.includes("external_order_id")) {
+      const [existing] = await db
+        .select({ id: sales.id, invoiceNo: sales.invoiceNo })
+        .from(sales)
+        .where(eq(sales.externalOrderId, orderId))
+        .limit(1);
+      if (existing) {
+        return {
+          success: true,
+          orderId,
+          saleId: existing.id,
+          invoiceNo: existing.invoiceNo,
+          duplicate: true,
+          message: "Order already ingested; returning the existing invoice.",
+        };
+      }
+    }
+    throw err;
+  }
 
   return {
     success: true,
     orderId,
     saleId: sale.id,
+    invoiceNo: sale.invoiceNo,
     message: "Order successfully ingested into Skywin POS",
   };
 }

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { sales, saleItems, products } from "@/db/schema";
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { format, subDays, startOfDay } from "date-fns";
 
 async function visibleCustomerFilter() {
@@ -31,7 +31,7 @@ export async function getSalesTrend(days = 30) {
   }
 
   const from = subDays(startOfDay(new Date()), days - 1);
-  const conditions = [gte(sales.date, from)];
+  const conditions = [gte(sales.date, from), ne(sales.status, "cancelled")];
   if (customerIds !== null) {
     conditions.push(inArray(sales.customerId, customerIds));
   }
@@ -66,7 +66,7 @@ export async function getPaymentModeMix(days = 30) {
   if (customerIds !== null && customerIds.length === 0) return [];
 
   const from = subDays(startOfDay(new Date()), days - 1);
-  const conditions = [gte(sales.date, from)];
+  const conditions = [gte(sales.date, from), ne(sales.status, "cancelled")];
   if (customerIds !== null) {
     conditions.push(inArray(sales.customerId, customerIds));
   }
@@ -103,7 +103,7 @@ export async function getBillTypeMix(days = 30) {
   }
 
   const from = subDays(startOfDay(new Date()), days - 1);
-  const conditions = [gte(sales.date, from)];
+  const conditions = [gte(sales.date, from), ne(sales.status, "cancelled")];
   if (customerIds !== null) {
     conditions.push(inArray(sales.customerId, customerIds));
   }
@@ -139,7 +139,7 @@ export async function getTopProductsChart(limit = 8, days = 30) {
   if (customerIds !== null && customerIds.length === 0) return [];
 
   const from = subDays(startOfDay(new Date()), days - 1);
-  const conditions = [gte(sales.date, from)];
+  const conditions = [gte(sales.date, from), ne(sales.status, "cancelled")];
   if (customerIds !== null) {
     conditions.push(inArray(sales.customerId, customerIds));
   }
@@ -174,7 +174,7 @@ export async function getCashUpiSplit(days = 30) {
   }
 
   const from = subDays(startOfDay(new Date()), days - 1);
-  const conditions = [gte(sales.date, from)];
+  const conditions = [gte(sales.date, from), ne(sales.status, "cancelled")];
   if (customerIds !== null) {
     conditions.push(inArray(sales.customerId, customerIds));
   }
