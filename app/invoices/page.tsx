@@ -14,6 +14,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+const BILL_TYPE_STYLES: Record<string, string> = {
+  retail: "bg-slate-100 text-slate-700 ring-slate-200",
+  wholesale: "bg-indigo-100 text-indigo-700 ring-indigo-200",
+  others: "bg-amber-100 text-amber-800 ring-amber-200",
+};
+
+function BillTypeBadge({ billType }: { billType: string }) {
+  const key = (billType || "retail").toLowerCase();
+  const style = BILL_TYPE_STYLES[key] ?? BILL_TYPE_STYLES.retail;
+  return (
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold capitalize ring-1 ring-inset ${style}`}
+    >
+      {key}
+    </span>
+  );
+}
+
 export default async function InvoicesPage() {
   const sales = await getSales();
 
@@ -47,6 +65,7 @@ export default async function InvoicesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Invoice</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Payment</TableHead>
@@ -59,23 +78,32 @@ export default async function InvoicesPage() {
                 {sales.map((sale) => {
                   const paid = Number(sale.paidAmount ?? 0);
                   const total = Number(sale.grandTotal ?? 0);
-                  const status =
-                    sale.paymentMode === "credit" && paid < total - 0.01
+                  const cancelled = sale.status === "cancelled";
+                  const status = cancelled
+                    ? "Cancelled"
+                    : sale.paymentMode === "credit" && paid < total - 0.01
                       ? paid > 0
                         ? "Partial"
                         : "Pending"
                       : "Paid";
                   return (
-                  <TableRow key={sale.id}>
-                    <TableCell className="font-medium">{sale.invoiceNo}</TableCell>
+                  <TableRow key={sale.id} className={cancelled ? "opacity-60" : undefined}>
+                    <TableCell className={`font-medium ${cancelled ? "line-through" : ""}`}>
+                      {sale.invoiceNo}
+                    </TableCell>
+                    <TableCell>
+                      <BillTypeBadge billType={sale.billType} />
+                    </TableCell>
                     <TableCell>{formatDateTimeIST(sale.date)}</TableCell>
                     <TableCell>{sale.customerName ?? "-"}</TableCell>
                     <TableCell className="capitalize">{sale.paymentMode}</TableCell>
                     <TableCell
                       className={
-                        status === "Paid"
-                          ? "font-medium text-emerald-700"
-                          : "font-medium text-amber-600"
+                        cancelled
+                          ? "font-medium text-red-600"
+                          : status === "Paid"
+                            ? "font-medium text-emerald-700"
+                            : "font-medium text-amber-600"
                       }
                     >
                       {status}
