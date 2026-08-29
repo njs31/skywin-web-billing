@@ -183,8 +183,9 @@ export function getProductRate(
     saleRate: string;
     wholesaleRate: string | null;
   },
-  billType: "retail" | "wholesale"
+  billType: "retail" | "wholesale" | "others"
 ) {
+  // "others" prices like retail (product sale rate).
   if (billType === "wholesale" && product.wholesaleRate) {
     return toNumber(product.wholesaleRate);
   }
@@ -202,7 +203,7 @@ export function getBatchBillingRate(
     wholesaleRate?: string | number | null;
     batchSaleRate?: string | number | null;
   },
-  billType: "retail" | "wholesale" | "sale" | "purchase"
+  billType: "retail" | "wholesale" | "others" | "sale" | "purchase"
 ) {
   const productSale = toNumber(row.saleRate);
   const batchSale = toNumber(row.batchSaleRate);

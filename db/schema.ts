@@ -21,7 +21,7 @@ export const paymentModeEnum = pgEnum("payment_mode", [
   "card",
   "cheque",
 ]);
-export const billTypeEnum = pgEnum("bill_type", ["retail", "wholesale"]);
+export const billTypeEnum = pgEnum("bill_type", ["retail", "wholesale", "others"]);
 export const customerTypeEnum = pgEnum("customer_type", [
   "retail",
   "wholesale",
@@ -153,6 +153,9 @@ export const productBatches = pgTable(
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    /** Set when a batch's sale rate was hand-edited, so a product-level
+     *  sale-rate change no longer overwrites it. */
+    saleRateOverridden: boolean("sale_rate_overridden").default(false).notNull(),
   },
   (table) => ({
     productBatchUnique: uniqueIndex("product_batches_product_batch_unique").on(

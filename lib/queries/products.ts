@@ -46,6 +46,7 @@ export type ProductBatchSearchResult = {
   purchaseRate: string;
   mrp: string | null;
   discountPercent: string;
+  unit: string;
   productStockQty: string;
   batchId: number | null;
   batchNumber: string | null;
@@ -96,6 +97,7 @@ export async function searchProductBatches(
       purchaseRate: products.purchaseRate,
       mrp: products.mrp,
       discountPercent: products.discountPercent,
+      unit: products.unit,
       productStockQty: products.stockQty,
       batchId: productBatches.id,
       batchNumber: productBatches.batchNumber,
@@ -140,6 +142,7 @@ export async function searchProductBatches(
     purchaseRate: row.purchaseRate,
     mrp: row.mrp,
     discountPercent: row.discountPercent,
+    unit: row.unit ?? "pcs",
     productStockQty: row.productStockQty,
     batchId: row.batchId,
     batchNumber: row.batchNumber,
@@ -268,6 +271,7 @@ export async function updateProduct(
     barcode?: string;
     expiryDate?: string | null;
     name?: string;
+    unit?: string;
   }
 ) {
   if (data.hsnCode !== undefined && !data.hsnCode.trim()) {
@@ -319,6 +323,7 @@ export async function updateProduct(
         : {}),
       ...(data.hsnCode !== undefined ? { hsnCode: data.hsnCode } : {}),
       ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
+      ...(data.unit !== undefined ? { unit: data.unit } : {}),
       ...(data.name !== undefined ? { name: data.name.trim() } : {}),
       ...(data.expiryDate !== undefined
         ? { expiryDate: data.expiryDate }
@@ -327,16 +332,22 @@ export async function updateProduct(
     .where(eq(products.id, id));
 
   // Keep batch selling rates in sync so POS never shows a stale batch price
-  // after the product sale rate / MRP is updated. Batch *purchase* rates are
-  // deliberately left alone: each is the actual cost of that lot, and
-  // overwriting them would rewrite cost history and distort margin reports.
+  // after the product sale rate / MRP is updated. Batches whose sale rate has
+  // been hand-edited (sale_rate_overridden) keep their own price. Batch
+  // *purchase* rates are always left alone: each is the actual cost of that
+  // lot, and overwriting them would rewrite cost history.
   await db
     .update(productBatches)
     .set({
       saleRate: data.saleRate.toFixed(2),
       updatedAt: new Date(),
     })
-    .where(eq(productBatches.productId, id));
+    .where(
+      and(
+        eq(productBatches.productId, id),
+        eq(productBatches.saleRateOverridden, false)
+      )
+    );
 
   // Live stock edits must go through batch adjustment so POS batch qty stays correct.
   if (stockDelta != null && Math.abs(stockDelta) > 0.0001) {
@@ -348,6 +359,69 @@ export async function updateProduct(
   revalidatePath("/products");
   revalidatePath("/pos");
   revalidatePath("/stock");
+}
+
+/** Batches for one product, newest first — for the per-batch edit UI. */
+export async function getProductBatches(productId: number) {
+  return db
+    .select({
+      id: productBatches.id,
+      batchNumber: productBatches.batchNumber,
+      qty: productBatches.qty,
+      purchaseRate: productBatches.purchaseRate,
+      saleRate: productBatches.saleRate,
+      saleRateOverridden: productBatches.saleRateOverridden,
+      expiryDate: productBatches.expiryDate,
+      notes: productBatches.notes,
+    })
+    .from(productBatches)
+    .where(eq(productBatches.productId, productId))
+    .orderBy(asc(productBatches.batchNumber));
+}
+
+const updateBatchSchema = z.object({
+  saleRate: z.number().nonnegative().optional(),
+  purchaseRate: z.number().nonnegative().optional(),
+  expiryDate: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+/**
+ * Edit one batch in isolation. Setting a sale rate marks the batch as
+ * overridden so a later product-level rate change will not reset it. Sibling
+ * batches are never touched.
+ */
+export async function updateBatch(
+  batchId: number,
+  input: z.infer<typeof updateBatchSchema>
+) {
+  const data = updateBatchSchema.parse(input);
+  const [batch] = await db
+    .select({ id: productBatches.id, productId: productBatches.productId })
+    .from(productBatches)
+    .where(eq(productBatches.id, batchId))
+    .limit(1);
+  if (!batch) throw new Error("Batch not found.");
+
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if (data.saleRate !== undefined) {
+    set.saleRate = data.saleRate.toFixed(2);
+    set.saleRateOverridden = true;
+  }
+  if (data.purchaseRate !== undefined) {
+    set.purchaseRate = data.purchaseRate.toFixed(2);
+  }
+  if (data.expiryDate !== undefined) set.expiryDate = data.expiryDate;
+  if (data.notes !== undefined) set.notes = data.notes;
+
+  await db.update(productBatches).set(set).where(eq(productBatches.id, batchId));
+
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } =
+    await import("@/lib/revalidate");
+  revalidateTag("products", "max");
+  revalidatePath("/products");
+  revalidatePath("/pos");
+  return { productId: batch.productId };
 }
 
 const productSchema = z.object({

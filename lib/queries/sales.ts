@@ -42,7 +42,7 @@ const saleItemSchema = z.object({
 });
 
 const createSaleSchema = z.object({
-  billType: z.enum(["retail", "wholesale"]).default("retail"),
+  billType: z.enum(["retail", "wholesale", "others"]).default("retail"),
   customerId: z.number().optional(),
   customerName: z.string().optional(),
   customerPhone: z.string().optional(),
@@ -84,7 +84,7 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     id: Number(row.id),
     invoiceNo: String(row.invoice_no),
     date: row.date instanceof Date ? row.date : new Date(String(row.date)),
-    billType: row.bill_type as "retail" | "wholesale",
+    billType: row.bill_type as "retail" | "wholesale" | "others",
     customerId: row.customer_id == null ? null : Number(row.customer_id),
     customerName: (row.customer_name as string | null) ?? null,
     paymentMode: row.payment_mode as "cash" | "upi" | "credit" | "card" | "cheque",
@@ -1331,7 +1331,7 @@ export async function getSalesReport(
 
   for (const inv of invoices) {
     if (inv.billType === "wholesale") wholesaleCount++;
-    else retailCount++;
+    else if (inv.billType === "retail") retailCount++;
     subtotal += inv.subtotal;
     discountAmount += inv.discountAmount;
     cgst += inv.cgst;

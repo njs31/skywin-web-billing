@@ -32,6 +32,7 @@ import {
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { checkBelowCost } from "@/lib/pricing";
+import { isMeasuredUnit } from "@/lib/units";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
@@ -80,7 +81,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [billType, setBillType] = useState<"retail" | "wholesale">("retail");
+  const [billType, setBillType] = useState<"retail" | "wholesale" | "others">("retail");
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [customerId, setCustomerId] = useState<string>("none");
   const [customerName, setCustomerName] = useState("");
@@ -268,6 +269,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
         purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
         stockQty: row.batchQty || row.productStockQty,
         discountPercent: row.discountPercent,
+        unit: row.unit,
       } as Product;
 
       addToCart(product, qty, {
@@ -560,7 +562,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
               e-Invoice
             </label>
             <div className="flex rounded-lg border border-slate-200 p-1 bg-white shadow-sm">
-              {(["retail", "wholesale"] as const).map((type) => (
+              {(["retail", "wholesale", "others"] as const).map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -808,7 +810,12 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                       >
                         <Plus className="h-3 w-3" />
                       </Button>
-                      
+                      {item.product?.unit && isMeasuredUnit(item.product.unit) && (
+                        <span className="text-[11px] font-medium text-slate-500">
+                          {item.product.unit} · rate/{item.product.unit.toLowerCase()}
+                        </span>
+                      )}
+
                       <div className="flex h-7 items-center rounded border border-slate-200 bg-white">
                         <select
                           value={item.discountType}

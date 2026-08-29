@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { createPurchase, updatePurchase } from "@/lib/actions/purchases";
 import { calculateLineAmount, calculateGstBreakdown, isInterstateGst } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
+import { isMeasuredUnit } from "@/lib/units";
 import { BUSINESS } from "@/lib/business";
 import type { Product, Supplier } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
@@ -297,7 +298,10 @@ export function PurchaseForm({
       alert(`HSN code is mandatory. Product "${product.name}" lacks an HSN code. Please update the product in Inventory first.`);
       return;
     }
-    const wholeQty = Math.max(1, Math.round(qty) || 1);
+    // Gram / Metre products are billed by weight/length — keep the decimal.
+    const wholeQty = isMeasuredUnit(product.unit)
+      ? Math.max(0.01, Math.round(qty * 100) / 100 || 0.01)
+      : Math.max(1, Math.round(qty) || 1);
     const nextSaleRate = batch?.saleRate ?? toNumber(product.saleRate);
     setItems((prev) => [
       ...prev,

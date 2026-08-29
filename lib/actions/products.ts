@@ -5,6 +5,8 @@ import {
   searchProductBatches as searchProductBatchesQuery,
   updateProduct as updateProductQuery,
   deleteProduct as deleteProductQuery,
+  getProductBatches as getProductBatchesQuery,
+  updateBatch as updateBatchQuery,
   getAllProductsForExport,
   getProductsExportForDateRange,
 } from "@/lib/queries/products";
@@ -56,10 +58,29 @@ export async function updateProduct(
     mrp?: number | null;
     discountPercent?: number;
     name?: string;
+    unit?: string;
   }
 ) {
   await requireNonDealer();
   return updateProductQuery(id, data);
+}
+
+export async function getProductBatches(productId: number) {
+  await requireNonDealer();
+  return getProductBatchesQuery(productId);
+}
+
+export async function updateBatch(
+  batchId: number,
+  data: {
+    saleRate?: number;
+    purchaseRate?: number;
+    expiryDate?: string | null;
+    notes?: string | null;
+  }
+) {
+  await requireNonDealer();
+  return updateBatchQuery(batchId, data);
 }
 
 export async function deleteProduct(id: number) {

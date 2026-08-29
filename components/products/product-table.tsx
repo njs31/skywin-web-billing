@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import { updateProduct, deleteProduct } from "@/lib/actions/products";
 import { useRouter } from "next/navigation";
 import { formatCurrency, toNumber } from "@/lib/utils";
@@ -16,8 +16,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { Pencil, Trash2, Check, X, Printer } from "lucide-react";
+import { Pencil, Trash2, Check, X, Printer, Layers } from "lucide-react";
 import Link from "next/link";
+import { BatchEditor } from "@/components/products/batch-editor";
+import { UNIT_OPTIONS } from "@/lib/units";
 import { isInventoryPinRequired, verifyInventoryAdminPin } from "@/lib/actions/billing";
 
 function formatExpiry(value: string | null | undefined) {
@@ -51,6 +53,7 @@ function isExpired(value: string | null | undefined) {
 export function ProductTable({ products }: { products: Product[] }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [saleRate, setSaleRate] = useState("");
   const [purchaseRate, setPurchaseRate] = useState("");
@@ -60,6 +63,7 @@ export function ProductTable({ products }: { products: Product[] }) {
   const [hsnCode, setHsnCode] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [stockQty, setStockQty] = useState("");
+  const [unit, setUnit] = useState("Pcs");
   const [isPending, startTransition] = useTransition();
 
   const startEdit = (product: Product) => {
@@ -73,6 +77,7 @@ export function ProductTable({ products }: { products: Product[] }) {
     setHsnCode(product.hsnCode ?? "");
     setExpiryDate(product.expiryDate ?? "");
     setStockQty(String(toNumber(product.stockQty)));
+    setUnit(product.unit || "Pcs");
   };
 
   const save = (id: number) => {
@@ -119,6 +124,7 @@ export function ProductTable({ products }: { products: Product[] }) {
           hsnCode: hsnCode.trim(),
           expiryDate: expiryDate.trim() || null,
           stockQty: parsedStock,
+          unit,
         });
         setEditingId(null);
         router.refresh();
@@ -165,6 +171,7 @@ export function ProductTable({ products }: { products: Product[] }) {
           <TableHead className="py-2.5 px-3">Product</TableHead>
           <TableHead className="py-2.5 px-2">SKU</TableHead>
           <TableHead className="py-2.5 px-2">HSN</TableHead>
+          <TableHead className="py-2.5 px-2">Unit</TableHead>
           <TableHead className="py-2.5 px-2">Expiry</TableHead>
           <TableHead className="py-2.5 px-2 text-right">Stock</TableHead>
           <TableHead className="py-2.5 px-2 text-right">Pur. Rate</TableHead>
@@ -180,8 +187,8 @@ export function ProductTable({ products }: { products: Product[] }) {
           const expired = isExpired(product.expiryDate);
           const nearExpiry = isNearExpiry(product.expiryDate);
           return (
+            <Fragment key={product.id}>
             <TableRow
-              key={product.id}
               className={
                 toNumber(product.stockQty) < 10 ? "bg-amber-50/60" : undefined
               }
@@ -210,6 +217,23 @@ export function ProductTable({ products }: { products: Product[] }) {
                   />
                 ) : (
                   product.hsnCode || <span className="text-red-500 font-semibold">Missing!</span>
+                )}
+              </TableCell>
+              <TableCell className="py-2 px-2 whitespace-nowrap">
+                {editingId === product.id ? (
+                  <select
+                    className="h-7 rounded border border-slate-200 bg-white px-1 text-xs"
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                  >
+                    {UNIT_OPTIONS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-slate-600">{product.unit || "Pcs"}</span>
                 )}
               </TableCell>
               <TableCell className="py-2 px-2 whitespace-nowrap">
@@ -360,6 +384,23 @@ export function ProductTable({ products }: { products: Product[] }) {
                     <Button
                       size="icon"
                       variant="ghost"
+                      className={`h-7 w-7 hover:bg-slate-100 ${
+                        expandedId === product.id
+                          ? "text-emerald-700"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                      onClick={() =>
+                        setExpandedId(
+                          expandedId === product.id ? null : product.id
+                        )
+                      }
+                      title="Edit batches"
+                    >
+                      <Layers className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
                       className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                       onClick={() => startEdit(product)}
                       title="Edit product"
@@ -380,6 +421,14 @@ export function ProductTable({ products }: { products: Product[] }) {
                 )}
               </TableCell>
             </TableRow>
+            {expandedId === product.id && (
+              <TableRow key={`batches-${product.id}`} className="bg-slate-50/70">
+                <TableCell colSpan={12} className="p-0">
+                  <BatchEditor productId={product.id} />
+                </TableCell>
+              </TableRow>
+            )}
+            </Fragment>
           );
         })}
       </TableBody>

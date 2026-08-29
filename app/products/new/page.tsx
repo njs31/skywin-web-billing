@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { UNIT_OPTIONS } from "@/lib/units";
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -27,6 +28,7 @@ export default function NewProductPage() {
   const [stockQty, setStockQty] = useState("0");
   const [reorderLevel, setReorderLevel] = useState("10");
   const [expiryDate, setExpiryDate] = useState("");
+  const [unit, setUnit] = useState("Pcs");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,7 +58,7 @@ export default function NewProductPage() {
           stockQty: parseFloat(stockQty) || 0,
           reorderLevel: parseFloat(reorderLevel) || 10,
           expiryDate: expiryDate.trim() || undefined,
-          unit: "pcs",
+          unit,
         });
         router.refresh();
         router.push("/products");
@@ -210,6 +212,26 @@ export default function NewProductPage() {
                   <option value="18">18%</option>
                   <option value="28">28%</option>
                 </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="unit">Unit of Measurement</Label>
+                <select
+                  id="unit"
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {UNIT_OPTIONS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500">
+                  For Gram / Metre, enter the rate per gram / per metre — the
+                  sale value is weight/length × rate.
+                </p>
               </div>
 
               <div className="space-y-2">
