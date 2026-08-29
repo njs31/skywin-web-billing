@@ -5,6 +5,7 @@ import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   PRINT_SIZES,
+  PRINT_SIZE_LABELS,
   buildPrintHref,
   setStoredPrintSize,
   triggerPrint,
@@ -84,7 +85,7 @@ export function PrintSizeMenu({
               onClick={() => choose(paper)}
               onMouseDown={(e) => e.preventDefault()}
             >
-              {paper}
+              {PRINT_SIZE_LABELS[paper]}
             </button>
           ))}
         </div>

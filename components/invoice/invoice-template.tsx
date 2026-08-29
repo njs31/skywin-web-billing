@@ -43,6 +43,7 @@ type InvoiceSale = {
   destination?: string | null;
   deliveryNote?: string | null;
   paymentTerms?: string | null;
+  transporterName?: string | null;
 };
 
 type InvoiceItem = {
@@ -191,7 +192,11 @@ function MetaCell({
   );
 }
 
-export function InvoiceTemplate({
+/**
+ * Full A4 tax-invoice — used for wholesale and "others" bills. Unchanged from
+ * the original single-layout template.
+ */
+function WholesaleInvoiceLayout({
   business,
   sale,
   items,
@@ -659,4 +664,170 @@ export function InvoiceTemplate({
       </p>
     </div>
   );
+}
+
+function ReceiptRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-slate-600">{label}</span>
+      <span className="text-right font-medium">{value}</span>
+    </div>
+  );
+}
+
+const RECEIPT_DASH = "border-t border-dashed border-slate-400 my-1";
+
+/**
+ * Compact ~80mm thermal-receipt layout for retail counter bills. Prints on the
+ * RECEIPT paper size; carries only the fields a retail customer needs.
+ */
+function RetailReceiptLayout({
+  business,
+  sale,
+  items,
+  einvoiceQrUrl,
+}: InvoiceTemplateProps) {
+  const customer = sale.customerRecordName ?? sale.customerName ?? null;
+  const interstate = toNumber(sale.igst) > 0;
+  const taxableTotal = items.reduce((s, i) => s + toNumber(i.amount), 0);
+  const roundOff = toNumber(sale.roundOff);
+  const invoiceDate = formatDateIST(sale.date);
+  const settlement = invoiceSettlement({
+    paymentMode: sale.paymentMode,
+    grandTotal: toNumber(sale.grandTotal),
+    paidAmount: toNumber(sale.paidAmount),
+    cashAmount: toNumber(sale.cashAmount),
+    upiAmount: toNumber(sale.upiAmount),
+  });
+  const transport = [
+    sale.dispatchedThrough && `Via: ${sale.dispatchedThrough}`,
+    sale.vehicleNo && `Vehicle: ${sale.vehicleNo}`,
+    sale.transporterName && `Transporter: ${sale.transporterName}`,
+  ].filter(Boolean) as string[];
+
+  const dash = RECEIPT_DASH;
+
+  return (
+    <div className="mx-auto w-[80mm] max-w-[80mm] bg-white px-2 py-3 text-[11px] leading-tight text-slate-900 print-sheet print:w-[80mm] print:px-0 print:py-0">
+      <div className="text-center">
+        <p className="text-sm font-bold uppercase">{business.name}</p>
+        {business.tagline && <p className="text-[10px]">{business.tagline}</p>}
+        {business.address && <p className="text-[10px]">{business.address}</p>}
+        <p className="text-[10px]">GSTIN: {business.gstin}</p>
+        <p className="text-[10px]">Ph: {business.phone}</p>
+      </div>
+
+      <div className={dash} />
+      <p className="text-center text-[10px] font-semibold uppercase tracking-wide">
+        Tax Invoice (Retail)
+      </p>
+      <div className={dash} />
+
+      <ReceiptRow label="Invoice" value={sale.invoiceNo} />
+      <ReceiptRow label="Date" value={invoiceDate} />
+      <ReceiptRow label="Payment" value={paymentLabel(sale)} />
+      {customer && <ReceiptRow label="Customer" value={customer} />}
+      {sale.customerPhone && <ReceiptRow label="Phone" value={sale.customerPhone} />}
+      {sale.customerGstin && <ReceiptRow label="GSTIN" value={sale.customerGstin} />}
+      {sale.operatorName && <ReceiptRow label="Billed by" value={sale.operatorName} />}
+      {transport.map((t) => (
+        <p key={t} className="text-[10px]">
+          {t}
+        </p>
+      ))}
+
+      <div className={dash} />
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="border-b border-dashed border-slate-400 text-left">
+            <th className="py-0.5 font-semibold">Item</th>
+            <th className="py-0.5 text-right font-semibold">Qty</th>
+            <th className="py-0.5 text-right font-semibold">Rate</th>
+            <th className="py-0.5 text-right font-semibold">Amt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item, idx) => {
+            const unit = (item.unit || "PCS").toUpperCase();
+            return (
+              <tr key={idx} className="align-top">
+                <td className="py-0.5 pr-1">
+                  {item.productName ?? item.customName ?? "Custom Item"}
+                </td>
+                <td className="py-0.5 text-right">
+                  {formatNumber(item.qty, 2)} {unit}
+                </td>
+                <td className="py-0.5 text-right">{formatNumber(item.rate, 2)}</td>
+                <td className="py-0.5 text-right">{formatNumber(item.amount, 2)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <div className={dash} />
+      <ReceiptRow label="Taxable" value={formatNumber(taxableTotal, 2)} />
+      {interstate ? (
+        <ReceiptRow label="IGST" value={formatNumber(sale.igst, 2)} />
+      ) : (
+        <>
+          <ReceiptRow label="CGST" value={formatNumber(sale.cgst, 2)} />
+          <ReceiptRow label="SGST" value={formatNumber(sale.sgst, 2)} />
+        </>
+      )}
+      {Math.abs(roundOff) >= 0.005 && (
+        <ReceiptRow label="Round Off" value={formatNumber(roundOff, 2)} />
+      )}
+      <div className="mt-1 flex justify-between border-t border-slate-900 pt-1 text-sm font-bold">
+        <span>TOTAL</span>
+        <span>{formatCurrency(sale.grandTotal)}</span>
+      </div>
+      {settlement.received > 0 && (
+        <>
+          <ReceiptRow
+            label={`${settlement.label} Received`}
+            value={formatNumber(settlement.received, 2)}
+          />
+          <div className="flex justify-between font-semibold">
+            <span>Balance</span>
+            <span>{formatCurrency(settlement.balance)}</span>
+          </div>
+        </>
+      )}
+
+      <div className={dash} />
+      <p className="text-[10px]">
+        INR{" "}
+        {amountInIndianWords(sale.grandTotal).replace(/ only$/i, " Only")}
+      </p>
+
+      {einvoiceQrUrl && (
+        <div className="mt-2 flex flex-col items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={einvoiceQrUrl}
+            alt="Invoice QR"
+            className="h-[64px] w-[64px] print:h-[18mm] print:w-[18mm]"
+          />
+          <p className="text-[9px] font-semibold">e-Invoice</p>
+        </div>
+      )}
+
+      <div className={dash} />
+      <p className="text-center text-[10px] font-semibold">
+        Sold items cannot be returned or exchanged
+      </p>
+      <p className="mt-1 text-center text-[10px] text-slate-500">
+        This is a Computer Generated Invoice
+      </p>
+    </div>
+  );
+}
+
+export function InvoiceTemplate(props: InvoiceTemplateProps) {
+  const billType = props.sale.billType ?? "retail";
+  if (billType === "retail") {
+    return <RetailReceiptLayout {...props} />;
+  }
+  return <WholesaleInvoiceLayout {...props} />;
 }

@@ -36,6 +36,10 @@ export default async function InvoiceDetailPage({
   ]);
   if (!sale) notFound();
 
+  // Retail bills print as an ~80mm thermal receipt unless a size is forced.
+  const effectiveSize =
+    size ?? ((sale.billType ?? "retail") === "retail" ? "RECEIPT" : undefined);
+
   const business = {
     name: settings.businessName,
     tagline: settings.tagline,
@@ -71,7 +75,7 @@ export default async function InvoiceDetailPage({
         </Button>
         <PrintButton
           autoPrint={print === "1"}
-          initialSize={size}
+          initialSize={effectiveSize}
           buttonText="Print Invoice"
         />
       </div>

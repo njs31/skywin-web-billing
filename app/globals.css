@@ -66,6 +66,40 @@ body {
     padding: 0 !important;
   }
 
+  /*
+   * The app shell wraps every page in a 100vh flex column that clips its
+   * overflow (see components/layout/app-shell.tsx). At print time that clipped
+   * the invoice to a single page and dropped page 2+. Unclamp every layout
+   * ancestor so a long invoice can flow across pages.
+   */
+  html,
+  body,
+  div.h-screen,
+  main,
+  main.flex-1,
+  body *:has(> .print-sheet) {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Repeat the table head on every page; never slice a row or the totals. */
+  .print-sheet table {
+    border-collapse: collapse;
+    break-inside: auto;
+  }
+  .print-sheet thead {
+    display: table-header-group;
+  }
+  .print-sheet tfoot {
+    display: table-footer-group;
+  }
+  .print-sheet tr,
+  .print-sheet .avoid-break {
+    break-inside: avoid;
+  }
+
   html[data-print-size="A5"] .print-sheet {
     max-width: 148mm !important;
     width: 100% !important;
@@ -94,6 +128,15 @@ body {
   html[data-print-size="A5"] .print-sheet td {
     padding-top: 3px !important;
     padding-bottom: 3px !important;
+  }
+
+  html[data-print-size="RECEIPT"] .print-sheet {
+    max-width: 80mm !important;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    font-size: 8pt !important;
+    line-height: 1.3 !important;
   }
 
   html[data-print-size="A4"] .print-sheet {
