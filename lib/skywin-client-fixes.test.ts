@@ -13,13 +13,13 @@ import {
   sortPaymentModeEntries,
 } from "./sale-settlement";
 
-describe("wholesale invoice series SKYA/0379/26-27", () => {
-  it("starts the next number at 379 when no wholesale invoices exist", () => {
-    assert.equal(nextWholesaleSequence(0), 379);
-    assert.equal(WHOLESALE_INVOICE_SEQ_FLOOR, 378);
+describe("wholesale invoice series SKYA/0385/26-27", () => {
+  it("starts the next number at 385 when no wholesale invoices exist", () => {
+    assert.equal(nextWholesaleSequence(0), 385);
+    assert.equal(WHOLESALE_INVOICE_SEQ_FLOOR, 384);
     assert.equal(
       formatWholesaleInvoiceNo(nextWholesaleSequence(0), "26-27"),
-      "SKYA/0379/26-27"
+      "SKYA/0385/26-27"
     );
   });
 
