@@ -50,6 +50,7 @@ export default async function InvoiceDetailPage({
     bankBranch: settings.bankBranch,
     bankAccountNo: settings.bankAccountNo,
     bankIfsc: settings.bankIfsc,
+    termsOfDelivery: settings.termsOfDelivery,
   };
 
   const einvoiceQrUrl = await invoiceQrDataUrl(

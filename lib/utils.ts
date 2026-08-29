@@ -22,6 +22,20 @@ export function formatNumber(value: number | string, decimals = 2) {
   }).format(num || 0);
 }
 
+/**
+ * Format a GST / tax rate for display: up to 2 decimals, trailing zeros trimmed.
+ * `2.5 -> "2.5"`, `9 -> "9"`, `2.25 -> "2.25"`. Use this instead of
+ * `formatNumber(rate, 0)` so a 2.5% half-rate does not round up to 3%.
+ */
+export function formatRate(value: number | string) {
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  const safe = Number.isFinite(num) ? num : 0;
+  return new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(safe);
+}
+
 export function toNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined) return 0;
   const num = typeof value === "number" ? value : parseFloat(value);

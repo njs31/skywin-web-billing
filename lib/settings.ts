@@ -31,6 +31,8 @@ export const DEFAULT_SETTINGS = {
   bankBranch: "GANDHI NAGAR(KUM)",
   bankAccountNo: "512020010037167",
   bankIfsc: "CIUB0000171",
+  termsOfDelivery:
+    "இங்கு விற்கப்படும் விதைகள் அனைத்தும் முளைப்புதிறனுக்கும் மட்டுமே பொறுப்பு. கால மாறுதல்களால் ஏற்படும் இழப்புகளுக்கு நாங்கள் பொறுப்பல்ல.",
 } as const;
 
 export type AppSettings = Record<keyof typeof DEFAULT_SETTINGS, string>;

@@ -44,6 +44,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             bankBranch: fd.get("bankBranch") as string,
             bankAccountNo: fd.get("bankAccountNo") as string,
             bankIfsc: fd.get("bankIfsc") as string,
+            termsOfDelivery: fd.get("termsOfDelivery") as string,
           },
           fd.get("currentPin") as string || undefined,
         );
@@ -195,6 +196,15 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             <div>
               <Label>IFSC</Label>
               <Input name="bankIfsc" defaultValue={settings.bankIfsc} />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Terms of Delivery (Sales Invoice)</Label>
+              <textarea
+                name="termsOfDelivery"
+                defaultValue={settings.termsOfDelivery}
+                rows={3}
+                className="flex w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
             </div>
           </div>
 

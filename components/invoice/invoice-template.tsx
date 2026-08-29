@@ -2,6 +2,7 @@ import {
   formatCurrency,
   formatDateIST,
   formatNumber,
+  formatRate,
   toNumber,
 } from "@/lib/utils";
 import { amountInIndianWords } from "@/lib/print-helpers";
@@ -73,6 +74,7 @@ type InvoiceTemplateProps = {
     bankBranch?: string;
     bankAccountNo?: string;
     bankIfsc?: string;
+    termsOfDelivery?: string;
   };
   sale: InvoiceSale;
   items: InvoiceItem[];
@@ -304,7 +306,9 @@ export function InvoiceTemplate({
             />
             <div className="col-span-2 border-b border-slate-900 p-1.5 text-[10px]">
               <p className="text-slate-600">Terms of Delivery</p>
-              <p className="min-h-[2rem]">&nbsp;</p>
+              <p className="min-h-[2rem] whitespace-pre-wrap">
+                {business.termsOfDelivery?.trim() || " "}
+              </p>
             </div>
           </div>
         </div>
@@ -522,7 +526,7 @@ export function InvoiceTemplate({
                 {interstate ? (
                   <>
                     <td className="border-r border-slate-900 px-1 py-1 text-right">
-                      {formatNumber(row.rate, 0)}%
+                      {formatRate(row.rate)}%
                     </td>
                     <td className="border-r border-slate-900 px-1 py-1 text-right">
                       {formatNumber(row.igst, 2)}
@@ -531,13 +535,13 @@ export function InvoiceTemplate({
                 ) : (
                   <>
                     <td className="border-r border-slate-900 px-1 py-1 text-right">
-                      {formatNumber(row.rate / 2, 0)}%
+                      {formatRate(row.rate / 2)}%
                     </td>
                     <td className="border-r border-slate-900 px-1 py-1 text-right">
                       {formatNumber(row.cgst, 2)}
                     </td>
                     <td className="border-r border-slate-900 px-1 py-1 text-right">
-                      {formatNumber(row.rate / 2, 0)}%
+                      {formatRate(row.rate / 2)}%
                     </td>
                     <td className="border-r border-slate-900 px-1 py-1 text-right">
                       {formatNumber(row.sgst, 2)}
