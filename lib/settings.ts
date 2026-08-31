@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   inventoryAdminPin: "1234",
   qwicksApiKey: "skywin_qwicks_api_key_7596",
   widgetApiKey: "skywin_widget_8f3c2a91e6b04d7a",
+  labelApiKey: "skywin_label_3d9f1c47ba805e26",
   qwicksMerchantId: "SkywinKmu",
   qwicksHost: "qwicks.app",
   seedLicense: "4300/TNJ/2026",

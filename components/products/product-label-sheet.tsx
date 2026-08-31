@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   downloadLabelPng,
   downloadLabelPngFiles,
@@ -8,24 +8,34 @@ import {
   renderLabelPngMap,
   type LabelProduct,
 } from "@/lib/label-render";
-import { LABEL_GAP_MM } from "@/lib/label-print-config";
+import { DRIVER_PAGE_H_MM, DRIVER_PAGE_W_MM } from "@/lib/label-print-config";
 import {
-  calibrateLabelGap,
   isSerialPrintSupported,
   isUsbPrintSupported,
   printLabelsViaSerial,
   printLabelsViaUsb,
-  type PrinterLanguage,
 } from "@/lib/thermal-usb-print";
 
 export type { LabelProduct };
 
 /**
- * The sticker roll is 50 × 25 mm die-cut, so the browser must be told the page
- * is one sticker. Without this a driver print lays the label on A4 and the
- * printer spits blank stock between every one.
+ * Tell the browser the page is one sticker, not A4 — otherwise a driver print
+ * lays the label on A4 and the printer spits blank stock between every one.
+ * The size is the printable window rather than the full sticker; see
+ * DRIVER_PAGE_W_MM. The custom properties keep the print stylesheet on the
+ * same numbers.
  */
-const PAGE_RULE = "@page { size: 50mm 25mm; margin: 0; }";
+const PAGE_RULE = `
+  @page { size: ${DRIVER_PAGE_W_MM}mm ${DRIVER_PAGE_H_MM}mm; margin: 0; }
+  :root {
+    --label-print-w: ${DRIVER_PAGE_W_MM}mm;
+    --label-print-h: ${DRIVER_PAGE_H_MM}mm;
+  }
+`;
+
+/** Browser capabilities never change mid-session, so there is nothing to watch. */
+const subscribeNever = () => () => {};
+const returnFalse = () => false;
 
 function LabelPreview({
   product,
@@ -60,14 +70,28 @@ function LabelPreview({
 export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const [labelPngMap, setLabelPngMap] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState<"" | "print" | "serial" | "calibrate">("");
+  const [busy, setBusy] = useState<"" | "usb" | "serial">("");
   const [copies, setCopies] = useState(1);
-  const [language, setLanguage] = useState<PrinterLanguage>("tspl");
-  const [gapMm, setGapMm] = useState(LABEL_GAP_MM);
-  const [density, setDensity] = useState(8);
-  const [upright, setUpright] = useState(true);
-  const usbSupported = isUsbPrintSupported();
-  const serialSupported = isSerialPrintSupported();
+
+  /**
+   * Both checks read `navigator`, which does not exist while Next renders this
+   * on the server. Calling them during render returned false there and true in
+   * the browser, so the two HTML trees disagreed and React threw the tree away
+   * — which detaches the toolbar's click handlers until it has re-rendered,
+   * and a click in that window does nothing. useSyncExternalStore lets us
+   * declare the server answer explicitly and adopt the real one after
+   * hydration.
+   */
+  const usbSupported = useSyncExternalStore(
+    subscribeNever,
+    isUsbPrintSupported,
+    returnFalse
+  );
+  const serialSupported = useSyncExternalStore(
+    subscribeNever,
+    isSerialPrintSupported,
+    returnFalse
+  );
 
   useEffect(() => {
     document.body.classList.add("thermal-label-page");
@@ -118,8 +142,6 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     return out;
   }, [products, labelPngMap, qty]);
 
-  const printerOptions = { language, copies, gapMm, density, upright };
-
   function reportError(error: unknown, fallback: string) {
     // The user dismissed the Chrome device chooser; not an error.
     if (error instanceof DOMException && error.name === "NotFoundError") return;
@@ -129,9 +151,9 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
   async function handleUsbPrint() {
     if (!ready || busy) return;
-    setBusy("print");
+    setBusy("usb");
     try {
-      await printLabelsViaUsb(products, printerOptions);
+      await printLabelsViaUsb(products, { copies });
     } catch (error) {
       reportError(error, "USB print failed. Check the cable and try again.");
     } finally {
@@ -139,46 +161,16 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     }
   }
 
-  /**
-   * Printing through Windows only works when a genuine TSPL driver is
-   * installed. Without one, Windows dumps raw data at the printer, which
-   * prints it as characters and feeds until the roll runs out — so make the
-   * user confirm rather than discover that a roll later.
-   */
-  function handleDriverPrint() {
-    const confirmed = window.confirm(
-      "This prints through the printer driver installed on this computer.\n\n" +
-        "It only works if a real POSiFLOW / TSPL driver is installed and " +
-        "healthy. If Windows shows the printer as “Driver is unavailable”, " +
-        "this will print pages of code and feed the whole roll.\n\n" +
-        "Use “Print via Bluetooth / COM” instead — that needs no driver.\n\n" +
-        "Continue anyway?"
-    );
-    if (confirmed) window.print();
-  }
-
   async function handleSerialPrint() {
     if (!ready || busy) return;
     setBusy("serial");
     try {
-      await printLabelsViaSerial(products, printerOptions);
+      await printLabelsViaSerial(products, { copies });
     } catch (error) {
       reportError(
         error,
         "Serial print failed. Pair the printer over Bluetooth first, then pick its COM port."
       );
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function handleCalibrate() {
-    if (busy) return;
-    setBusy("calibrate");
-    try {
-      await calibrateLabelGap(printerOptions);
-    } catch (error) {
-      reportError(error, "Could not calibrate the label gap.");
     } finally {
       setBusy("");
     }
@@ -211,23 +203,15 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   return (
     <div className="label-print-root">
       <div className="label-toolbar">
-        {usbSupported ? (
-          <button
-            type="button"
-            className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            disabled={!ready || busy !== ""}
-            onClick={handleUsbPrint}
-          >
-            {busy === "print"
-              ? "Sending to printer…"
-              : `Print ${labelCount} label${labelCount === 1 ? "" : "s"} (USB)`}
-          </button>
-        ) : (
-          <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-            Direct printing needs Chrome or Edge on a computer. On a phone,
-            download the PNG and print it from the POSiFLOW app.
-          </p>
-        )}
+        <button
+          type="button"
+          className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          disabled={!ready}
+          onClick={() => window.print()}
+          title="Prints through the POS58 queue installed on this computer"
+        >
+          Print {labelCount} label{labelCount === 1 ? "" : "s"}
+        </button>
 
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
           Copies each
@@ -245,28 +229,6 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
         <button
           type="button"
-          className="rounded border border-slate-400 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 disabled:opacity-50"
-          disabled={!ready}
-          onClick={handleDriverPrint}
-          title="Only works if a genuine POSiFLOW / TSPL driver is installed on this computer"
-        >
-          Print via printer driver
-        </button>
-
-        {serialSupported && (
-          <button
-            type="button"
-            className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            disabled={!ready || busy !== ""}
-            onClick={handleSerialPrint}
-            title="Sends the label to the printer's Bluetooth or COM port — works on Windows with no driver"
-          >
-            {busy === "serial" ? "Sending…" : "Print via Bluetooth / COM"}
-          </button>
-        )}
-
-        <button
-          type="button"
           className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 disabled:opacity-50"
           disabled={!ready}
           onClick={() => downloadLabelPngFiles(products, labelPngMap, copies)}
@@ -276,86 +238,48 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
 
         <details className="w-full text-xs text-slate-700">
           <summary className="cursor-pointer select-none py-1 font-medium">
-            Printer settings
+            Print without a driver
           </summary>
-          <div className="mt-2 flex flex-wrap items-end gap-4 rounded border border-slate-200 bg-slate-50 px-3 py-3">
-            <label className="flex flex-col gap-1">
-              Label language
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value as PrinterLanguage)}
-                className="h-8 rounded border border-slate-300 bg-white px-2"
-              >
-                <option value="tspl">TSPL — label roll (default)</option>
-                <option value="escpos">ESC/POS — receipt mode</option>
-              </select>
-            </label>
-
-            <label className="flex flex-col gap-1">
-              Gap between labels (mm)
-              <input
-                type="number"
-                min={0}
-                max={10}
-                step={0.5}
-                value={gapMm}
-                onChange={(e) => setGapMm(Number(e.target.value) || 0)}
-                className="h-8 w-20 rounded border border-slate-300 px-2"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1">
-              Darkness (0–15)
-              <input
-                type="number"
-                min={0}
-                max={15}
-                value={density}
-                onChange={(e) =>
-                  setDensity(Math.max(0, Math.min(15, Number(e.target.value) || 0)))
-                }
-                className="h-8 w-20 rounded border border-slate-300 px-2"
-              />
-            </label>
-
-            <label className="flex items-center gap-2 pb-1.5">
-              <input
-                type="checkbox"
-                checked={!upright}
-                onChange={(e) => setUpright(!e.target.checked)}
-              />
-              Rotate 180°
-            </label>
-
+          <div className="mt-2 flex flex-wrap items-center gap-3 rounded border border-slate-200 bg-slate-50 px-3 py-3">
             {usbSupported && (
               <button
                 type="button"
-                className="h-8 rounded border border-slate-300 bg-white px-3 disabled:opacity-50"
-                disabled={busy !== ""}
-                onClick={handleCalibrate}
+                className="rounded bg-slate-800 px-3 py-1.5 font-medium text-white disabled:opacity-50"
+                disabled={!ready || busy !== ""}
+                onClick={handleUsbPrint}
               >
-                {busy === "calibrate" ? "Calibrating…" : "Calibrate label gap"}
+                {busy === "usb" ? "Sending…" : "Print over USB"}
+              </button>
+            )}
+
+            {serialSupported && (
+              <button
+                type="button"
+                className="rounded bg-slate-800 px-3 py-1.5 font-medium text-white disabled:opacity-50"
+                disabled={!ready || busy !== ""}
+                onClick={handleSerialPrint}
+                title="Pair the printer over Bluetooth, then pick its cu.* port"
+              >
+                {busy === "serial" ? "Sending…" : "Print over Bluetooth"}
               </button>
             )}
 
             <p className="w-full text-slate-600">
-              Leave the language on <strong>TSPL</strong>. If the sticker comes
-              out as lines of text or code, the printer is in the other mode —
-              switch to ESC/POS. If labels creep up or down the roll, press{" "}
-              <strong>Calibrate label gap</strong>.
+              These send the printer&apos;s own ESC/POS bytes and need no driver
+              installed. Use them on a machine where the POS58 queue is not set
+              up. On a Mac, remove the POS58 queue first — the system print
+              service holds the USB port and the browser cannot claim it. Over
+              Bluetooth, pick the <strong>cu.</strong> entry, not the bare name.
             </p>
           </div>
         </details>
 
         <p className="w-full text-xs text-slate-600">
-          <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} ·
-          50 × 25 mm. On Windows, use{" "}
-          <strong>Print via Bluetooth / COM</strong> — pair the printer once and
-          it prints with no driver at all. Windows will not release the printer
-          for <strong>Print (USB)</strong>, and{" "}
-          <strong>Print via printer driver</strong> only works if a real
-          POSiFLOW / TSPL driver is installed; without one it prints pages of
-          code and feeds the whole roll.
+          <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} ·{" "}
+          {DRIVER_PAGE_W_MM} × {DRIVER_PAGE_H_MM} mm. <strong>Print</strong>{" "}
+          uses the <strong>POS58</strong> printer queue — pick it in the dialog,
+          with paper size {DRIVER_PAGE_W_MM} × {DRIVER_PAGE_H_MM} mm. Any other
+          queue (POS80, CLA58) prints pages of code or nothing at all.
         </p>
       </div>
 

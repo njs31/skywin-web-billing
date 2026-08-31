@@ -42,9 +42,10 @@ body {
   body.thermal-label-page .label-print-sheet {
     display: block !important;
   }
+  /* Sizes come from DRIVER_PAGE_*_MM, injected by ProductLabelSheet. */
   body.thermal-label-page .label-print-sheet img {
-    width: 50mm;
-    height: 25mm;
+    width: var(--label-print-w, 48mm);
+    height: var(--label-print-h, 25mm);
     border: 0;
     border-radius: 0;
     break-after: page;

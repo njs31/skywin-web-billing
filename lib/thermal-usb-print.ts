@@ -1,79 +1,39 @@
 /**
- * Send labels to the POSiFLOW label printer over USB.
+ * Send labels to the POSiFLOW P58D label printer, with no driver installed.
  *
  * Never uses the browser's Print dialog: that hands the printer a PDF or
- * PostScript stream, which a raw thermal printer happily prints as pages of
- * source code. We build the printer's own command language and push the bytes
- * down a bulk endpoint ourselves.
+ * PostScript stream, which a raw thermal printer prints as pages of source
+ * code. We build the printer's own ESC/POS bytes (see lib/escpos-print.ts) and
+ * push them down a bulk endpoint or a serial port ourselves.
  */
 import { renderLabelRaster, type LabelProduct, type LabelRaster } from "@/lib/label-render";
-import {
-  buildTsplCalibration,
-  buildTsplJob,
-  concatBytes,
-  type TsplOptions,
-} from "@/lib/tspl-print";
+import { buildEscPosJob, type EscPosOptions } from "@/lib/escpos-print";
 
-export type PrinterLanguage = "tspl" | "escpos";
+export type PrintJobOptions = EscPosOptions;
 
-export type EscPosRaster = {
-  bytesPerRow: number;
-  height: number;
-  bytes: Uint8Array;
-};
+/**
+ * Flow control. The P58D has roughly an 8 KB input buffer and does not apply
+ * backpressure: fed a label faster than the head can burn it, it stalls its USB
+ * pipe and silently drops the rest of the job. macOS's own CUPS backend writes
+ * in 8 KB blocks and hits this — a label then prints about three quarters of
+ * the way down and the trailing feed command never arrives, so the sticker
+ * never advances out. We stay well under the buffer and give the head time.
+ */
+const PACE_BYTES = 2048;
+const PACE_MS = 60;
 
-/** Encode a monochrome image with the ESC/POS GS v 0 raster-image command. */
-export function buildEscPosRasterCommand({
-  bytesPerRow,
-  height,
-  bytes: raster,
-}: EscPosRaster): Uint8Array {
-  if (bytesPerRow < 1 || bytesPerRow > 0xffff || height < 1 || height > 0xffff) {
-    throw new Error("Label image dimensions are outside the printer's supported range.");
-  }
-  if (raster.length !== bytesPerRow * height) {
-    throw new Error("Label image data does not match its declared dimensions.");
-  }
+const pause = () => new Promise((resolve) => setTimeout(resolve, PACE_MS));
 
-  const header = Uint8Array.from([
-    0x1b, 0x40, // initialize
-    0x1b, 0x33, 0x18, // compact line spacing after the image
-    // GS v 0: print a monochrome raster image at native dot pitch.
-    0x1d, 0x76, 0x30, 0x00,
-    bytesPerRow & 0xff,
-    (bytesPerRow >> 8) & 0xff,
-    height & 0xff,
-    (height >> 8) & 0xff,
-  ]);
-  const footer = Uint8Array.from([0x0a, 0x1b, 0x64, 0x02]);
-  return concatBytes([header, raster, footer]);
-}
-
-export function buildEscPosJob(rasters: LabelRaster[], copies = 1) {
-  const qty = Math.max(1, Math.min(99, Math.trunc(copies)));
-  const parts: Uint8Array[] = [];
-  for (const raster of rasters) {
-    const label = buildEscPosRasterCommand(raster);
-    for (let i = 0; i < qty; i++) parts.push(label);
-  }
-  return concatBytes(parts);
-}
-
-export type PrintJobOptions = TsplOptions & { language?: PrinterLanguage };
-
-/** Turn products into a finished byte stream for the chosen printer language. */
+/** Turn products into a finished byte stream for the printer. */
 export async function buildLabelJob(
   products: LabelProduct[],
   options: PrintJobOptions = {}
 ) {
-  const { language = "tspl", copies = 1 } = options;
   const rasters: LabelRaster[] = [];
   for (const product of products) {
     rasters.push(await renderLabelRaster(product));
   }
-  return language === "escpos"
-    ? buildEscPosJob(rasters, copies)
-    : buildTsplJob(rasters, options);
+  return buildEscPosJob(rasters, options);
 }
 
 async function findBulkOutEndpoint(device: USBDevice) {
@@ -135,13 +95,13 @@ function releaseInstructions() {
   if (/Windows/i.test(ua)) {
     return (
       "On Windows: Settings → Bluetooth & devices → Printers & scanners → " +
-      "POSiFLOW → Remove. Then unplug the USB cable and plug it back in."
+      "the POSiFLOW → Remove. Then unplug the USB cable and plug it back in."
     );
   }
   if (/Mac OS X|Macintosh/i.test(ua)) {
     return (
-      "On Mac: System Settings → Printers & Scanners → POSiFLOW → Remove " +
-      "Printer. Then unplug the USB cable and plug it back in."
+      "On Mac: System Settings → Printers & Scanners → remove every POS58 / " +
+      "POS80 / Caysn queue. Then unplug the USB cable and plug it back in."
     );
   }
   if (/Linux|X11/i.test(ua)) {
@@ -155,13 +115,12 @@ async function openDevice(device: USBDevice) {
     await device.open();
   } catch {
     throw new Error(
-      "Your computer's printing system is holding the POSiFLOW, so the browser " +
+      "Your computer's printing system is holding the printer, so the browser " +
         "cannot talk to it directly.\n\n" +
         releaseInstructions() +
-        "\n\nAlso close the POSiFLOW / Easy Label app and any other tab printing " +
-        "to it.\n\nIf you would rather keep the printer installed, use " +
-        "“Print via printer driver” instead — that prints the same label through " +
-        "the driver you already have."
+        "\n\nAlso close the POSiFLOW app and any other tab printing to it." +
+        "\n\nIf you would rather keep the printer installed, use " +
+        "“Print via printer driver” instead."
     );
   }
 }
@@ -182,11 +141,17 @@ async function sendToPrinter(payload: Uint8Array) {
     try {
       await device.selectAlternateInterface(ep.interfaceNumber, ep.alternateSetting);
       const chunk = Math.max(ep.packetSize, 64);
+      let sincePause = 0;
       for (let i = 0; i < payload.length; i += chunk) {
         await device.transferOut(
           ep.endpointNumber,
           new Uint8Array(payload.subarray(i, i + chunk))
         );
+        sincePause += chunk;
+        if (sincePause >= PACE_BYTES) {
+          sincePause = 0;
+          await pause();
+        }
       }
     } finally {
       await device.releaseInterface(ep.interfaceNumber);
@@ -199,7 +164,7 @@ async function sendToPrinter(payload: Uint8Array) {
 function assertSupported() {
   if (!isUsbPrintSupported()) {
     throw new Error(
-      "USB print needs Google Chrome or Edge on a computer with the POSiFLOW plugged in by USB."
+      "USB print needs Google Chrome or Edge on a computer with the printer plugged in by USB."
     );
   }
 }
@@ -214,22 +179,13 @@ export async function printLabelsViaUsb(
   await sendToPrinter(await buildLabelJob(products, options));
 }
 
-/**
- * Ask the printer to re-measure the gap between stickers. Run this when
- * labels start creeping up or down the roll.
- */
-export async function calibrateLabelGap(options: TsplOptions = {}) {
-  assertSupported();
-  await sendToPrinter(buildTsplCalibration(options));
-}
-
 /* ------------------------------------------------------------------ *
  * Serial transport
  *
  * On Windows a USB printer-class device is owned by usbprint.sys and
  * WebUSB is refused outright, whether or not a working vendor driver is
  * installed. A serial port is not locked that way, so pairing the printer
- * over Bluetooth (it shows up as a COM port) lets the identical TSPL job
+ * over Bluetooth (it shows up as a COM port) lets the identical ESC/POS job
  * through with no driver at all.
  * ------------------------------------------------------------------ */
 
@@ -241,24 +197,74 @@ export function isSerialPrintSupported() {
   );
 }
 
+/**
+ * How long to wait for the port to open before giving up.
+ *
+ * macOS exposes a Bluetooth printer twice: `cu.NAME` and `tty.NAME`. Opening
+ * the `tty` one blocks forever waiting for a carrier-detect signal a printer
+ * never asserts, so without this the print button hangs silently with no error
+ * to show. A real port opens in milliseconds.
+ */
+const OPEN_TIMEOUT_MS = 5000;
+
+const WRONG_PORT_MESSAGE =
+  "That serial port did not respond.\n\n" +
+  "On a Mac, choose the entry beginning with “cu.” (for example cu.P58D). " +
+  "The plain name is the “tty” port, which waits for a signal the printer " +
+  "never sends.\n\n" +
+  "Click Print over Bluetooth again to choose a different port.";
+
 async function acquireSerialPort() {
+  // Deliberately not reusing a remembered port without checking it: a
+  // Bluetooth port exposes no vendor or product id, so a previously granted
+  // bad port is indistinguishable from a good one and would be picked forever.
   const granted = await navigator.serial!.getPorts();
   return granted[0] ?? (await navigator.serial!.requestPort());
 }
 
+/** Open the port, or drop the grant so the user can pick a different one. */
+async function openSerialPort(port: SerialPort, baudRate: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      port.open({ baudRate }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(WRONG_PORT_MESSAGE)), OPEN_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    // Forget it, otherwise getPorts() hands back the same dead port next time
+    // and the button looks broken forever.
+    await port.forget?.().catch(() => {});
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function sendViaSerial(payload: Uint8Array, baudRate: number) {
   const port = await acquireSerialPort();
-  await port.open({ baudRate });
+  await openSerialPort(port, baudRate);
   try {
     const writable = port.writable;
     if (!writable) throw new Error("The selected serial port cannot be written to.");
     const writer = writable.getWriter();
     try {
-      // Bluetooth SPP links drop bytes if a whole label is pushed at once.
+      // Bluetooth SPP links drop bytes if a whole label is pushed at once, and
+      // the printer stalls if fed past its buffer — see PACE_BYTES.
       const chunk = 1024;
+      let sincePause = 0;
       for (let i = 0; i < payload.length; i += chunk) {
         await writer.write(new Uint8Array(payload.subarray(i, i + chunk)));
+        sincePause += chunk;
+        if (sincePause >= PACE_BYTES) {
+          sincePause = 0;
+          await pause();
+        }
       }
+      // Let the link drain before the port closes, or the tail is discarded
+      // and the bottom of the label silently goes missing.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     } finally {
       await writer.close().catch(() => writer.releaseLock());
     }

@@ -42,3 +42,9 @@ export async function verifyWidgetApiKey(req: NextRequest) {
     settings.qwicksApiKey,
   ]);
 }
+
+/** Key for the Android label printer app. */
+export async function verifyLabelApiKey(req: NextRequest) {
+  const settings = await getSettings();
+  return verifyConfiguredApiKey(req, [settings.labelApiKey]);
+}

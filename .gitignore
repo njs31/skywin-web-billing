@@ -39,3 +39,13 @@ db/migrations/meta
 # Local inventory / business data (upload to VPS via scp, do not commit)
 master-data.xlsx
 Master File*.xlsx
+
+# Android label printer app — build outputs and machine-local paths
+android/.gradle
+android/local.properties
+android/app/release
+*.apk
+
+# Scratch output from label/PDF generation scripts
+tmp
+tsconfig.tsbuildinfo

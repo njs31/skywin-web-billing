@@ -7,6 +7,7 @@
  */
 import { BUSINESS } from "@/lib/business";
 import { layoutCode128Dots } from "@/lib/code128";
+import { layoutQrDots } from "@/lib/qr";
 import {
   CONTENT_W_DOTS,
   CONTENT_X_DOTS,
@@ -67,8 +68,14 @@ export type LabelPlan = {
   widthDots: number;
   heightDots: number;
   texts: LabelTextSpec[];
+  /**
+   * Every black rectangle on the label: Code 128 bars and QR modules alike.
+   * Renderers fill these without caring which is which, so the canvas preview,
+   * the PNG export and the PDF sheet all pick up the QR unchanged.
+   */
   bars: LabelBarSpec[];
   barcode: { moduleDots: number; totalDots: number; y: number; height: number };
+  qr: { moduleDots: number; modules: number; sizeDots: number; x: number; y: number };
 };
 
 export type LabelPlanFields = {
@@ -131,20 +138,31 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   const centre = LABEL_W_DOTS / 2;
   const texts: LabelTextSpec[] = [];
 
-  const company = fitToWidth(BUSINESS.name, L.companySize, true, CONTENT_W_DOTS);
+  // The QR occupies the top-right; the heading text gets what is left of the
+  // width, and is centred within that column rather than on the whole label.
+  // qrY and qrBoxDots describe the box *including* the quiet zone, so the
+  // symbol is inset by that margin on every side. A QR printed hard against
+  // other ink will not be found at all.
+  const qr = layoutQrDots(fields.code, L.qrBoxDots);
+  const qrX = right - qr.quietDots - qr.sizeDots;
+  const qrTop = L.qrY + qr.quietDots;
+  const headWidth = qrX - qr.quietDots - L.qrGapDots - left;
+  const headCentre = left + headWidth / 2;
+
+  const company = fitToWidth(BUSINESS.name, L.companySize, true, headWidth);
   texts.push({
     text: company.text,
-    x: centre,
+    x: headCentre,
     baseline: L.companyBaseline,
     size: company.size,
     bold: true,
     anchor: "middle",
   });
 
-  const tagline = fitToWidth(BUSINESS.tagline, L.taglineSize, false, CONTENT_W_DOTS);
+  const tagline = fitToWidth(BUSINESS.tagline, L.taglineSize, false, headWidth);
   texts.push({
     text: tagline.text,
-    x: centre,
+    x: headCentre,
     baseline: L.taglineBaseline,
     size: tagline.size,
     bold: false,
@@ -155,14 +173,14 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     fields.name.toUpperCase(),
     L.nameSize,
     true,
-    CONTENT_W_DOTS,
+    headWidth,
     L.nameLines
   );
   nameLines.forEach((line, index) => {
-    const fitted = fitToWidth(line, L.nameSize, true, CONTENT_W_DOTS);
+    const fitted = fitToWidth(line, L.nameSize, true, headWidth);
     texts.push({
       text: fitted.text,
-      x: centre,
+      x: headCentre,
       baseline: L.nameBaseline + index * L.nameLineHeight,
       size: fitted.size,
       bold: true,
@@ -213,17 +231,32 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     widthDots: LABEL_W_DOTS,
     heightDots: LABEL_H_DOTS,
     texts,
-    bars: bars.map((bar) => ({
-      x: CONTENT_X_DOTS + bar.x,
-      y: L.barcodeY,
-      width: bar.width,
-      height: L.barcodeH,
-    })),
+    bars: [
+      ...bars.map((bar) => ({
+        x: CONTENT_X_DOTS + bar.x,
+        y: L.barcodeY,
+        width: bar.width,
+        height: L.barcodeH,
+      })),
+      ...qr.bars.map((bar) => ({
+        x: qrX + bar.x,
+        y: qrTop + bar.y,
+        width: bar.width,
+        height: bar.height,
+      })),
+    ],
     barcode: {
       moduleDots,
       totalDots,
       y: L.barcodeY,
       height: L.barcodeH,
+    },
+    qr: {
+      moduleDots: qr.moduleDots,
+      modules: qr.modules,
+      sizeDots: qr.sizeDots,
+      x: qrX,
+      y: qrTop,
     },
   };
 }
