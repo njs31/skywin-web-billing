@@ -37,6 +37,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             qwicksMerchantId: fd.get("qwicksMerchantId") as string,
             qwicksApiKey: fd.get("qwicksApiKey") as string,
             widgetApiKey: fd.get("widgetApiKey") as string,
+            labelApiKey: fd.get("labelApiKey") as string,
             qwicksHost: fd.get("qwicksHost") as string,
             seedLicense: fd.get("seedLicense") as string,
             fertLicense: fd.get("fertLicense") as string,
@@ -161,6 +162,19 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
                 defaultValue={settings.widgetApiKey}
                 placeholder="skywin_widget_8f3c2a91e6b04d7a"
               />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Label Printer API Key (x-api-key)</Label>
+              <Input
+                name="labelApiKey"
+                defaultValue={settings.labelApiKey}
+                placeholder="set a long random value"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Used by the Android label printing app. Change this from the
+                shipped default — it reaches /api/labels/print, which returns
+                product names and prices.
+              </p>
             </div>
           </div>
 
