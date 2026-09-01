@@ -9,15 +9,14 @@ import {
 } from "./escpos-print";
 import {
   DOTS_PER_MM,
-  LABEL_GAP_MM,
-  LABEL_H_DOTS,
-  LABEL_H_MM,
+  LABEL_PITCH_MM,
+  PRINT_BAND_H_DOTS,
   PRINT_W_DOTS,
 } from "./label-print-config";
 
 const BYTES_PER_ROW = PRINT_W_DOTS / 8; // 48
 
-function raster(height = LABEL_H_DOTS) {
+function raster(height = PRINT_BAND_H_DOTS) {
   return {
     width: PRINT_W_DOTS,
     height,
@@ -63,10 +62,13 @@ test("buildEscPosLabel", async (t) => {
   const job = buildEscPosLabel(raster());
 
   await t.test("matches the byte count the vendor driver produces", () => {
-    // 64 lead-in + 10 full bands (8-byte header + 24 × 48 each) + 2-byte
-    // gap seek = 11666 for the 384 × 240 dot label.
-    assert.equal(job.length, 64 + 10 * (8 + BAND_ROWS * BYTES_PER_ROW) + 2);
-    assert.equal(job.length, 11666);
+    // 64 lead-in + 7 full bands + a 16-row remainder + 2-byte gap seek, for
+    // the 384 × 184 dot printable band.
+    assert.equal(
+      job.length,
+      64 + 7 * (8 + BAND_ROWS * BYTES_PER_ROW) + (8 + 16 * BYTES_PER_ROW) + 2
+    );
+    assert.equal(job.length, 8962);
   });
 
   await t.test("leads with the zero-byte wake-up", () => {
@@ -76,7 +78,7 @@ test("buildEscPosLabel", async (t) => {
 
   await t.test("splits the label into bands the printer will accept", () => {
     const found = bands(job);
-    assert.equal(found.length, Math.ceil(LABEL_H_DOTS / BAND_ROWS));
+    assert.equal(found.length, Math.ceil(PRINT_BAND_H_DOTS / BAND_ROWS));
     assert.ok(
       found.every((b) => b.bytesPerRow === BYTES_PER_ROW),
       "every band is the full label width"
@@ -87,7 +89,7 @@ test("buildEscPosLabel", async (t) => {
     );
     assert.equal(
       found.reduce((sum, b) => sum + b.rows, 0),
-      LABEL_H_DOTS,
+      PRINT_BAND_H_DOTS,
       "the bands cover the label exactly once"
     );
   });
@@ -107,8 +109,8 @@ test("buildEscPosLabel", async (t) => {
     // Without the sensor the printer advances only what it is told. If image
     // + feed overshoots the pitch, every label drifts further down the roll
     // than the last; the vendor driver's 80-dot tear-off feed did this.
-    const pitch = (LABEL_H_MM + LABEL_GAP_MM) * DOTS_PER_MM;
-    assert.equal(LABEL_H_DOTS + DEFAULT_FEED_DOTS, pitch);
+    const pitch = LABEL_PITCH_MM * DOTS_PER_MM;
+    assert.equal(PRINT_BAND_H_DOTS + DEFAULT_FEED_DOTS, pitch);
   });
 
   await t.test("an explicit gap means the sensor cannot be used", () => {

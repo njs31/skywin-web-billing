@@ -14,11 +14,15 @@
  * with no driver installed on the machine at all.
  */
 import type { LabelRaster } from "@/lib/label-render";
-import { DOTS_PER_MM, LABEL_GAP_MM } from "@/lib/label-print-config";
+import {
+  DOTS_PER_MM,
+  LABEL_PITCH_MM,
+  PRINT_BAND_H_MM,
+} from "@/lib/label-print-config";
 
 /**
  * Rows per `GS v 0` block. The printer's input buffer will not take a whole
- * 240-row label in one command — that is why an earlier single-block attempt
+ * label in one command — that is why an earlier single-block attempt
  * produced nothing — and 24 is what the vendor driver uses.
  */
 export const BAND_ROWS = 24;
@@ -52,13 +56,15 @@ const GAP_SEEK = Uint8Array.from([0x1d, 0x0c]);
  * How far to feed after each label when counting dots instead, in dots.
  *
  * Only used when `endOfLabel` is "feed" — a roll with no gap for the sensor to
- * find, or a printer that lacks one. Then it must be the liner gap and nothing
- * more: the image is LABEL_H_DOTS tall, so image + feed has to equal the
- * sticker pitch (240 + 32 = 272 dots = 34 mm). The vendor driver's 80-dot
- * tear-off feed walks the artwork down the roll; a feed short of the gap walks
- * it up until the tail of the label prints past the gap onto the next sticker.
+ * find, or a printer that lacks one. Then image + feed must equal the sticker
+ * pitch exactly: the raster is PRINT_BAND_H_MM tall (23 mm), so this is the
+ * remaining 11 mm. Get it wrong in either direction and the error repeats on
+ * every label until the artwork straddles a die cut — the vendor driver's
+ * 80-dot tear-off feed walks it down the roll, a short feed walks it up.
  */
-export const DEFAULT_FEED_DOTS = Math.round(LABEL_GAP_MM * DOTS_PER_MM); // 32
+export const DEFAULT_FEED_DOTS = Math.round(
+  (LABEL_PITCH_MM - PRINT_BAND_H_MM) * DOTS_PER_MM
+); // 88
 
 export type EscPosOptions = {
   /** Copies of each label. */

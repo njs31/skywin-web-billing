@@ -11,6 +11,8 @@ import {
 import {
   LABEL_H_DOTS,
   LABEL_W_DOTS,
+  PRINT_BAND_H_DOTS,
+  PRINT_BAND_TOP_DOTS,
   PRINT_W_DOTS,
   PRINT_X_DOTS,
 } from "@/lib/label-print-config";
@@ -110,10 +112,14 @@ export async function renderLabelPng(product: LabelProduct): Promise<string> {
 /**
  * Pack the label into 1-bit rows for the printer.
  *
- * Only the 384-dot window the head can reach is sent. The label is 400 dots
- * wide, but a 2-inch head may be just 384; handing the printer more dots than
- * it has is what made artwork wrap onto the following sticker. All the ink is
- * laid out inside that window, so nothing is lost by cropping to it.
+ * Crops to the window the head can actually reach, in both directions.
+ *
+ * Horizontally: the label is 400 dots wide but a 2-inch head may be just 384.
+ * Vertically: after a `GS FF` gap seek the paper is parked 5 mm past the die
+ * cut, so row 0 of the artwork would land 5 mm down the sticker and the last
+ * 5 mm of a full-height image would be pushed over the next die cut — which is
+ * exactly how the code digits, EXP and MRP ended up stranded on the following
+ * sticker. Sending only rows 40..224 puts the artwork where it was drawn.
  */
 export async function renderLabelRaster(
   product: LabelProduct
@@ -130,9 +136,14 @@ function rasterFromCanvas(canvas: HTMLCanvasElement): LabelRaster {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas not available");
 
-  const height = canvas.height;
+  const height = PRINT_BAND_H_DOTS;
   const width = PRINT_W_DOTS;
-  const pixels = ctx.getImageData(PRINT_X_DOTS, 0, width, height).data;
+  const pixels = ctx.getImageData(
+    PRINT_X_DOTS,
+    PRINT_BAND_TOP_DOTS,
+    width,
+    height
+  ).data;
   const bytesPerRow = Math.ceil(width / 8);
   const bytes = new Uint8Array(bytesPerRow * height);
 

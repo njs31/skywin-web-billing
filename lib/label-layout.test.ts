@@ -5,6 +5,10 @@ import {
   LABEL_H_DOTS,
   LABEL_LAYOUT,
   LABEL_W_DOTS,
+  PRINT_BAND_BOTTOM_DOTS,
+  PRINT_BAND_H_DOTS,
+  PRINT_BAND_TOP_DOTS,
+  PRINT_TOP_OFFSET_DOTS,
   PRINT_W_DOTS,
   PRINT_X_DOTS,
 } from "./label-print-config";
@@ -64,21 +68,46 @@ describe("label plan", () => {
     }
   });
 
-  it("keeps all ink inside the label height", () => {
+  it("keeps all ink inside the band the printer can reach", () => {
+    // Not merely inside the sticker. After a GS FF gap seek the paper is
+    // parked 5 mm past the die cut, so rows above PRINT_BAND_TOP_DOTS never
+    // reach the head, and rows below PRINT_BAND_BOTTOM_DOTS land across the
+    // next die cut — which is how EXP and MRP ended up on the next sticker.
     for (const fields of SAMPLES) {
       const plan = buildLabelPlan(fields);
       for (const bar of plan.bars) {
-        assert.ok(bar.y >= 0 && bar.y + bar.height <= LABEL_H_DOTS);
+        assert.ok(
+          bar.y >= PRINT_BAND_TOP_DOTS,
+          `${fields.code}: a bar starts above the printable band`
+        );
+        assert.ok(
+          bar.y + bar.height <= PRINT_BAND_BOTTOM_DOTS,
+          `${fields.code}: a bar runs past the printable band`
+        );
       }
       for (const item of plan.texts) {
         // Helvetica ascends ~0.72 em above and descends ~0.21 em below baseline.
-        assert.ok(item.baseline - item.size * 0.75 >= 0, `${item.text} clipped at top`);
         assert.ok(
-          item.baseline + item.size * 0.25 <= LABEL_H_DOTS,
-          `${item.text} clipped at bottom`
+          item.baseline - item.size * 0.75 >= PRINT_BAND_TOP_DOTS,
+          `${item.text} is above the printable band`
+        );
+        assert.ok(
+          item.baseline + item.size * 0.25 <= PRINT_BAND_BOTTOM_DOTS,
+          `${item.text} is below the printable band`
         );
       }
     }
+  });
+
+  it("stops the printed band before the next die cut", () => {
+    // The raster starts where the seek parks and must finish inside the same
+    // sticker. If it does not, the tail crosses the gap and GS FF has no
+    // travel left, so it hunts the following gap and leaves a blank sticker.
+    assert.ok(
+      PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS <= LABEL_H_DOTS,
+      "the printed band overruns the sticker"
+    );
+    assert.equal(PRINT_BAND_BOTTOM_DOTS, PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS);
   });
 
   it("never drops the price or the barcode text", () => {

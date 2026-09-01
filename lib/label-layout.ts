@@ -14,6 +14,9 @@ import {
   LABEL_H_DOTS,
   LABEL_LAYOUT,
   LABEL_W_DOTS,
+  DOTS_PER_MM,
+  PRINT_BAND_H_DOTS,
+  PRINT_BAND_TOP_DOTS,
   PRINT_W_DOTS,
   PRINT_X_DOTS,
 } from "@/lib/label-print-config";
@@ -280,30 +283,48 @@ export const TEST_LABEL_FIELDS: LabelPlanFields = {
 const TEST_BORDER_DOTS = 2;
 
 /**
- * The test label: the real plan plus a rectangle on the exact edge of the
- * printable window.
+ * The test label: the real plan, a border on the edge of the printable band,
+ * and a millimetre scale down the left side.
  *
- * The border is the whole point of it. Registration is invisible on an
- * ordinary label — you cannot tell 2 mm of drift from a design that simply
- * sits low — but a rectangle either lands inside the die cut or it does not,
- * and whichever edge is clipped tells you which way the paper is out. It is
- * also the fastest check that the printer is alive at all.
+ * The border shows registration at a glance — a rectangle either lands inside
+ * the die cut or it does not, and whichever edge is clipped says which way the
+ * paper is out. The scale exists because the one thing we cannot print is the
+ * strip above PRINT_BAND_TOP_DOTS, so the only way to measure that offset is
+ * against something of known size in the same photograph. Ticks are 1 mm, with
+ * a long tick and a number every 5 mm.
  */
 export function buildTestLabelPlan(): LabelPlan {
   const plan = buildLabelPlan(TEST_LABEL_FIELDS);
   const t = TEST_BORDER_DOTS;
   const x = PRINT_X_DOTS;
   const w = PRINT_W_DOTS;
-  const h = LABEL_H_DOTS;
+  const top = PRINT_BAND_TOP_DOTS;
+  const h = PRINT_BAND_H_DOTS;
 
-  return {
-    ...plan,
-    bars: [
-      ...plan.bars,
-      { x, y: 0, width: w, height: t },
-      { x, y: h - t, width: w, height: t },
-      { x, y: 0, width: t, height: h },
-      { x: x + w - t, y: 0, width: t, height: h },
-    ],
-  };
+  const bars: LabelBarSpec[] = [
+    ...plan.bars,
+    { x, y: top, width: w, height: t },
+    { x, y: top + h - t, width: w, height: t },
+    { x, y: top, width: t, height: h },
+    { x: x + w - t, y: top, width: t, height: h },
+  ];
+
+  const texts: LabelTextSpec[] = [...plan.texts];
+  for (let mm = 0; mm * DOTS_PER_MM <= h; mm++) {
+    const y = top + mm * DOTS_PER_MM;
+    const major = mm % 5 === 0;
+    bars.push({ x: x + t, y, width: major ? 12 : 6, height: 1 });
+    if (major && mm > 0) {
+      texts.push({
+        text: String(mm),
+        x: x + t + 15,
+        baseline: y + 3,
+        size: 7,
+        bold: false,
+        anchor: "start",
+      });
+    }
+  }
+
+  return { ...plan, bars, texts };
 }

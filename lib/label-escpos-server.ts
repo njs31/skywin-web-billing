@@ -17,7 +17,8 @@ import {
   type LabelSourceProduct,
 } from "@/lib/label-svg";
 import {
-  LABEL_H_DOTS,
+  PRINT_BAND_H_DOTS,
+  PRINT_BAND_TOP_DOTS,
   PRINT_W_DOTS,
   PRINT_X_DOTS,
 } from "@/lib/label-print-config";
@@ -30,11 +31,11 @@ import {
 const INK_THRESHOLD = 160;
 
 /**
- * Rasterise one label into the printer's 384-dot window.
+ * Rasterise one label into the window the head can reach.
  *
- * The artwork is 400 dots wide but the head can only burn 384, so the same
- * centred window the browser crops to is extracted here. Handing the printer
- * more dots than it has is what used to wrap artwork onto the next sticker.
+ * The same crop the browser applies: 384 dots wide out of 400, and rows
+ * 40..224 out of 240, because the gap seek parks the paper 5 mm past the die
+ * cut and the sticker ends before the artwork does. See renderLabelRaster.
  */
 export async function renderLabelRasterServer(
   product: LabelSourceProduct
@@ -51,9 +52,9 @@ async function rasterFromSvg(svg: string): Promise<LabelRaster> {
   const { data, info } = await sharp(Buffer.from(svg))
     .extract({
       left: PRINT_X_DOTS,
-      top: 0,
+      top: PRINT_BAND_TOP_DOTS,
       width: PRINT_W_DOTS,
-      height: LABEL_H_DOTS,
+      height: PRINT_BAND_H_DOTS,
     })
     .greyscale()
     .raw()
