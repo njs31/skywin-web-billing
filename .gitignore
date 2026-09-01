@@ -49,3 +49,4 @@ android/app/release
 # Scratch output from label/PDF generation scripts
 tmp
 tsconfig.tsbuildinfo
+mac/build
