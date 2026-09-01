@@ -1,13 +1,17 @@
 /**
  * The one place a 50 × 30 mm label is laid out.
  *
+ * The design is a single centred column: shop name, product name, barcode,
+ * the code in figures, then EXP and MRP in the bottom corners. There is no QR
+ * — it was removed on request, so the Code 128 is now the only machine-
+ * readable mark and gets the full content width to keep its modules wide.
+ *
  * The browser preview (canvas), the downloaded PNG (sharp/SVG) and the PDF
  * sheet all render from this plan, so what the shopkeeper sees on screen is
  * exactly what the printer burns. Everything is in printer dots at 8 dots/mm.
  */
 import { BUSINESS } from "@/lib/business";
 import { layoutCode128Dots } from "@/lib/code128";
-import { layoutQrDots } from "@/lib/qr";
 import {
   CONTENT_W_DOTS,
   CONTENT_X_DOTS,
@@ -80,7 +84,6 @@ export type LabelPlan = {
    */
   bars: LabelBarSpec[];
   barcode: { moduleDots: number; totalDots: number; y: number; height: number };
-  qr: { moduleDots: number; modules: number; sizeDots: number; x: number; y: number };
 };
 
 export type LabelPlanFields = {
@@ -143,34 +146,17 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   const centre = LABEL_W_DOTS / 2;
   const texts: LabelTextSpec[] = [];
 
-  // The QR occupies the top-right; the heading text gets what is left of the
-  // width, and is centred within that column rather than on the whole label.
-  // qrY and qrBoxDots describe the box *including* the quiet zone, so the
-  // symbol is inset by that margin on every side. A QR printed hard against
-  // other ink will not be found at all.
-  const qr = layoutQrDots(fields.code, L.qrBoxDots);
-  const qrX = right - qr.quietDots - qr.sizeDots;
-  const qrTop = L.qrY + qr.quietDots;
-  const headWidth = qrX - qr.quietDots - L.qrGapDots - left;
-  const headCentre = left + headWidth / 2;
-
-  const company = fitToWidth(BUSINESS.name, L.companySize, true, headWidth);
+  // Heading and product name both centre on the label itself. They used to
+  // centre on a narrower column, because the QR occupied the top-right; with
+  // the QR gone there is nothing to sit beside, and off-centre text under a
+  // centred barcode reads as a mistake.
+  const company = fitToWidth(BUSINESS.name, L.companySize, true, CONTENT_W_DOTS);
   texts.push({
     text: company.text,
-    x: headCentre,
+    x: centre,
     baseline: L.companyBaseline,
     size: company.size,
     bold: true,
-    anchor: "middle",
-  });
-
-  const tagline = fitToWidth(BUSINESS.tagline, L.taglineSize, false, headWidth);
-  texts.push({
-    text: tagline.text,
-    x: headCentre,
-    baseline: L.taglineBaseline,
-    size: tagline.size,
-    bold: false,
     anchor: "middle",
   });
 
@@ -178,14 +164,14 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     fields.name.toUpperCase(),
     L.nameSize,
     true,
-    headWidth,
+    CONTENT_W_DOTS,
     L.nameLines
   );
   nameLines.forEach((line, index) => {
-    const fitted = fitToWidth(line, L.nameSize, true, headWidth);
+    const fitted = fitToWidth(line, L.nameSize, true, CONTENT_W_DOTS);
     texts.push({
       text: fitted.text,
-      x: headCentre,
+      x: centre,
       baseline: L.nameBaseline + index * L.nameLineHeight,
       size: fitted.size,
       bold: true,
@@ -236,32 +222,17 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     widthDots: LABEL_W_DOTS,
     heightDots: LABEL_H_DOTS,
     texts,
-    bars: [
-      ...bars.map((bar) => ({
-        x: CONTENT_X_DOTS + bar.x,
-        y: L.barcodeY,
-        width: bar.width,
-        height: L.barcodeH,
-      })),
-      ...qr.bars.map((bar) => ({
-        x: qrX + bar.x,
-        y: qrTop + bar.y,
-        width: bar.width,
-        height: bar.height,
-      })),
-    ],
+    bars: bars.map((bar) => ({
+      x: CONTENT_X_DOTS + bar.x,
+      y: L.barcodeY,
+      width: bar.width,
+      height: L.barcodeH,
+    })),
     barcode: {
       moduleDots,
       totalDots,
       y: L.barcodeY,
       height: L.barcodeH,
-    },
-    qr: {
-      moduleDots: qr.moduleDots,
-      modules: qr.modules,
-      sizeDots: qr.sizeDots,
-      x: qrX,
-      y: qrTop,
     },
   };
 }

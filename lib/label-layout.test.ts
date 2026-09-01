@@ -99,6 +99,47 @@ describe("label plan", () => {
     }
   });
 
+  it("keeps the barcode modules wide enough to scan", () => {
+    // The QR used to rescue a marginal read; it has been removed, so the
+    // Code 128 is the only machine-readable mark and one dot per module —
+    // 0.125 mm at 8 dots/mm — is finer than thermal bleed can hold.
+    for (const fields of SAMPLES) {
+      const plan = buildLabelPlan(fields);
+      assert.ok(
+        plan.barcode.moduleDots >= 2,
+        `${fields.code}: module is ${plan.barcode.moduleDots} dots`
+      );
+    }
+  });
+
+  it("centres the barcode in the content column", () => {
+    for (const fields of SAMPLES) {
+      const plan = buildLabelPlan(fields);
+      const xs = plan.bars.map((bar) => bar.x);
+      const ends = plan.bars.map((bar) => bar.x + bar.width);
+      const leftGap = Math.min(...xs) - LEFT;
+      const rightGap = RIGHT - Math.max(...ends);
+      // Whole-dot modules mean the two margins can differ by a dot or so.
+      assert.ok(
+        Math.abs(leftGap - rightGap) <= 2,
+        `${fields.code}: barcode off-centre by ${Math.abs(leftGap - rightGap)} dots`
+      );
+    }
+  });
+
+  it("has no QR code", () => {
+    for (const fields of SAMPLES) {
+      const plan = buildLabelPlan(fields);
+      // Every bar is a barcode bar: same y, same height, full bar height.
+      assert.ok(
+        plan.bars.every(
+          (bar) => bar.y === plan.barcode.y && bar.height === plan.barcode.height
+        ),
+        `${fields.code}: a bar is not part of the Code 128`
+      );
+    }
+  });
+
   it("stops the printed band before the next die cut", () => {
     // The raster starts where the seek parks and must finish inside the same
     // sticker. If it does not, the tail crosses the gap and GS FF has no

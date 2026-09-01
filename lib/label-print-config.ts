@@ -126,45 +126,31 @@ export function mmToDots(mm: number) {
  * the on-screen preview, the downloaded PNG and the printed sticker identical.
  */
 export const LABEL_LAYOUT = {
+  /**
+   * The shop name is the label's masthead: centred, and the largest thing on
+   * it. At 20 dots "SKYWIN BIOTECH" sets 175 dots wide, so it has room to
+   * spare inside the 352-dot content column.
+   */
   companyBaseline: 58,
-  companySize: 16,
-  taglineBaseline: 70,
-  taglineSize: 9,
-  nameBaseline: 86,
-  nameSize: 12,
+  companySize: 20,
+  /** Product name, centred under the masthead. */
+  nameBaseline: 80,
+  nameSize: 13,
   nameLineHeight: 14,
   nameLines: 2,
   /**
-   * The QR sits in the top-right, beside the heading rather than beside the
-   * barcode. Putting it next to the barcode would halve the Code 128's width
-   * and drop it to 2 dots per module, making the linear symbol harder to scan
-   * — the opposite of the point. Here the barcode keeps the full label width.
+   * The barcode is centred by layoutCode128Dots inside the content column and
+   * takes whatever whole-dot module width fits, so its width varies with the
+   * length of the code: 37 mm for an 8-digit code at 3 dots per module, 30 mm
+   * for a longer one at 2. That is deliberate -- module width is what decides
+   * whether a scanner can read it, so it gets first claim on the space.
    */
-  qrY: 42,
-  /**
-   * Total box for the QR, quiet zone included. 87 dots is what a 21-module
-   * version-1 symbol needs for 3 dots per module (21 + 8 quiet = 29, × 3).
-   *
-   * This was briefly 116 dots for a 4-dot module, on the assumption that a
-   * 30 mm sticker had the room. It does not: only 23 mm of it can be printed,
-   * and a 14.5 mm QR crowds the barcode out of the space it needs to stay
-   * scannable. Three dots is the floor worth printing and it fits.
-   */
-  qrBoxDots: 87,
-  /** Gap between the QR's quiet zone and the heading text column. */
-  qrGapDots: 8,
-  /** Below the QR's lower quiet zone, which ends at 129. */
-  barcodeY: 132,
-  /**
-   * 56 dots is 7 mm. Shorter than one would like — a scanner wants enough bar
-   * to sweep across without clipping the ends — but the printable band is
-   * 23 mm and the QR, heading, code text and footer all have to fit inside it.
-   * The QR is what carries a marginal read.
-   */
+  barcodeY: 106,
+  /** 56 dots is 7 mm. The QR used to carry a marginal read; now nothing does. */
   barcodeH: 56,
-  codeBaseline: 199,
+  codeBaseline: 182,
   codeSize: 9,
-  footerBaseline: 220,
+  footerBaseline: 208,
   expSize: 9,
   mrpSize: 12,
 } as const;
@@ -175,10 +161,7 @@ export const LABEL_INK_BOTTOM_DOTS =
 
 /** Highest ink on the label. Must not rise above PRINT_BAND_TOP_DOTS. */
 export const LABEL_INK_TOP_DOTS = Math.floor(
-  Math.min(
-    LABEL_LAYOUT.qrY,
-    LABEL_LAYOUT.companyBaseline - LABEL_LAYOUT.companySize * 0.75
-  )
+  LABEL_LAYOUT.companyBaseline - LABEL_LAYOUT.companySize * 0.75
 );
 
 // Back-compat aliases for callers that still speak in pixels.
