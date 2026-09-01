@@ -15,6 +15,8 @@ import {
 } from "./label-print-config";
 
 const BYTES_PER_ROW = PRINT_W_DOTS / 8; // 48
+/** The trailing gap seek that pushes the last label past the tear bar. */
+const PRESENT_BYTES = 2;
 
 function raster(height = PRINT_BAND_H_DOTS) {
   return {
@@ -63,7 +65,7 @@ test("buildEscPosLabel", async (t) => {
 
   await t.test("matches the byte count the vendor driver produces", () => {
     // 64 lead-in + 6 full bands + 2-byte gap seek, for the 384 × 144 dot
-    // printable band.
+    // printable band. buildEscPosLabel is one label, so no present feed.
     assert.equal(job.length, 64 + 6 * (8 + BAND_ROWS * BYTES_PER_ROW) + 2);
     assert.equal(job.length, 7026);
   });
@@ -132,17 +134,57 @@ test("buildEscPosLabel", async (t) => {
 test("buildEscPosJob", async (t) => {
   await t.test("repeats each label for the copy count", () => {
     const one = buildEscPosLabel(raster());
-    assert.equal(buildEscPosJob([raster()], { copies: 3 }).length, one.length * 3);
+    assert.equal(
+      buildEscPosJob([raster()], { copies: 3 }).length,
+      one.length * 3 + PRESENT_BYTES
+    );
   });
 
   await t.test("defaults to a single copy and clamps nonsense", () => {
     const one = buildEscPosLabel(raster());
-    assert.equal(buildEscPosJob([raster()]).length, one.length);
-    assert.equal(buildEscPosJob([raster()], { copies: 0 }).length, one.length);
+    assert.equal(buildEscPosJob([raster()]).length, one.length + PRESENT_BYTES);
+    assert.equal(
+      buildEscPosJob([raster()], { copies: 0 }).length,
+      one.length + PRESENT_BYTES
+    );
   });
 
   await t.test("concatenates multiple products", () => {
     const one = buildEscPosLabel(raster());
-    assert.equal(buildEscPosJob([raster(), raster()]).length, one.length * 2);
+    assert.equal(
+      buildEscPosJob([raster(), raster()]).length,
+      one.length * 2 + PRESENT_BYTES
+    );
+  });
+
+  await t.test("presents the last label clear of the tear bar", () => {
+    // Without this the finished label is still gripped by the printer and
+    // only the feed button gets it out.
+    const job = buildEscPosJob([raster()]);
+    assert.deepEqual([...job.subarray(-4)], [0x1d, 0x0c, 0x1d, 0x0c]);
+  });
+
+  await t.test("pays the present feed once per job, not once per label", () => {
+    // It costs a blank sticker, so a run of twenty must not cost twenty.
+    const one = buildEscPosJob([raster()]);
+    const twenty = buildEscPosJob([raster()], { copies: 20 });
+    assert.equal(twenty.length, (one.length - PRESENT_BYTES) * 20 + PRESENT_BYTES);
+  });
+
+  await t.test("can be told not to present", () => {
+    const job = buildEscPosJob([raster()], { present: false });
+    assert.deepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
+    assert.equal(job.length, buildEscPosLabel(raster()).length);
+  });
+
+  await t.test("presents by counted feed when the sensor is not in use", () => {
+    // A blind job cannot seek, so it counts out one whole sticker pitch, and
+    // ESC J tops out at 255 dots so that takes two commands.
+    const job = buildEscPosJob([raster()], { endOfLabel: "feed" });
+    const pitch = LABEL_PITCH_MM * DOTS_PER_MM;
+    assert.deepEqual(
+      [...job.subarray(-6)],
+      [0x1b, 0x4a, 255, 0x1b, 0x4a, pitch - 255]
+    );
   });
 });

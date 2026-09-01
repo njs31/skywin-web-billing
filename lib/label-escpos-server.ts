@@ -83,20 +83,28 @@ export type LabelPrintRequest = {
   feedDots?: number;
 };
 
-/** A finished ESC/POS job for a run of products, ready to write to a socket. */
+/**
+ * A finished ESC/POS job for a run of products, ready to write to a socket.
+ *
+ * Built as one job rather than one per product, because the job ends by
+ * advancing the last label clear of the tear bar and that costs a blank
+ * sticker. Per product it would cost one per product; here a run of twenty
+ * pays it once.
+ *
+ * Copies are expanded here for the same reason: `buildEscPosJob` applies a
+ * single copy count to every raster it is given, and a run can ask for
+ * different counts per product.
+ */
 export async function buildEscPosForProducts(requests: LabelPrintRequest[]) {
-  const parts: Uint8Array[] = [];
-  for (const { product, copies, feedDots } of requests) {
+  const rasters: LabelRaster[] = [];
+  for (const { product, copies } of requests) {
     const raster = await renderLabelRasterServer(product);
-    parts.push(buildEscPosJob([raster], { copies, feedDots }));
+    const count = Math.max(1, Math.min(99, Math.trunc(copies)));
+    for (let i = 0; i < count; i++) rasters.push(raster);
   }
 
-  const total = parts.reduce((sum, part) => sum + part.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
+  // One gap override applies to the whole run: it describes the roll, and the
+  // print route takes it from a single query parameter.
+  const feedDots = requests.find((request) => request.feedDots !== undefined)?.feedDots;
+  return buildEscPosJob(rasters, { feedDots });
 }

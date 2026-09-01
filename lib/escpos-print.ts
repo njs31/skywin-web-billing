@@ -20,6 +20,9 @@ import {
   PRINT_BAND_H_MM,
 } from "@/lib/label-print-config";
 
+/** One sticker pitch in dots. What a gap seek covers from a parked position. */
+const PITCH_DOTS = Math.round(LABEL_PITCH_MM * DOTS_PER_MM); // 272
+
 /**
  * Rows per `GS v 0` block. The printer's input buffer will not take a whole
  * label in one command — that is why an earlier single-block attempt
@@ -69,6 +72,10 @@ export const DEFAULT_FEED_DOTS = Math.round(
 export type EscPosOptions = {
   /** Copies of each label. */
   copies?: number;
+  /**
+   * Push the last label clear of the tear bar when the job ends. Default on.
+   */
+  present?: boolean;
   /**
    * How a label ends. "gap" lets the printer find the die cut itself and is
    * what die-cut stock wants; "feed" counts out `feedDots` blindly.
@@ -153,6 +160,38 @@ export function buildEscPosLabel(raster: LabelRaster, options: EscPosOptions = {
   return concatBytes(parts);
 }
 
+/**
+ * `ESC J` maxes out at 255 dots, so a longer feed is several commands.
+ */
+function feedCommands(dots: number) {
+  const parts: Uint8Array[] = [];
+  let left = Math.max(0, Math.round(dots));
+  while (left > 0) {
+    const step = Math.min(255, left);
+    parts.push(Uint8Array.from([0x1b, 0x4a, step]));
+    left -= step;
+  }
+  return parts;
+}
+
+/**
+ * Advance the finished label clear of the tear-off edge.
+ *
+ * The head sits several millimetres upstream of the tear bar, so when a label
+ * finishes and the gap seek parks the paper for the next one, the label just
+ * printed is still gripped inside the printer — visible, but impossible to
+ * tear off without holding the feed button. The vendor's own driver ends a job
+ * with a 10 mm `ESC J` for this reason.
+ *
+ * One further gap seek advances exactly one sticker pitch, which clears the
+ * tear bar and, unlike a counted feed, leaves the paper registered so the next
+ * job needs no correction. The cost is one blank sticker per job, which is why
+ * this is per *job* and not per label: a run of twenty labels pays it once.
+ */
+function presentCommands(blind: boolean) {
+  return blind ? feedCommands(PITCH_DOTS) : [GAP_SEEK];
+}
+
 /** A complete print job for a run of labels. */
 export function buildEscPosJob(rasters: LabelRaster[], options: EscPosOptions = {}) {
   const copies = Math.max(1, Math.min(99, Math.trunc(options.copies ?? 1)));
@@ -160,6 +199,11 @@ export function buildEscPosJob(rasters: LabelRaster[], options: EscPosOptions = 
   for (const raster of rasters) {
     const label = buildEscPosLabel(raster, options);
     for (let i = 0; i < copies; i++) parts.push(label);
+  }
+
+  if (parts.length > 0 && (options.present ?? true)) {
+    const blind = options.endOfLabel === "feed" || options.feedDots !== undefined;
+    parts.push(...presentCommands(blind));
   }
   return concatBytes(parts);
 }
