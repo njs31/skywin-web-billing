@@ -79,15 +79,26 @@ export const PRINT_TOP_OFFSET_DOTS = PRINT_TOP_OFFSET_MM * DOTS_PER_MM; // 40
 /**
  * How much of the sticker is actually printed, in mm.
  *
- * Starts at PRINT_TOP_OFFSET_MM and must end before the die cut, so this is
- * bounded by LABEL_H_MM - PRINT_TOP_OFFSET_MM = 25 mm. It is set 2 mm short of
- * that for two reasons: ink hard against a die cut smears on the edge, and the
- * raster must finish before the gap or `GS FF` has no travel left and skips a
- * whole sticker looking for the next one — which is what left every second
- * sticker blank.
+ * Starts at PRINT_TOP_OFFSET_MM. Geometry alone would allow 25 mm, but the
+ * printer stops burning before then: measured on 2026-09-01, ink at sticker
+ * rows 175..181 printed and ink at rows 199..207 — EXP and MRP — did not,
+ * while being present in the raster the printer was sent. So the head goes
+ * dead somewhere around 23-25 mm down the sticker, roughly mirroring the 5 mm
+ * dead zone at the top, which is what a sensor offset from the head would do
+ * at both ends.
+ *
+ * 18 mm keeps every mark inside the region that demonstrably burns, with the
+ * lowest ink at row 179 against the last row known to print, 181. It is
+ * deliberately conservative: the exact cut-off has not been measured, only
+ * bracketed between rows 181 and 199. The test label's millimetre scale is
+ * what will pin it down, and this can then be opened back up.
+ *
+ * It also has to finish before the gap regardless, or `GS FF` has no travel
+ * left and skips a whole sticker hunting the next one — which is what left
+ * every second sticker blank.
  */
-export const PRINT_BAND_H_MM = 23;
-export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 184
+export const PRINT_BAND_H_MM = 18;
+export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 144
 
 /** First and last artwork row the printer can actually burn. */
 export const PRINT_BAND_TOP_DOTS = PRINT_TOP_OFFSET_DOTS; // 40
@@ -126,33 +137,32 @@ export function mmToDots(mm: number) {
  * the on-screen preview, the downloaded PNG and the printed sticker identical.
  */
 export const LABEL_LAYOUT = {
-  /**
-   * The shop name is the label's masthead: centred, and the largest thing on
-   * it. At 20 dots "SKYWIN BIOTECH" sets 175 dots wide, so it has room to
-   * spare inside the 352-dot content column.
-   */
-  companyBaseline: 58,
-  companySize: 20,
+  /** The shop name is the masthead: centred, and the largest thing on it. */
+  companyBaseline: 56,
+  companySize: 18,
   /** Product name, centred under the masthead. */
-  nameBaseline: 80,
-  nameSize: 13,
-  nameLineHeight: 14,
+  nameBaseline: 76,
+  nameSize: 12,
+  nameLineHeight: 13,
   nameLines: 2,
   /**
    * The barcode is centred by layoutCode128Dots inside the content column and
    * takes whatever whole-dot module width fits, so its width varies with the
-   * length of the code: 37 mm for an 8-digit code at 3 dots per module, 30 mm
-   * for a longer one at 2. That is deliberate -- module width is what decides
+   * length of the code. That is deliberate — module width is what decides
    * whether a scanner can read it, so it gets first claim on the space.
    */
-  barcodeY: 106,
-  /** 56 dots is 7 mm. The QR used to carry a marginal read; now nothing does. */
-  barcodeH: 56,
-  codeBaseline: 182,
+  barcodeY: 98,
+  /**
+   * 48 dots is 6 mm. Shorter than one would like, and shorter than it was:
+   * the printable band lost 5 mm when it turned out the head stops burning
+   * before the die cut, and the barcode is what had the height to give.
+   */
+  barcodeH: 48,
+  codeBaseline: 158,
   codeSize: 9,
-  footerBaseline: 208,
+  footerBaseline: 176,
   expSize: 9,
-  mrpSize: 12,
+  mrpSize: 11,
 } as const;
 
 /** Lowest ink on the label. Must not reach PRINT_BAND_BOTTOM_DOTS. */
