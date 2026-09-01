@@ -1,5 +1,5 @@
 /**
- * The one place a 50 × 25 mm label is laid out.
+ * The one place a 50 × 30 mm label is laid out.
  *
  * The browser preview (canvas), the downloaded PNG (sharp/SVG) and the PDF
  * sheet all render from this plan, so what the shopkeeper sees on screen is
@@ -14,6 +14,8 @@ import {
   LABEL_H_DOTS,
   LABEL_LAYOUT,
   LABEL_W_DOTS,
+  PRINT_W_DOTS,
+  PRINT_X_DOTS,
 } from "@/lib/label-print-config";
 
 /**
@@ -258,5 +260,50 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
       x: qrX,
       y: qrTop,
     },
+  };
+}
+
+/**
+ * Data for the diagnostic label. Deliberately a real-looking product: it goes
+ * through `buildLabelPlan` unchanged, so a test print exercises the same
+ * layout, barcode and QR code path a product does. A test that prints
+ * something special proves nothing about the labels you actually sell.
+ */
+export const TEST_LABEL_FIELDS: LabelPlanFields = {
+  code: "8901234567890",
+  name: "TEST LABEL",
+  mrp: "40.00",
+  exp: "",
+};
+
+/** Border thickness for the test label, in dots. */
+const TEST_BORDER_DOTS = 2;
+
+/**
+ * The test label: the real plan plus a rectangle on the exact edge of the
+ * printable window.
+ *
+ * The border is the whole point of it. Registration is invisible on an
+ * ordinary label — you cannot tell 2 mm of drift from a design that simply
+ * sits low — but a rectangle either lands inside the die cut or it does not,
+ * and whichever edge is clipped tells you which way the paper is out. It is
+ * also the fastest check that the printer is alive at all.
+ */
+export function buildTestLabelPlan(): LabelPlan {
+  const plan = buildLabelPlan(TEST_LABEL_FIELDS);
+  const t = TEST_BORDER_DOTS;
+  const x = PRINT_X_DOTS;
+  const w = PRINT_W_DOTS;
+  const h = LABEL_H_DOTS;
+
+  return {
+    ...plan,
+    bars: [
+      ...plan.bars,
+      { x, y: 0, width: w, height: t },
+      { x, y: h - t, width: w, height: t },
+      { x, y: 0, width: t, height: h },
+      { x: x + w - t, y: 0, width: t, height: h },
+    ],
   };
 }

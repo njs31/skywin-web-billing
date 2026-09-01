@@ -3,7 +3,11 @@
  * the bitmap that goes down the USB cable all come out of one canvas, so they
  * can never drift apart.
  */
-import { buildLabelPlan, type LabelPlan } from "@/lib/label-layout";
+import {
+  buildLabelPlan,
+  buildTestLabelPlan,
+  type LabelPlan,
+} from "@/lib/label-layout";
 import {
   LABEL_H_DOTS,
   LABEL_W_DOTS,
@@ -84,17 +88,21 @@ export function drawLabelPlan(ctx: CanvasRenderingContext2D, plan: LabelPlan) {
   }
 }
 
-function renderLabelCanvas(product: LabelProduct) {
+function renderPlanCanvas(plan: LabelPlan) {
   const canvas = document.createElement("canvas");
   canvas.width = LABEL_W_DOTS;
   canvas.height = LABEL_H_DOTS;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas not available");
-  drawLabelPlan(ctx, planFor(product));
+  drawLabelPlan(ctx, plan);
   return canvas;
 }
 
-/** Render one 50 × 25 mm label at the printer's native dot pitch. */
+function renderLabelCanvas(product: LabelProduct) {
+  return renderPlanCanvas(planFor(product));
+}
+
+/** Render one 50 × 30 mm label at the printer's native dot pitch. */
 export async function renderLabelPng(product: LabelProduct): Promise<string> {
   return renderLabelCanvas(product).toDataURL("image/png");
 }
@@ -110,7 +118,15 @@ export async function renderLabelPng(product: LabelProduct): Promise<string> {
 export async function renderLabelRaster(
   product: LabelProduct
 ): Promise<LabelRaster> {
-  const canvas = renderLabelCanvas(product);
+  return rasterFromCanvas(renderLabelCanvas(product));
+}
+
+/** The diagnostic label, packed the same way a product label is. */
+export async function renderTestLabelRaster(): Promise<LabelRaster> {
+  return rasterFromCanvas(renderPlanCanvas(buildTestLabelPlan()));
+}
+
+function rasterFromCanvas(canvas: HTMLCanvasElement): LabelRaster {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas not available");
 

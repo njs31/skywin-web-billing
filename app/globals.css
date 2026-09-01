@@ -23,39 +23,6 @@ body {
     background: white;
   }
 
-  /*
-   * Printing the label page through a driver must emit only the stickers.
-   * Anything else on the page ends up as extra pages of chrome, and on a raw
-   * thermal printer that is what came out as pages of source code.
-   */
-  body.thermal-label-page {
-    margin: 0;
-  }
-  body.thermal-label-page .label-toolbar,
-  body.thermal-label-page .thermal-label-actions {
-    display: none !important;
-  }
-  /* Screen preview is hidden; the print sheet carries the real copies. */
-  body.thermal-label-page .thermal-label-preview-grid {
-    display: none !important;
-  }
-  body.thermal-label-page .label-print-sheet {
-    display: block !important;
-  }
-  /* Sizes come from DRIVER_PAGE_*_MM, injected by ProductLabelSheet. */
-  body.thermal-label-page .label-print-sheet img {
-    width: var(--label-print-w, 48mm);
-    height: var(--label-print-h, 25mm);
-    border: 0;
-    border-radius: 0;
-    break-after: page;
-    page-break-after: always;
-  }
-  body.thermal-label-page .label-print-sheet img:last-child {
-    break-after: auto;
-    page-break-after: auto;
-  }
-
   aside,
   nav,
   .no-print {
@@ -248,7 +215,7 @@ body {
   }
 }
 
-/* Product barcode labels — POSiFLOW PSF20, 50×25 mm thermal stickers */
+/* Product barcode labels — POSiFLOW P58D, 50×30 mm thermal stickers */
 .label-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -269,7 +236,7 @@ body {
 .thermal-label-preview-img {
   display: block;
   width: 50mm;
-  height: 25mm;
+  height: 30mm;
   border: 1px dashed #cbd5e1;
   border-radius: 1mm;
   object-fit: fill;
@@ -279,7 +246,7 @@ body {
 .thermal-label {
   box-sizing: border-box;
   width: 50mm;
-  height: 25mm;
+  height: 30mm;
   overflow: hidden;
   border: 1px dashed #cbd5e1;
   border-radius: 1mm;
@@ -358,8 +325,3 @@ body {
   font-weight: 700;
 }
 
-
-/* Only ever visible inside @media print. */
-.label-print-sheet {
-  display: none;
-}

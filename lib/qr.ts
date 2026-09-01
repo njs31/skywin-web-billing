@@ -1,7 +1,7 @@
 /**
  * QR layout for the product label, in printer dots.
  *
- * Why a QR at all: the Code 128 on a 50 × 25 mm sticker only gets 2–3 dots per
+ * Why a QR at all: the Code 128 on a 50 × 30 mm sticker only gets 2–3 dots per
  * module, and a 203 DPI thermal head bleeds ink sideways. One dot of spread on
  * a 2-dot bar is a 50% width error, which is enough that a scanner cannot
  * recover the bar/space ratios. A QR carries its own error correction and

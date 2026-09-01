@@ -6,7 +6,12 @@
  * code. We build the printer's own ESC/POS bytes (see lib/escpos-print.ts) and
  * push them down a bulk endpoint or a serial port ourselves.
  */
-import { renderLabelRaster, type LabelProduct, type LabelRaster } from "@/lib/label-render";
+import {
+  renderLabelRaster,
+  renderTestLabelRaster,
+  type LabelProduct,
+  type LabelRaster,
+} from "@/lib/label-render";
 import { buildEscPosJob, type EscPosOptions } from "@/lib/escpos-print";
 
 export type PrintJobOptions = EscPosOptions;
@@ -169,6 +174,18 @@ function assertSupported() {
   }
 }
 
+/**
+ * Print the diagnostic label over USB.
+ *
+ * Deliberately not gated on a product being selected: when a print does not
+ * come out, the first question is whether the printer is reachable at all, and
+ * this answers it without a trip to the catalogue.
+ */
+export async function printTestLabelViaUsb(options: PrintJobOptions = {}) {
+  assertSupported();
+  await sendToPrinter(buildEscPosJob([await renderTestLabelRaster()], options));
+}
+
 /** Print labels over USB. Chrome/Edge + USB cable only. */
 export async function printLabelsViaUsb(
   products: LabelProduct[],
@@ -207,12 +224,16 @@ export function isSerialPrintSupported() {
  */
 const OPEN_TIMEOUT_MS = 5000;
 
-const WRONG_PORT_MESSAGE =
-  "That serial port did not respond.\n\n" +
-  "On a Mac, choose the entry beginning with “cu.” (for example cu.P58D). " +
-  "The plain name is the “tty” port, which waits for a signal the printer " +
-  "never sends.\n\n" +
-  "Click Print over Bluetooth again to choose a different port.";
+const OPEN_FAILED_MESSAGE =
+  "The printer did not answer.\n\n" +
+  "1. Check it is switched on. A battery printer that has gone to sleep " +
+  "does not answer, and macOS then blocks on the port until it does \u2014 " +
+  "this is by far the most common cause.\n\n" +
+  "2. If it is on, the port may be the wrong one. On a Mac choose the " +
+  "entry beginning with “cu.” (for example cu.P58D), not the plain name: " +
+  "that is the “tty” port, which waits for a signal the printer never " +
+  "sends.\n\n" +
+  "Use “Choose a different port” to pick again.";
 
 async function acquireSerialPort() {
   // Deliberately not reusing a remembered port without checking it: a
@@ -222,24 +243,43 @@ async function acquireSerialPort() {
   return granted[0] ?? (await navigator.serial!.requestPort());
 }
 
-/** Open the port, or drop the grant so the user can pick a different one. */
+/**
+ * Open the port, or fail with something the shopkeeper can act on.
+ *
+ * Deliberately does *not* forget the grant when the open fails. It used to: a
+ * `tty.*` port never opens, and dropping the grant was the only way to let the
+ * user pick again. But the far more common failure is a printer that has gone
+ * to sleep, and there the grant is perfectly good — discarding it means a port
+ * chooser on every single print, which is indistinguishable from Bluetooth
+ * being broken. The two cases cannot be told apart from here (both are just a
+ * blocked open), so the message names both, and re-picking is an explicit
+ * action instead: see `forgetSerialPrinter`.
+ */
 async function openSerialPort(port: SerialPort, baudRate: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
       port.open({ baudRate }),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(WRONG_PORT_MESSAGE)), OPEN_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new Error(OPEN_FAILED_MESSAGE)), OPEN_TIMEOUT_MS);
       }),
     ]);
-  } catch (error) {
-    // Forget it, otherwise getPorts() hands back the same dead port next time
-    // and the button looks broken forever.
-    await port.forget?.().catch(() => {});
-    throw error;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Drop every remembered serial port, so the next print asks again.
+ *
+ * The escape hatch for a port that really is the wrong one. A Bluetooth port
+ * exposes no vendor or product id, so a bad grant is indistinguishable from a
+ * good one and nothing but the user can tell them apart.
+ */
+export async function forgetSerialPrinter() {
+  if (!isSerialPrintSupported()) return;
+  const granted = await navigator.serial!.getPorts().catch(() => []);
+  await Promise.all(granted.map((port) => port.forget?.().catch(() => {})));
 }
 
 async function sendViaSerial(payload: Uint8Array, baudRate: number) {
@@ -288,4 +328,66 @@ export async function printLabelsViaSerial(
   }
   if (products.length === 0) return;
   await sendViaSerial(await buildLabelJob(products, options), options.baudRate ?? 9600);
+}
+
+/** Print the diagnostic label over Bluetooth. */
+export async function printTestLabelViaSerial(
+  options: PrintJobOptions & { baudRate?: number } = {}
+) {
+  if (!isSerialPrintSupported()) {
+    throw new Error(
+      "Serial printing needs Google Chrome or Edge on a computer. Update the browser and try again."
+    );
+  }
+  await sendViaSerial(
+    buildEscPosJob([await renderTestLabelRaster()], options),
+    options.baudRate ?? 9600
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Status
+ * ------------------------------------------------------------------ */
+
+export type PrinterAccess = {
+  usbSupported: boolean;
+  serialSupported: boolean;
+  /** A device/port already granted to this site, openable with no chooser. */
+  usbPaired: boolean;
+  serialPaired: boolean;
+};
+
+/**
+ * What this browser can reach right now.
+ *
+ * There is deliberately no server endpoint for this. The printer is plugged
+ * into the machine holding the mouse, not into the machine running Next.js —
+ * in production that is a VPS in a datacentre, which can never see it. Only
+ * the browser can answer the question, so only the browser is asked.
+ *
+ * "Paired" means a grant already exists, so printing will not raise a chooser.
+ * It is not a promise the printer is powered on: neither WebUSB nor Web Serial
+ * will tell us that without opening the device, and opening it to find out
+ * would be indistinguishable from a print job to a printer that is awake.
+ */
+export async function getPrinterAccess(): Promise<PrinterAccess> {
+  const usbSupported = isUsbPrintSupported();
+  const serialSupported = isSerialPrintSupported();
+
+  const [usbPaired, serialPaired] = await Promise.all([
+    usbSupported
+      ? navigator
+          .usb!.getDevices()
+          .then((devices) => devices.length > 0)
+          .catch(() => false)
+      : Promise.resolve(false),
+    serialSupported
+      ? navigator
+          .serial!.getPorts()
+          .then((ports) => ports.length > 0)
+          .catch(() => false)
+      : Promise.resolve(false),
+  ]);
+
+  return { usbSupported, serialSupported, usbPaired, serialPaired };
 }

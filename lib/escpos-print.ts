@@ -2,7 +2,7 @@
  * ESC/POS job builder for the POSiFLOW P58D label printer.
  *
  * Why ESC/POS and not TSPL: the P58D does not implement TSPL at all. Sent TSPL
- * it prints the command text verbatim ("SIZE 50 mm,25 mm", "GAP...") and feeds
+ * it prints the command text verbatim ("SIZE 50 mm,30 mm", "GAP...") and feeds
  * the roll — the long-standing "it prints source code" bug. It also ignores the
  * Caysn vendor raster opcode (0x1a 0x5b) that the macOS CLA58/POS58L drivers
  * emit: those jobs complete cleanly and print nothing.
@@ -18,7 +18,7 @@ import { DOTS_PER_MM, LABEL_GAP_MM } from "@/lib/label-print-config";
 
 /**
  * Rows per `GS v 0` block. The printer's input buffer will not take a whole
- * 200-row label in one command — that is why an earlier single-block attempt
+ * 240-row label in one command — that is why an earlier single-block attempt
  * produced nothing — and 24 is what the vendor driver uses.
  */
 export const BAND_ROWS = 24;
@@ -31,21 +31,47 @@ export const BAND_ROWS = 24;
 const LEAD_IN_BYTES = 64;
 
 /**
- * How far to feed after each label, in dots.
+ * Feed to the next die cut, using the printer's own gap sensor.
  *
- * This must be the liner gap and nothing more. ESC/POS has no concept of a
- * label, so the printer advances exactly what it is told: the image is
- * LABEL_H_DOTS tall, so image + feed has to equal the sticker pitch. The
- * vendor driver ends a job with a much larger tear-off feed, which is right
- * for one page but makes every label in a run drift further down the roll —
- * 80 dots against a 216-dot pitch is 8 mm of creep per sticker.
+ * `GS FF` (1d 0c) — "print and feed label to the peeling position". Verified on
+ * the P58D on 2026-09-01: sent after a line of text it advances the paper until
+ * the sensor sees the gap and stops at the top of the next sticker. Plain `FF`
+ * (0c) does not, and the sensor needs no `ESC c 4` selection first.
+ *
+ * This is what keeps a run registered. A blind `ESC J` feed cannot: the printer
+ * advances exactly the dots it is told, so any error between the fed distance
+ * and the true sticker pitch repeats on every label and accumulates until the
+ * artwork straddles a die cut. `GS FF` measures instead of counting, so a label
+ * that starts out of position is corrected by the next one rather than dragging
+ * the whole run out of registration. It also leaves the paper parked at the top
+ * of a sticker, so the *next* job starts registered too.
  */
-export const DEFAULT_FEED_DOTS = Math.round(LABEL_GAP_MM * DOTS_PER_MM); // 16
+const GAP_SEEK = Uint8Array.from([0x1d, 0x0c]);
+
+/**
+ * How far to feed after each label when counting dots instead, in dots.
+ *
+ * Only used when `endOfLabel` is "feed" — a roll with no gap for the sensor to
+ * find, or a printer that lacks one. Then it must be the liner gap and nothing
+ * more: the image is LABEL_H_DOTS tall, so image + feed has to equal the
+ * sticker pitch (240 + 32 = 272 dots = 34 mm). The vendor driver's 80-dot
+ * tear-off feed walks the artwork down the roll; a feed short of the gap walks
+ * it up until the tail of the label prints past the gap onto the next sticker.
+ */
+export const DEFAULT_FEED_DOTS = Math.round(LABEL_GAP_MM * DOTS_PER_MM); // 32
 
 export type EscPosOptions = {
   /** Copies of each label. */
   copies?: number;
-  /** Liner gap to feed after each label, in dots. */
+  /**
+   * How a label ends. "gap" lets the printer find the die cut itself and is
+   * what die-cut stock wants; "feed" counts out `feedDots` blindly.
+   */
+  endOfLabel?: "gap" | "feed";
+  /**
+   * Liner gap to feed after each label, in dots. Implies "feed" — passing an
+   * explicit gap is how a caller says the sensor cannot be used.
+   */
   feedDots?: number;
 };
 
@@ -93,7 +119,7 @@ export function buildRasterBand(
   return concatBytes([header, data]);
 }
 
-/** One label: lead-in, the raster split into bands, then a feed. */
+/** One label: lead-in, the raster split into bands, then on to the next die cut. */
 export function buildEscPosLabel(raster: LabelRaster, options: EscPosOptions = {}) {
   const { bytesPerRow, height, bytes } = raster;
   if (bytes.length !== bytesPerRow * height) {
@@ -111,7 +137,13 @@ export function buildEscPosLabel(raster: LabelRaster, options: EscPosOptions = {
       )
     );
   }
-  parts.push(Uint8Array.from([0x1b, 0x4a, resolveFeed(options.feedDots)]));
+  const blind =
+    options.endOfLabel === "feed" || options.feedDots !== undefined;
+  parts.push(
+    blind
+      ? Uint8Array.from([0x1b, 0x4a, resolveFeed(options.feedDots)])
+      : GAP_SEEK
+  );
   return concatBytes(parts);
 }
 

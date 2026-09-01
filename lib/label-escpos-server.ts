@@ -9,8 +9,13 @@
  */
 import sharp from "sharp";
 import { buildEscPosJob } from "@/lib/escpos-print";
+import { buildTestLabelPlan } from "@/lib/label-layout";
 import type { LabelRaster } from "@/lib/label-render";
-import { labelSvgFor, type LabelSourceProduct } from "@/lib/label-svg";
+import {
+  labelPlanToSvg,
+  labelSvgFor,
+  type LabelSourceProduct,
+} from "@/lib/label-svg";
 import {
   LABEL_H_DOTS,
   PRINT_W_DOTS,
@@ -34,8 +39,15 @@ const INK_THRESHOLD = 160;
 export async function renderLabelRasterServer(
   product: LabelSourceProduct
 ): Promise<LabelRaster> {
-  const svg = labelSvgFor(product);
+  return rasterFromSvg(labelSvgFor(product));
+}
 
+/** The diagnostic label, rasterised exactly like a product label. */
+export async function renderTestLabelRasterServer(): Promise<LabelRaster> {
+  return rasterFromSvg(labelPlanToSvg(buildTestLabelPlan()));
+}
+
+async function rasterFromSvg(svg: string): Promise<LabelRaster> {
   const { data, info } = await sharp(Buffer.from(svg))
     .extract({
       left: PRINT_X_DOTS,

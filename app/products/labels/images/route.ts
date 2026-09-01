@@ -17,7 +17,7 @@ export async function GET() {
   return new Response(zip, {
     headers: {
       "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="skywin-all-label-images-50x25-${date}.zip"`,
+      "Content-Disposition": `attachment; filename="skywin-all-label-images-50x30-${date}.zip"`,
       "Cache-Control": "no-store",
     },
   });

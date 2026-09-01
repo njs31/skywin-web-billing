@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   downloadLabelPng,
   downloadLabelPngFiles,
@@ -8,30 +8,20 @@ import {
   renderLabelPngMap,
   type LabelProduct,
 } from "@/lib/label-render";
-import { DRIVER_PAGE_H_MM, DRIVER_PAGE_W_MM } from "@/lib/label-print-config";
+import { THERMAL_LABEL_SIZE_LABEL } from "@/lib/label-print-config";
 import {
+  forgetSerialPrinter,
+  getPrinterAccess,
   isSerialPrintSupported,
   isUsbPrintSupported,
   printLabelsViaSerial,
   printLabelsViaUsb,
+  printTestLabelViaSerial,
+  printTestLabelViaUsb,
+  type PrinterAccess,
 } from "@/lib/thermal-usb-print";
 
 export type { LabelProduct };
-
-/**
- * Tell the browser the page is one sticker, not A4 — otherwise a driver print
- * lays the label on A4 and the printer spits blank stock between every one.
- * The size is the printable window rather than the full sticker; see
- * DRIVER_PAGE_W_MM. The custom properties keep the print stylesheet on the
- * same numbers.
- */
-const PAGE_RULE = `
-  @page { size: ${DRIVER_PAGE_W_MM}mm ${DRIVER_PAGE_H_MM}mm; margin: 0; }
-  :root {
-    --label-print-w: ${DRIVER_PAGE_W_MM}mm;
-    --label-print-h: ${DRIVER_PAGE_H_MM}mm;
-  }
-`;
 
 /** Browser capabilities never change mid-session, so there is nothing to watch. */
 const subscribeNever = () => () => {};
@@ -67,10 +57,52 @@ function LabelPreview({
   );
 }
 
+/**
+ * What the browser can reach. "Paired" means a grant exists, so a print will
+ * not raise a chooser — it is not a claim that the printer is switched on,
+ * which nothing short of opening the device can tell us.
+ */
+function PrinterStatus({
+  access,
+}: {
+  access: PrinterAccess | null;
+}) {
+  if (!access) return null;
+
+  const { usbSupported, serialSupported, usbPaired, serialPaired } = access;
+  if (!usbSupported && !serialSupported) {
+    return (
+      <p className="w-full rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        This browser cannot reach the printer. Open the page in{" "}
+        <strong>Chrome or Edge</strong> on a computer, or print from the Android
+        app.
+      </p>
+    );
+  }
+
+  const paired = [usbPaired && "USB", serialPaired && "Bluetooth"].filter(
+    Boolean
+  );
+  return (
+    <p className="flex items-center gap-1.5 text-xs text-slate-600">
+      <span
+        className={`inline-block h-2 w-2 rounded-full ${
+          paired.length ? "bg-emerald-600" : "bg-slate-400"
+        }`}
+        aria-hidden="true"
+      />
+      {paired.length
+        ? `Printer paired over ${paired.join(" and ")}`
+        : "No printer chosen yet — click Test print and pick it. A browser cannot see printers by itself."}
+    </p>
+  );
+}
+
 export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const [labelPngMap, setLabelPngMap] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState<"" | "usb" | "serial">("");
+  const [busy, setBusy] = useState<"" | "usb" | "serial" | "test">("");
+  const [access, setAccess] = useState<PrinterAccess | null>(null);
   const [copies, setCopies] = useState(1);
 
   /**
@@ -93,16 +125,13 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     returnFalse
   );
 
-  useEffect(() => {
-    document.body.classList.add("thermal-label-page");
-    const style = document.createElement("style");
-    style.textContent = PAGE_RULE;
-    document.head.appendChild(style);
-    return () => {
-      document.body.classList.remove("thermal-label-page");
-      style.remove();
-    };
+  const refreshAccess = useCallback(() => {
+    getPrinterAccess()
+      .then(setAccess)
+      .catch(() => setAccess(null));
   }, []);
+
+  useEffect(refreshAccess, [refreshAccess]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,19 +158,6 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
   const qty = Math.max(1, Math.min(99, copies));
   const labelCount = products.length * qty;
 
-  /** One entry per physical sticker, so a driver print honours "copies each". */
-  const printSheet = useMemo(() => {
-    const out: { key: string; src: string; alt: string }[] = [];
-    for (const product of products) {
-      const src = labelPngMap[product.id];
-      if (!src) continue;
-      for (let i = 0; i < qty; i++) {
-        out.push({ key: `${product.id}-${i}`, src, alt: product.name });
-      }
-    }
-    return out;
-  }, [products, labelPngMap, qty]);
-
   function reportError(error: unknown, fallback: string) {
     // The user dismissed the Chrome device chooser; not an error.
     if (error instanceof DOMException && error.name === "NotFoundError") return;
@@ -158,6 +174,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       reportError(error, "USB print failed. Check the cable and try again.");
     } finally {
       setBusy("");
+      refreshAccess();
     }
   }
 
@@ -173,6 +190,33 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       );
     } finally {
       setBusy("");
+      refreshAccess();
+    }
+  }
+
+  /**
+   * One diagnostic label. Prefers whichever transport is already granted, so
+   * the common case raises no chooser; falls back to whatever the browser
+   * supports when nothing is paired yet.
+   */
+  async function handleTestPrint() {
+    if (busy) return;
+    setBusy("test");
+    try {
+      const preferUsb =
+        usbSupported && (access?.usbPaired || !access?.serialPaired);
+      if (preferUsb) {
+        await printTestLabelViaUsb();
+      } else if (serialSupported) {
+        await printTestLabelViaSerial();
+      } else {
+        await printTestLabelViaUsb();
+      }
+    } catch (error) {
+      reportError(error, "Test print failed.");
+    } finally {
+      setBusy("");
+      refreshAccess();
     }
   }
 
@@ -192,26 +236,74 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     }
   }
 
+  /** Explicit re-pick, replacing the old automatic forget-on-failure. */
+  async function handleForgetPort() {
+    if (busy) return;
+    try {
+      await forgetSerialPrinter();
+    } catch (error) {
+      reportError(error, "Could not release the printer port.");
+    } finally {
+      refreshAccess();
+    }
+  }
+
+  const testPrintButton = (
+    <button
+      type="button"
+      className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 disabled:opacity-50"
+      disabled={busy !== ""}
+      onClick={handleTestPrint}
+      title="Prints one diagnostic sticker with a border on the printable edge"
+    >
+      {busy === "test" ? "Sending…" : "Test print"}
+    </button>
+  );
+
+  // The test print is most useful in exactly this state: nothing to print, and
+  // a printer you want to know the truth about.
   if (products.length === 0) {
     return (
-      <p className="p-6 text-sm text-slate-500">
-        No products selected for label printing.
-      </p>
+      <div className="flex flex-col items-start gap-3 p-6">
+        <p className="text-sm text-slate-500">
+          No products selected for label printing.
+        </p>
+        {testPrintButton}
+        <PrinterStatus access={access} />
+      </div>
     );
   }
 
   return (
     <div className="label-print-root">
       <div className="label-toolbar">
-        <button
-          type="button"
-          className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          disabled={!ready}
-          onClick={() => window.print()}
-          title="Prints through the POS58 queue installed on this computer"
-        >
-          Print {labelCount} label{labelCount === 1 ? "" : "s"}
-        </button>
+        {usbSupported && (
+          <button
+            type="button"
+            className="rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            disabled={!ready || busy !== ""}
+            onClick={handleUsbPrint}
+            title="Sends ESC/POS straight down the USB cable — no driver needed"
+          >
+            {busy === "usb"
+              ? "Sending…"
+              : `Print ${labelCount} label${labelCount === 1 ? "" : "s"} over USB`}
+          </button>
+        )}
+
+        {serialSupported && (
+          <button
+            type="button"
+            className="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            disabled={!ready || busy !== ""}
+            onClick={handleSerialPrint}
+            title="Pair the printer over Bluetooth, then pick its cu.* port"
+          >
+            {busy === "serial"
+              ? "Sending…"
+              : `Print ${labelCount} label${labelCount === 1 ? "" : "s"} over Bluetooth`}
+          </button>
+        )}
 
         <label className="flex items-center gap-1.5 text-xs text-slate-600">
           Copies each
@@ -236,58 +328,30 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
           {ready ? "Download PNG" : "Preparing label…"}
         </button>
 
-        <details className="w-full text-xs text-slate-700">
-          <summary className="cursor-pointer select-none py-1 font-medium">
-            Print without a driver
-          </summary>
-          <div className="mt-2 flex flex-wrap items-center gap-3 rounded border border-slate-200 bg-slate-50 px-3 py-3">
-            {usbSupported && (
-              <button
-                type="button"
-                className="rounded bg-slate-800 px-3 py-1.5 font-medium text-white disabled:opacity-50"
-                disabled={!ready || busy !== ""}
-                onClick={handleUsbPrint}
-              >
-                {busy === "usb" ? "Sending…" : "Print over USB"}
-              </button>
-            )}
+        {testPrintButton}
 
-            {serialSupported && (
-              <button
-                type="button"
-                className="rounded bg-slate-800 px-3 py-1.5 font-medium text-white disabled:opacity-50"
-                disabled={!ready || busy !== ""}
-                onClick={handleSerialPrint}
-                title="Pair the printer over Bluetooth, then pick its cu.* port"
-              >
-                {busy === "serial" ? "Sending…" : "Print over Bluetooth"}
-              </button>
-            )}
+        {access?.serialPaired && (
+          <button
+            type="button"
+            className="text-xs text-slate-600 underline disabled:opacity-50"
+            disabled={busy !== ""}
+            onClick={handleForgetPort}
+            title="Forget the remembered Bluetooth port and pick again next print"
+          >
+            Choose a different port
+          </button>
+        )}
 
-            <p className="w-full text-slate-600">
-              These send the printer&apos;s own ESC/POS bytes and need no driver
-              installed. Use them on a machine where the POS58 queue is not set
-              up. On a Mac, remove the POS58 queue first — the system print
-              service holds the USB port and the browser cannot claim it. Over
-              Bluetooth, pick the <strong>cu.</strong> entry, not the bare name.
-            </p>
-          </div>
-        </details>
+        <PrinterStatus access={access} />
 
         <p className="w-full text-xs text-slate-600">
           <strong>{labelCount}</strong> label{labelCount === 1 ? "" : "s"} ·{" "}
-          {DRIVER_PAGE_W_MM} × {DRIVER_PAGE_H_MM} mm. <strong>Print</strong>{" "}
-          uses the <strong>POS58</strong> printer queue — pick it in the dialog,
-          with paper size {DRIVER_PAGE_W_MM} × {DRIVER_PAGE_H_MM} mm. Any other
-          queue (POS80, CLA58) prints pages of code or nothing at all.
+          {THERMAL_LABEL_SIZE_LABEL}. Printing sends the printer its own
+          ESC/POS bytes, so nothing has to be installed on this computer. On a
+          Mac, remove the POS58 print queue first — the system print service
+          holds the USB port and the browser cannot claim it. Over Bluetooth,
+          pick the <strong>cu.</strong> entry, not the bare name.
         </p>
-      </div>
-
-      <div className="label-print-sheet" aria-hidden="true">
-        {printSheet.map((label) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={label.key} src={label.src} alt={label.alt} />
-        ))}
       </div>
 
       <div className="thermal-label-preview-grid">

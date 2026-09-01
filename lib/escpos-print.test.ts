@@ -63,8 +63,10 @@ test("buildEscPosLabel", async (t) => {
   const job = buildEscPosLabel(raster());
 
   await t.test("matches the byte count the vendor driver produces", () => {
-    // 64 lead-in + 8 full bands + 1 remainder band + 3-byte feed = 9739.
-    assert.equal(job.length, 9739);
+    // 64 lead-in + 10 full bands (8-byte header + 24 × 48 each) + 2-byte
+    // gap seek = 11666 for the 384 × 240 dot label.
+    assert.equal(job.length, 64 + 10 * (8 + BAND_ROWS * BYTES_PER_ROW) + 2);
+    assert.equal(job.length, 11666);
   });
 
   await t.test("leads with the zero-byte wake-up", () => {
@@ -90,19 +92,26 @@ test("buildEscPosLabel", async (t) => {
     );
   });
 
-  await t.test("ends with ESC J feeding exactly the liner gap", () => {
-    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, DEFAULT_FEED_DOTS]);
+  await t.test("ends by seeking the die cut with GS FF", () => {
+    // The printer's own gap sensor, not a counted feed: this is what stops a
+    // run drifting out of registration one label at a time.
+    assert.deepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
   });
 
-  await t.test("advances exactly one sticker pitch, so labels cannot creep", () => {
-    // ESC/POS has no idea what a label is: it advances what it is told. If
-    // image + feed overshoots the pitch, every label drifts further down the
-    // roll than the last. The vendor driver's 80-dot tear-off feed did this.
+  await t.test("falls back to a counted feed when asked", () => {
+    const blind = buildEscPosLabel(raster(), { endOfLabel: "feed" });
+    assert.deepEqual([...blind.subarray(-3)], [0x1b, 0x4a, DEFAULT_FEED_DOTS]);
+  });
+
+  await t.test("counts exactly one sticker pitch when it has to count", () => {
+    // Without the sensor the printer advances only what it is told. If image
+    // + feed overshoots the pitch, every label drifts further down the roll
+    // than the last; the vendor driver's 80-dot tear-off feed did this.
     const pitch = (LABEL_H_MM + LABEL_GAP_MM) * DOTS_PER_MM;
     assert.equal(LABEL_H_DOTS + DEFAULT_FEED_DOTS, pitch);
   });
 
-  await t.test("honours an explicit gap for a different roll", () => {
+  await t.test("an explicit gap means the sensor cannot be used", () => {
     const custom = buildEscPosLabel(raster(), { feedDots: 24 });
     assert.deepEqual([...custom.subarray(-3)], [0x1b, 0x4a, 24]);
   });

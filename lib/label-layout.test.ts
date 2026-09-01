@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { buildLabelPlan, measureText } from "./label-layout";
 import {
   LABEL_H_DOTS,
+  LABEL_LAYOUT,
   LABEL_W_DOTS,
   PRINT_W_DOTS,
   PRINT_X_DOTS,
@@ -33,7 +34,7 @@ function textExtent(item: ReturnType<typeof buildLabelPlan>["texts"][number]) {
 }
 
 describe("label plan", () => {
-  it("is exactly one 50 × 25 mm sticker", () => {
+  it("is exactly one 50 × 30 mm sticker", () => {
     for (const fields of SAMPLES) {
       const plan = buildLabelPlan(fields);
       assert.equal(plan.widthDots, LABEL_W_DOTS);
@@ -91,9 +92,13 @@ describe("label plan", () => {
     }
   });
 
-  it("gives a long product name two lines rather than one clipped one", () => {
+  it("gives a long product name every line it is allowed", () => {
     const plan = buildLabelPlan(SAMPLES[1]!);
-    const nameLines = plan.texts.filter((item) => item.baseline >= 46 && item.baseline <= 70);
-    assert.equal(nameLines.length, 2);
+    const { nameBaseline, nameLineHeight, nameLines } = LABEL_LAYOUT;
+    const last = nameBaseline + (nameLines - 1) * nameLineHeight;
+    const lines = plan.texts.filter(
+      (item) => item.baseline >= nameBaseline && item.baseline <= last
+    );
+    assert.equal(lines.length, nameLines);
   });
 });

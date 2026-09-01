@@ -15,7 +15,7 @@ async function main() {
 
   const outDir = join(process.cwd(), "tmp");
   mkdirSync(outDir, { recursive: true });
-  const outPath = join(outDir, "skywin-all-labels-50x25.pdf");
+  const outPath = join(outDir, "skywin-all-labels-50x30.pdf");
   writeFileSync(outPath, pdf);
 
   console.log(`Wrote ${outPath} (${pdf.length} bytes, ${products.length} labels)`);

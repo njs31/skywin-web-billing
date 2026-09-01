@@ -77,7 +77,7 @@ function drawLabel(doc: jsPDF, product: LabelPdfProduct) {
   }
 }
 
-/** One 50×25 mm page per product — matches the thermal sticker. */
+/** One 50×30 mm page per product — matches the thermal sticker. */
 export async function buildAllLabelsPdf(products: LabelPdfProduct[]) {
   const doc = new jsPDF({
     orientation: "landscape",

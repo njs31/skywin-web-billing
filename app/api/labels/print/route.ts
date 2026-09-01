@@ -44,8 +44,10 @@ export async function GET(req: NextRequest) {
     Math.max(1, Number(url.searchParams.get("copies")) || 1)
   );
 
-  // Optional override for rolls whose liner gap is not the 2 mm we assume.
-  // Image height + this gap must equal the sticker pitch, or labels creep.
+  // Escape hatch for stock the gap sensor cannot read. Labels normally end
+  // with GS FF and the printer finds the die cut itself; passing ?gap= drops
+  // it back to counting dots, where image height + this gap must equal the
+  // sticker pitch or labels creep.
   // Note the explicit null check: Number(null) is 0, so reading the param
   // straight through would silently turn "not specified" into "zero gap".
   const rawGap = url.searchParams.get("gap");
