@@ -628,7 +628,7 @@ export function PurchaseForm({
             onProductScanned={(product, qty) =>
               addItem(product, Math.max(1, Math.round(qty) || 1))
             }
-            placeholder="Scan QR / barcode to add stock items"
+            placeholder="Scan barcode to add stock items"
           />
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">

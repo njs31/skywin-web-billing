@@ -1,34 +1,31 @@
 import { db } from "@/db";
 import { products, stockMovements } from "@/db/schema";
 import { eq, or, sql, and } from "drizzle-orm";
+import { parseScanCode } from "@/lib/scan-code";
 
 /** Resolve a scanned QR/barcode value to a product in a single query. */
 export async function getProductByScanCode(code: string) {
-  const raw = code.trim();
-  if (!raw) return null;
-
-  // "SW-123", "SW123", or a plain number can be a product id.
-  const idMatch = raw.match(/^SW-?(\d+)$/i) ?? raw.match(/^(\d+)$/);
-  const parsedId = idMatch ? parseInt(idMatch[1], 10) : null;
+  const { text, id } = parseScanCode(code);
+  if (!text) return null;
 
   const matchers = [
-    sql`lower(${products.barcode}) = lower(${raw})`,
-    sql`lower(${products.sku}) = lower(${raw})`,
-    sql`lower(${products.name}) = lower(${raw})`,
+    sql`lower(${products.barcode}) = lower(${text})`,
+    sql`lower(${products.sku}) = lower(${text})`,
+    sql`lower(${products.name}) = lower(${text})`,
   ];
-  if (parsedId !== null) matchers.unshift(eq(products.id, parsedId));
+  if (id !== null) matchers.push(eq(products.id, id));
 
   const [product] = await db
     .select()
     .from(products)
     .where(and(eq(products.isActive, true), or(...matchers)))
     .orderBy(
-      // Prefer id match, then barcode, then sku, then name.
-      parsedId !== null
-        ? sql`(${products.id} = ${parsedId}) desc`
-        : sql`1`,
-      sql`(lower(${products.barcode}) = lower(${raw})) desc`,
-      sql`(lower(${products.sku}) = lower(${raw})) desc`
+      // Barcode first, id last. A scanner reads the barcode off the product,
+      // so a numeric barcode that happens to equal some other product's id
+      // must not win — that silently bills the wrong item.
+      sql`(lower(${products.barcode}) = lower(${text})) desc`,
+      sql`(lower(${products.sku}) = lower(${text})) desc`,
+      id !== null ? sql`(${products.id} = ${id}) desc` : sql`1`
     )
     .limit(1);
 

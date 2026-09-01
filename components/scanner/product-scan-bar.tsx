@@ -7,7 +7,7 @@ import type { Product } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { QrScannerDialog } from "./qr-scanner-dialog";
+import { BarcodeScannerDialog } from "./barcode-scanner-dialog";
 
 type ProductScanBarProps = {
   onProductScanned: (product: Product, qty: number) => void;
@@ -42,7 +42,21 @@ export function ProductScanBar({
       const trimmed = code.trim();
       if (!trimmed) return;
 
-      const product = await getProductByScanCode(trimmed);
+      // A failed lookup must say so. This used to be an unguarded await, so
+      // when the query threw the rejection went nowhere: the scan cleared
+      // nothing, said nothing and added nothing, which reads as a broken
+      // scanner rather than a broken code.
+      let product: Product | null;
+      try {
+        product = await getProductByScanCode(trimmed);
+      } catch (cause) {
+        console.error(cause);
+        setError(`Could not look up "${trimmed}". Try again.`);
+        setScanValue("");
+        inputRef.current?.focus();
+        return;
+      }
+
       if (!product) {
         setError(`No product found for: ${trimmed}`);
         setScanValue("");
@@ -156,10 +170,10 @@ export function ProductScanBar({
         </div>
       )}
 
-      <QrScannerDialog
+      <BarcodeScannerDialog
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}
-        onScan={(code) => void processCode(code)}
+        onScan={(code: string) => void processCode(code)}
       />
     </div>
   );

@@ -582,7 +582,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
 
         <ProductScanBar
           onProductScanned={(product, qty) => addToCart(product, qty)}
-          placeholder="Scan QR / barcode — adds to cart instantly"
+          placeholder="Scan barcode — adds to cart instantly"
         />
 
         <div className="relative">
