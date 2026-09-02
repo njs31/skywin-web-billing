@@ -202,9 +202,23 @@ export const LABEL_LAYOUT = {
   barcodeH: 48,
   codeBaseline: 158,
   codeSize: 10,
+  /**
+   * EXP and MRP are read across a counter, so they are the largest text below
+   * the masthead — bigger than the code digits above them, which are only
+   * there for a human to check against the barcode.
+   *
+   * Size is the only lever here. Weight is not: bold at this size prints as a
+   * blob once thermal bleed closes the counters, which is why the whole label
+   * below the masthead is regular. Bigger and lighter beats smaller and
+   * heavier on this printer.
+   *
+   * The ceiling is the burn cut-off, not the sticker. Ink at row 181 is known
+   * to print and rows past 182 are unverified, so at this baseline the price
+   * can reach 16 dots and no further.
+   */
   footerBaseline: 176,
-  expSize: 11,
-  mrpSize: 12,
+  expSize: 14,
+  mrpSize: 16,
 } as const;
 
 /** Lowest ink on the label. Must not reach PRINT_BAND_BOTTOM_DOTS. */
