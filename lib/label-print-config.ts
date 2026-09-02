@@ -175,10 +175,17 @@ export const LABEL_LAYOUT = {
   /** The shop name is the masthead: centred, and the largest thing on it. */
   companyBaseline: 56,
   companySize: 18,
-  /** Product name, centred under the masthead. */
+  /**
+   * Product name, centred under the masthead.
+   *
+   * Regular weight, like everything below the masthead. Bold at this size
+   * prints as a blob: a bold stroke is two dots, thermal bleed spreads each
+   * one, and the counters close up — the shop could see the text and not read
+   * it. Lighter and a dot larger reads better than heavier and smaller.
+   */
   nameBaseline: 76,
-  nameSize: 12,
-  nameLineHeight: 13,
+  nameSize: 13,
+  nameLineHeight: 14,
   nameLines: 2,
   /**
    * The barcode is centred by layoutCode128Dots inside the content column and
@@ -194,11 +201,10 @@ export const LABEL_LAYOUT = {
    */
   barcodeH: 48,
   codeBaseline: 158,
-  codeSize: 9,
+  codeSize: 10,
   footerBaseline: 176,
-  /** Bold, and a dot larger than the code text: it is read at arm's length. */
-  expSize: 10,
-  mrpSize: 11,
+  expSize: 11,
+  mrpSize: 12,
 } as const;
 
 /** Lowest ink on the label. Must not reach PRINT_BAND_BOTTOM_DOTS. */

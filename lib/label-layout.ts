@@ -160,21 +160,24 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     anchor: "middle",
   });
 
+  // Only the masthead is bold. Below it, bold strokes are two dots wide and
+  // thermal bleed closes the counters, so the text prints legible on screen
+  // and unreadable on paper.
   const nameLines = wrapToLines(
     fields.name.toUpperCase(),
     L.nameSize,
-    true,
+    false,
     CONTENT_W_DOTS,
     L.nameLines
   );
   nameLines.forEach((line, index) => {
-    const fitted = fitToWidth(line, L.nameSize, true, CONTENT_W_DOTS);
+    const fitted = fitToWidth(line, L.nameSize, false, CONTENT_W_DOTS);
     texts.push({
       text: fitted.text,
       x: centre,
       baseline: L.nameBaseline + index * L.nameLineHeight,
       size: fitted.size,
-      bold: true,
+      bold: false,
       anchor: "middle",
     });
   });
@@ -184,40 +187,38 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     CONTENT_W_DOTS
   );
 
-  const code = fitToWidth(fields.code, L.codeSize, true, CONTENT_W_DOTS);
+  const code = fitToWidth(fields.code, L.codeSize, false, CONTENT_W_DOTS);
   texts.push({
     text: code.text,
     x: centre,
     baseline: L.codeBaseline,
     size: code.size,
-    bold: true,
+    bold: false,
     anchor: "middle",
   });
 
   // EXP and MRP share the footer line; MRP wins the space it needs.
   const mrpText = `MRP ${fields.mrp}`;
-  const mrp = fitToWidth(mrpText, L.mrpSize, true, CONTENT_W_DOTS * 0.6);
+  const mrp = fitToWidth(mrpText, L.mrpSize, false, CONTENT_W_DOTS * 0.6);
   const expText = `EXP ${fields.exp || "—"}`;
-  const expRoom = CONTENT_W_DOTS - measureText(mrp.text, mrp.size, true) - 8;
-  // Bold, like everything else here. It was the one light run on the label and
-  // the one the shop could not read: at this size a regular weight is a single
-  // dot wide, which a thermal head cannot lay down cleanly.
-  const exp = fitToWidth(expText, L.expSize, true, Math.max(24, expRoom));
+  const expRoom = CONTENT_W_DOTS - measureText(mrp.text, mrp.size, false) - 8;
+  const exp = fitToWidth(expText, L.expSize, false, Math.max(24, expRoom));
 
   texts.push({
     text: exp.text,
     x: left,
     baseline: L.footerBaseline,
     size: exp.size,
-    bold: true,
+    bold: false,
     anchor: "start",
   });
+  // The price keeps its prominence through size, not weight.
   texts.push({
     text: mrp.text,
     x: right,
     baseline: L.footerBaseline,
     size: mrp.size,
-    bold: true,
+    bold: false,
     anchor: "end",
   });
 
