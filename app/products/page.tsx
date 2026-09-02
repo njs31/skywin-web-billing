@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getProducts, getProductCount } from "@/lib/queries/products";
 import { ProductTable } from "@/components/products/product-table";
+import { presentDotsFromMm } from "@/lib/escpos-print";
+import { getSettings } from "@/lib/settings";
 import { ProductSearch } from "@/components/products/product-search";
 import { ProductExportButtons } from "@/components/products/product-export-buttons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +22,10 @@ export default async function ProductsPage({
     getProducts(q, page, PAGE_SIZE),
     q ? Promise.resolve(0) : getProductCount(),
   ]);
+
+  // The printer's tear-off feed, for the per-row print button.
+  const settings = await getSettings();
+  const presentDots = presentDotsFromMm(settings.labelTearOffMm);
 
   const total = q ? products.length : totalCount;
   const totalPages = q ? 1 : Math.ceil(total / PAGE_SIZE);
@@ -59,7 +65,7 @@ export default async function ProductsPage({
 
       <Card>
         <CardContent className="p-0">
-          <ProductTable products={products} />
+          <ProductTable products={products} presentDots={presentDots} />
         </CardContent>
       </Card>
 

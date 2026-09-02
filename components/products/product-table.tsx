@@ -16,9 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { Pencil, Trash2, Check, X, Printer, Layers } from "lucide-react";
-import Link from "next/link";
+import { Pencil, Trash2, Check, X, Layers } from "lucide-react";
 import { BatchEditor } from "@/components/products/batch-editor";
+import { PrintLabelButton } from "@/components/products/print-label-button";
 import { UNIT_OPTIONS } from "@/lib/units";
 import { isInventoryPinRequired, verifyInventoryAdminPin } from "@/lib/actions/billing";
 
@@ -50,7 +50,14 @@ function isExpired(value: string | null | undefined) {
   return expiry < today;
 }
 
-export function ProductTable({ products }: { products: Product[] }) {
+export function ProductTable({
+  products,
+  presentDots,
+}: {
+  products: Product[];
+  /** Tear-off feed from Settings, passed down to the print button. */
+  presentDots?: number;
+}) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -370,17 +377,10 @@ export function ProductTable({ products }: { products: Product[] }) {
                   </div>
                 ) : (
                   <div className="flex justify-end gap-1">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                      asChild
-                      title="Print barcode label"
-                    >
-                      <Link href={`/products/labels?ids=${product.id}`} target="_blank">
-                        <Printer className="h-3.5 w-3.5" />
-                      </Link>
-                    </Button>
+                    <PrintLabelButton
+                      product={product}
+                      presentDots={presentDots}
+                    />
                     <Button
                       size="icon"
                       variant="ghost"

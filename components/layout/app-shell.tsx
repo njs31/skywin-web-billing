@@ -17,11 +17,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <main className="h-screen w-screen overflow-auto bg-[#050605]">{children}</main>;
   }
 
-  // Bare shell for label pages — never designed for browser print.
-  if (pathname.startsWith("/products/labels")) {
-    return <main className="label-print-shell min-h-screen w-screen bg-white">{children}</main>;
-  }
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 flex-col md:flex-row">
       <header className="no-print flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 md:hidden">

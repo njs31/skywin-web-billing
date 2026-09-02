@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useRouter } from "next/navigation";
+import {
+  isSerialPrintSupported,
+  isUsbPrintSupported,
+  printTestLabelViaSerial,
+  printTestLabelViaUsb,
+} from "@/lib/thermal-usb-print";
+import { presentDotsFromMm } from "@/lib/escpos-print";
 
 export function SettingsForm({ settings }: { settings: AppSettings }) {
   const router = useRouter();
@@ -192,6 +199,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
                 the tear bar. Raise it if the label will not tear off; lower it
                 if part of the next sticker comes out.
               </p>
+              <TestLabelButton />
             </div>
           </div>
 
@@ -285,5 +293,52 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Print one diagnostic label.
+ *
+ * It lives beside the tear-off field because that is the setting it exists to
+ * check: the label carries a border on the edge of the printable area and a
+ * millimetre scale down its left side, so where it stops against the tear bar
+ * can be read off rather than guessed.
+ *
+ * It reads the value typed in the box rather than the saved one, so a distance
+ * can be tried before committing to it — which is the whole point of having
+ * the button next to the field.
+ */
+function TestLabelButton() {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+
+  async function print() {
+    if (busy) return;
+    setBusy(true);
+    setNote("");
+    try {
+      const mm = (document.querySelector('input[name="labelTearOffMm"]') as
+        | HTMLInputElement
+        | null)?.value;
+      const presentDots = presentDotsFromMm(mm);
+      if (isUsbPrintSupported()) await printTestLabelViaUsb({ presentDots });
+      else if (isSerialPrintSupported()) await printTestLabelViaSerial({ presentDots });
+      else throw new Error("Needs Google Chrome or Edge on a computer with the printer attached.");
+      setNote("Sent to the printer.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "NotFoundError") return;
+      setNote(error instanceof Error ? error.message : "Could not print.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <Button type="button" size="sm" variant="outline" disabled={busy} onClick={print}>
+        {busy ? "Printing…" : "Print test label"}
+      </Button>
+      {note && <span className="text-xs text-slate-500">{note}</span>}
+    </div>
   );
 }
