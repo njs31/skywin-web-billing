@@ -191,8 +191,15 @@ test("buildEscPosJob", async (t) => {
     // Half millimetres land on whole dots: the head lays 8 to the millimetre.
     assert.equal(presentDotsFromMm("12.5"), 100);
     assert.equal(presentDotsFromMm("13"), 104);
-    // Finer than a dot still resolves to one, rather than being discarded.
+    // A tenth of a millimetre is a real change: the head lays 8 dots to the
+    // millimetre, so these are one dot apart and feed differently.
+    assert.equal(presentDotsFromMm("13.1"), 105);
+    assert.equal(presentDotsFromMm("13.2"), 106);
+    // But 0.125 mm is the floor, so finer than that resolves to the same dot
+    // rather than being discarded.
     assert.equal(presentDotsFromMm("12.55"), 100);
+    assert.equal(presentDotsFromMm("13.15"), 105);
+    assert.equal(presentDotsFromMm("13.3"), 106);
     assert.equal(presentDotsFromMm(18), 144);
     assert.equal(presentDotsFromMm(""), DEFAULT_PRESENT_DOTS);
     assert.equal(presentDotsFromMm(null), DEFAULT_PRESENT_DOTS);

@@ -191,16 +191,19 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
                 type="number"
                 min={0}
                 max={25}
-                // Half-millimetre steps. The head lays 8 dots to the
-                // millimetre, so 0.5 mm is 4 dots — fine enough to place the
-                // tear line, coarse enough that the arrows stay usable.
-                step={0.5}
+                // Tenths, which is as fine as the setting is worth having:
+                // the head lays 8 dots to the millimetre, so it can only
+                // actually move in steps of 0.125 mm. 13.1 and 13.2 are a
+                // real dot apart; 13.2 and 13.3 are the same feed.
+                step={0.1}
                 defaultValue={settings.labelTearOffMm}
               />
               <p className="mt-1 text-xs text-slate-500">
                 How far the paper feeds after printing so the last label clears
                 the tear bar. Raise it if the label will not tear off; lower it
-                if part of the next sticker comes out.
+                if part of the next sticker comes out. The printer moves in
+                steps of 0.125 mm, so anything finer than that rounds to the
+                same feed.
               </p>
               <TestLabelButton />
             </div>
