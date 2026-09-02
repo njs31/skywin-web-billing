@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { partyPayments, purchaseReturns, purchases, suppliers } from "@/db/schema";
 import { asc, count, eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
+import { isUniqueViolation } from "@/lib/db-errors";
 
 export const getAllSuppliers = unstable_cache(
   async () => db.select().from(suppliers).orderBy(asc(suppliers.name)),
@@ -148,8 +149,7 @@ export async function createSupplier(input: CreateSupplierInput | string, contac
     await revalidateSupplierPaths(supplier.id);
     return supplier;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("unique") || message.includes("duplicate")) {
+    if (isUniqueViolation(err)) {
       throw new Error("A supplier with this name already exists");
     }
     throw err;
@@ -170,8 +170,7 @@ export async function updateSupplier(id: number, input: CreateSupplierInput) {
     await revalidateSupplierPaths(id);
     return supplier;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("unique") || message.includes("duplicate")) {
+    if (isUniqueViolation(err)) {
       throw new Error("A supplier with this name already exists");
     }
     throw err;
