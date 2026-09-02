@@ -11,8 +11,8 @@ import { useRouter } from "next/navigation";
 import {
   isSerialPrintSupported,
   isUsbPrintSupported,
-  printTestLabelViaSerial,
-  printTestLabelViaUsb,
+  printTestLabelVia,
+  resolveTransport,
 } from "@/lib/thermal-usb-print";
 import { presentDotsFromMm } from "@/lib/escpos-print";
 
@@ -327,10 +327,15 @@ function TestLabelButton() {
         | HTMLInputElement
         | null)?.value;
       const presentDots = presentDotsFromMm(mm);
-      if (isUsbPrintSupported()) await printTestLabelViaUsb({ presentDots });
-      else if (isSerialPrintSupported()) await printTestLabelViaSerial({ presentDots });
-      else throw new Error("Needs Google Chrome or Edge on a computer with the printer attached.");
-      setNote("Sent to the printer.");
+      if (!isUsbPrintSupported() && !isSerialPrintSupported()) {
+        throw new Error("Needs Google Chrome or Edge on a computer with the printer attached.");
+      }
+      // Whatever is already connected. Falling back to USB purely because the
+      // browser supports it is what made Bluetooth unreachable on Windows.
+      const transport =
+        (await resolveTransport()) ?? (isUsbPrintSupported() ? "usb" : "bluetooth");
+      await printTestLabelVia(transport, { presentDots });
+      setNote(`Sent over ${transport === "usb" ? "USB" : "Bluetooth"}.`);
     } catch (error) {
       if (error instanceof DOMException && error.name === "NotFoundError") return;
       setNote(error instanceof Error ? error.message : "Could not print.");

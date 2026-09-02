@@ -383,6 +383,76 @@ export type PrinterAccess = {
  * will tell us that without opening the device, and opening it to find out
  * would be indistinguishable from a print job to a printer that is awake.
  */
+export type Transport = "usb" | "bluetooth";
+
+const TRANSPORT_KEY = "skywin.labelTransport";
+
+/**
+ * Which wire this machine prints over.
+ *
+ * A per-machine choice, not a per-shop one, so it lives in browser storage
+ * rather than Settings: the same shop can have a Mac on USB and a Windows till
+ * on Bluetooth, and on Windows USB is not a preference but an impossibility —
+ * `usbprint.sys` owns printer-class devices and Chrome is refused the
+ * interface whatever driver is installed.
+ */
+export function rememberedTransport(): Transport | null {
+  try {
+    const value = localStorage.getItem(TRANSPORT_KEY);
+    return value === "usb" || value === "bluetooth" ? value : null;
+  } catch {
+    // Private windows and locked-down browsers throw on access.
+    return null;
+  }
+}
+
+function rememberTransport(transport: Transport) {
+  try {
+    localStorage.setItem(TRANSPORT_KEY, transport);
+  } catch {
+    // Not remembering is survivable; it only means asking again.
+  }
+}
+
+/**
+ * The transport to print over without asking, or null if the operator has to
+ * choose.
+ *
+ * An existing grant is the real memory here — the browser holds it, it
+ * survives restarts, and printing through it raises no chooser. The stored
+ * preference only breaks a tie when both are granted.
+ */
+export async function resolveTransport(): Promise<Transport | null> {
+  const access = await getPrinterAccess();
+  const remembered = rememberedTransport();
+  if (remembered === "usb" && access.usbPaired) return "usb";
+  if (remembered === "bluetooth" && access.serialPaired) return "bluetooth";
+  if (access.usbPaired) return "usb";
+  if (access.serialPaired) return "bluetooth";
+  return null;
+}
+
+/** Print over a named wire, and remember it worked. */
+export async function printLabelsVia(
+  transport: Transport,
+  products: LabelProduct[],
+  options: PrintJobOptions = {}
+) {
+  if (transport === "usb") await printLabelsViaUsb(products, options);
+  else await printLabelsViaSerial(products, options);
+  rememberTransport(transport);
+}
+
+/** Print the diagnostic label over a named wire. */
+export async function printTestLabelVia(
+  transport: Transport,
+  options: PrintJobOptions = {}
+) {
+  if (transport === "usb") await printTestLabelViaUsb(options);
+  else await printTestLabelViaSerial(options);
+  rememberTransport(transport);
+}
+
 export async function getPrinterAccess(): Promise<PrinterAccess> {
   const usbSupported = isUsbPrintSupported();
   const serialSupported = isSerialPrintSupported();
