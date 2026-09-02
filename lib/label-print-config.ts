@@ -36,26 +36,37 @@ export const LABEL_W_DOTS = LABEL_W_MM * DOTS_PER_MM; // 400
 export const LABEL_H_DOTS = LABEL_H_MM * DOTS_PER_MM; // 240
 
 /**
- * Dots the print head can actually burn. 2-inch heads are 384 dots (48 mm)
- * or 432 dots (54 mm) depending on the batch; 384 is the safe floor. We keep
- * every mark inside a 384-dot window centred on the 50 mm label, so the label
- * cannot be clipped or wrapped onto the next sticker on either head.
+ * Where the head's first dot lands, measured from the sticker's left edge.
  *
- * That centring is also what the paper path gives us: a 48 mm head centred on
- * the 55 mm liner reaches from 3.5 mm to 51.5 mm across the paper, and the
- * sticker runs 2.5 mm to 52.5 mm — 1 mm of unreachable sticker on each side,
- * which is exactly PRINT_X_DOTS.
+ * Measured on 2026-09-02, not derived. The layout puts MRP's right edge 3 mm
+ * in from the sticker, and on paper it printed hard against the edge with a
+ * correspondingly wide gap on the left — so the artwork was landing 3 mm
+ * further right than intended, and the head starts at 4 mm rather than the
+ * 1 mm this file used to assume.
+ *
+ * The old assumption was that a 48 mm head sits centred on the 55 mm liner.
+ * It does not: starting at 4 mm it reaches to 52 mm, past the sticker's right
+ * edge at 50 mm, so the last 2 mm of the head hangs off the label entirely.
+ * The paper evidently rides to one side of the paper path.
  */
-export const PRINT_W_DOTS = 384;
-export const PRINT_X_DOTS = (LABEL_W_DOTS - PRINT_W_DOTS) / 2; // 8
+export const PRINT_X_DOTS = 32; // 4 mm
+
+/**
+ * Dots of the head that actually fall on the sticker.
+ *
+ * The head itself is 384 dots (48 mm), but only the ones between
+ * PRINT_X_DOTS and the sticker's right edge land on anything worth printing,
+ * so that is all the raster carries. The rest of the head burns nothing.
+ */
+export const PRINT_W_DOTS = LABEL_W_DOTS - PRINT_X_DOTS; // 368
 
 /**
  * Page size to ask a print driver for, in mm.
  *
- * Not the 50 mm of the sticker: a 384-dot head can only burn 48 mm. Asking for
+ * Not the 50 mm of the sticker: the head reaches only part of it. Asking for
  * the full 50 mm makes CUPS either scale the page or clip its right edge,
- * which shifts the barcode off-centre. Printing the 48 mm printable window
- * instead loses nothing, because every mark already sits inside it.
+ * which shifts the barcode off-centre. Printing the reachable window instead
+ * loses nothing, because every mark already sits inside it.
  */
 export const DRIVER_PAGE_W_MM = PRINT_W_DOTS / DOTS_PER_MM; // 48
 export const DRIVER_PAGE_H_MM = LABEL_H_MM;
@@ -105,14 +116,20 @@ export const PRINT_BAND_TOP_DOTS = PRINT_TOP_OFFSET_DOTS; // 40
 export const PRINT_BAND_BOTTOM_DOTS = PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS; // 224
 
 /**
- * Margin inside the printable window.
+ * The column the content occupies, centred on the sticker.
  *
- * 2 mm rather than 1: EXP and MRP sit in the bottom corners, and at 1 mm they
- * read as touching the sticker edge even when they are technically inside it.
+ * Centred on the *sticker*, not on the printable window, or the label reads as
+ * lopsided however neat the numbers are. The head cannot reach the first 4 mm,
+ * so a centred block can be at most 50 - 2 x 4 = 42 mm wide, and its own left
+ * edge lands exactly where the head starts.
+ *
+ * That leaves a 4 mm blank margin either side: unreachable paper on the left,
+ * deliberate margin on the right. There is no room for more — at 40 mm the
+ * Code 128 for a long code drops to one dot per module, which thermal bleed
+ * closes up.
  */
-export const PAD_X_DOTS = 16;
-export const CONTENT_X_DOTS = PRINT_X_DOTS + PAD_X_DOTS; // 24
-export const CONTENT_W_DOTS = PRINT_W_DOTS - PAD_X_DOTS * 2; // 352
+export const CONTENT_X_DOTS = PRINT_X_DOTS; // 32
+export const CONTENT_W_DOTS = LABEL_W_DOTS - PRINT_X_DOTS * 2; // 336
 
 export const THERMAL_PRINTER_DPI = 203;
 export const THERMAL_LABEL_SIZE_LABEL = "50 × 30 mm";

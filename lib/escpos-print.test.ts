@@ -68,10 +68,10 @@ test("buildEscPosLabel", async (t) => {
   const job = buildEscPosLabel(raster());
 
   await t.test("matches the byte count the vendor driver produces", () => {
-    // 64 lead-in + 6 full bands + 2-byte gap seek, for the 384 × 144 dot
+    // 64 lead-in + 6 full bands + 2-byte gap seek, for the 368 × 144 dot
     // printable band. buildEscPosLabel is one label, so no present feed.
     assert.equal(job.length, 64 + 6 * (8 + BAND_ROWS * BYTES_PER_ROW) + 2);
-    assert.equal(job.length, 7026);
+    assert.equal(job.length, 6738);
   });
 
   await t.test("leads with the zero-byte wake-up", () => {

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildLabelPlan, measureText } from "./label-layout";
 import {
+  CONTENT_W_DOTS,
+  CONTENT_X_DOTS,
   LABEL_H_DOTS,
   LABEL_LAYOUT,
   LABEL_W_DOTS,
@@ -112,13 +114,26 @@ describe("label plan", () => {
     }
   });
 
+  it("centres the content column on the sticker", () => {
+    // The bug this guards: the column was centred on the printable window
+    // instead, and since the head starts 4 mm in from the sticker's left edge
+    // and overhangs its right, that printed the whole label 3 mm right and
+    // pushed MRP hard against the edge.
+    assert.equal(
+      CONTENT_X_DOTS + CONTENT_W_DOTS / 2,
+      LABEL_W_DOTS / 2,
+      "content column is not centred on the sticker"
+    );
+  });
+
   it("centres the barcode in the content column", () => {
+    const contentRight = CONTENT_X_DOTS + CONTENT_W_DOTS;
     for (const fields of SAMPLES) {
       const plan = buildLabelPlan(fields);
       const xs = plan.bars.map((bar) => bar.x);
       const ends = plan.bars.map((bar) => bar.x + bar.width);
-      const leftGap = Math.min(...xs) - LEFT;
-      const rightGap = RIGHT - Math.max(...ends);
+      const leftGap = Math.min(...xs) - CONTENT_X_DOTS;
+      const rightGap = contentRight - Math.max(...ends);
       // Whole-dot modules mean the two margins can differ by a dot or so.
       assert.ok(
         Math.abs(leftGap - rightGap) <= 2,

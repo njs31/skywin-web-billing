@@ -91,9 +91,12 @@ describe("thermal sticker geometry", () => {
     assert.equal(mmToDots(30), 240);
   });
 
-  it("centres a 384-dot printable window inside the label", () => {
-    assert.equal(PRINT_W_DOTS, 384);
-    assert.equal(PRINT_X_DOTS, 8);
-    assert.equal(PRINT_X_DOTS * 2 + PRINT_W_DOTS, LABEL_W_DOTS);
+  it("starts the raster where the head actually starts", () => {
+    // Measured, not derived: the head's first dot lands 4 mm in from the
+    // sticker's left edge, and the raster runs from there to the sticker's
+    // right edge. It used to assume a centred window, which printed the whole
+    // label 3 mm right and pushed MRP off the edge.
+    assert.equal(PRINT_X_DOTS, 32);
+    assert.equal(PRINT_X_DOTS + PRINT_W_DOTS, LABEL_W_DOTS);
   });
 });
