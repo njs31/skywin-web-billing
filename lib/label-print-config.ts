@@ -131,6 +131,24 @@ export const PRINT_BAND_BOTTOM_DOTS = PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS;
 export const CONTENT_X_DOTS = PRINT_X_DOTS; // 32
 export const CONTENT_W_DOTS = LABEL_W_DOTS - PRINT_X_DOTS * 2; // 336
 
+/**
+ * Anything darker than this becomes a burnt dot when the artwork is packed
+ * to 1 bit. Grey 0-255, so a higher number keeps more of the anti-aliased
+ * edge of a glyph.
+ *
+ * It was 160, and that was thinning the text: a small glyph's stroke is about
+ * one dot wide and renders as grey rather than black, so much of it fell under
+ * the threshold and printed broken. Barcode bars are drawn on exact dot
+ * boundaries with no anti-aliasing, so raising this does not touch them —
+ * measured across the whole label, 160 to 200 adds 4% more ink and all of it
+ * is text.
+ *
+ * Both renderers must use this. The browser packs from a canvas and the server
+ * from an SVG, and a label printed on the phone has to match one printed in
+ * the shop.
+ */
+export const INK_THRESHOLD = 200;
+
 export const THERMAL_PRINTER_DPI = 203;
 export const THERMAL_LABEL_SIZE_LABEL = "50 × 30 mm";
 
@@ -178,7 +196,8 @@ export const LABEL_LAYOUT = {
   codeBaseline: 158,
   codeSize: 9,
   footerBaseline: 176,
-  expSize: 9,
+  /** Bold, and a dot larger than the code text: it is read at arm's length. */
+  expSize: 10,
   mrpSize: 11,
 } as const;
 

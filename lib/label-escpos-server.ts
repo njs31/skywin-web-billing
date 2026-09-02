@@ -17,18 +17,14 @@ import {
   type LabelSourceProduct,
 } from "@/lib/label-svg";
 import {
+  INK_THRESHOLD,
   PRINT_BAND_H_DOTS,
   PRINT_BAND_TOP_DOTS,
   PRINT_W_DOTS,
   PRINT_X_DOTS,
 } from "@/lib/label-print-config";
 
-/**
- * Anything darker than this burns a dot. Must match `renderLabelRaster` in
- * label-render.ts, or a label printed from the phone would not be identical to
- * one printed from the browser.
- */
-const INK_THRESHOLD = 160;
+
 
 /**
  * Rasterise one label into the window the head can reach.

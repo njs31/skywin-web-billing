@@ -9,6 +9,7 @@ import {
   type LabelPlan,
 } from "@/lib/label-layout";
 import {
+  INK_THRESHOLD,
   LABEL_H_DOTS,
   LABEL_W_DOTS,
   PRINT_BAND_H_DOTS,
@@ -154,7 +155,7 @@ function rasterFromCanvas(canvas: HTMLCanvasElement): LabelRaster {
         pixels[pixel]! * 0.2126 +
         pixels[pixel + 1]! * 0.7152 +
         pixels[pixel + 2]! * 0.0722;
-      if (luminance < 160) {
+      if (luminance < INK_THRESHOLD) {
         bytes[y * bytesPerRow + (x >> 3)]! |= 0x80 >> (x & 7);
       }
     }

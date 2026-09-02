@@ -199,14 +199,17 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   const mrp = fitToWidth(mrpText, L.mrpSize, true, CONTENT_W_DOTS * 0.6);
   const expText = `EXP ${fields.exp || "—"}`;
   const expRoom = CONTENT_W_DOTS - measureText(mrp.text, mrp.size, true) - 8;
-  const exp = fitToWidth(expText, L.expSize, false, Math.max(24, expRoom));
+  // Bold, like everything else here. It was the one light run on the label and
+  // the one the shop could not read: at this size a regular weight is a single
+  // dot wide, which a thermal head cannot lay down cleanly.
+  const exp = fitToWidth(expText, L.expSize, true, Math.max(24, expRoom));
 
   texts.push({
     text: exp.text,
     x: left,
     baseline: L.footerBaseline,
     size: exp.size,
-    bold: false,
+    bold: true,
     anchor: "start",
   });
   texts.push({
