@@ -188,6 +188,11 @@ test("buildEscPosJob", async (t) => {
 
   await t.test("mm from settings convert to dots", () => {
     assert.equal(presentDotsFromMm("12"), 96);
+    // Half millimetres land on whole dots: the head lays 8 to the millimetre.
+    assert.equal(presentDotsFromMm("12.5"), 100);
+    assert.equal(presentDotsFromMm("13"), 104);
+    // Finer than a dot still resolves to one, rather than being discarded.
+    assert.equal(presentDotsFromMm("12.55"), 100);
     assert.equal(presentDotsFromMm(18), 144);
     assert.equal(presentDotsFromMm(""), DEFAULT_PRESENT_DOTS);
     assert.equal(presentDotsFromMm(null), DEFAULT_PRESENT_DOTS);

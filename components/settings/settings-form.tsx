@@ -191,7 +191,10 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
                 type="number"
                 min={0}
                 max={25}
-                step={1}
+                // Half-millimetre steps. The head lays 8 dots to the
+                // millimetre, so 0.5 mm is 4 dots — fine enough to place the
+                // tear line, coarse enough that the arrows stay usable.
+                step={0.5}
                 defaultValue={settings.labelTearOffMm}
               />
               <p className="mt-1 text-xs text-slate-500">
