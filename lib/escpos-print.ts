@@ -20,9 +20,6 @@ import {
   PRINT_BAND_H_MM,
 } from "@/lib/label-print-config";
 
-/** One sticker pitch in dots. What a gap seek covers from a parked position. */
-const PITCH_DOTS = Math.round(LABEL_PITCH_MM * DOTS_PER_MM); // 272
-
 /**
  * Rows per `GS v 0` block. The printer's input buffer will not take a whole
  * label in one command — that is why an earlier single-block attempt
@@ -45,25 +42,28 @@ const LEAD_IN_BYTES = 64;
  * the sensor sees the gap and stops at the top of the next sticker. Plain `FF`
  * (0c) does not, and the sensor needs no `ESC c 4` selection first.
  *
- * This is what keeps a run registered. A blind `ESC J` feed cannot: the printer
- * advances exactly the dots it is told, so any error between the fed distance
- * and the true sticker pitch repeats on every label and accumulates until the
- * artwork straddles a die cut. `GS FF` measures instead of counting, so a label
- * that starts out of position is corrected by the next one rather than dragging
- * the whole run out of registration. It also leaves the paper parked at the top
- * of a sticker, so the *next* job starts registered too.
+ * Used exactly once per job, to register the paper before the first label.
+ *
+ * It is not used between labels, though it was, and the reasoning for that was
+ * wrong. Measuring beats counting only if you know where the measurement
+ * stops, and this seek does not stop where the geometry says: seeking after
+ * every label drifted the artwork down the sticker until a run of four printed
+ * off the edge. What it does do reliably is register from a cold start — the
+ * shop's first label is always right — so it is used for that and nothing
+ * else. Everything after is placed by counted feed from that one reference,
+ * where the arithmetic is exact and cannot accumulate error.
  */
 const GAP_SEEK = Uint8Array.from([0x1d, 0x0c]);
 
 /**
- * How far to feed after each label when counting dots instead, in dots.
+ * How far to feed after each label, in dots.
  *
- * Only used when `endOfLabel` is "feed" — a roll with no gap for the sensor to
- * find, or a printer that lacks one. Then image + feed must equal the sticker
- * pitch exactly: the raster is PRINT_BAND_H_MM tall (23 mm), so this is the
- * remaining 11 mm. Get it wrong in either direction and the error repeats on
- * every label until the artwork straddles a die cut — the vendor driver's
- * 80-dot tear-off feed walks it down the roll, a short feed walks it up.
+ * The raster is exactly PRINT_BAND_H_MM tall and this is exactly the rest of
+ * the pitch, so every label advances the paper 34 mm — one sticker, to the dot.
+ * That is what makes a run of labels hold its place: get it wrong in either
+ * direction and the error repeats on every label until the artwork straddles a
+ * die cut. The vendor driver's 80-dot tear-off feed walked it down the roll; a
+ * short feed walks it up.
  */
 export const DEFAULT_FEED_DOTS = Math.round(
   (LABEL_PITCH_MM - PRINT_BAND_H_MM) * DOTS_PER_MM
@@ -83,14 +83,11 @@ export type EscPosOptions = {
    */
   presentDots?: number;
   /**
-   * How a label ends. "gap" lets the printer find the die cut itself and is
-   * what die-cut stock wants; "feed" counts out `feedDots` blindly.
+   * Seek the die cut once, before the first label, to register the paper.
+   * Default on. Turn it off only for a printer with no gap sensor.
    */
-  endOfLabel?: "gap" | "feed";
-  /**
-   * Liner gap to feed after each label, in dots. Implies "feed" — passing an
-   * explicit gap is how a caller says the sensor cannot be used.
-   */
+  register?: boolean;
+  /** Feed after each label, in dots. Defaults to one pitch less the band. */
   feedDots?: number;
 };
 
@@ -156,13 +153,14 @@ export function buildEscPosLabel(raster: LabelRaster, options: EscPosOptions = {
       )
     );
   }
-  const blind =
-    options.endOfLabel === "feed" || options.feedDots !== undefined;
-  parts.push(
-    blind
-      ? Uint8Array.from([0x1b, 0x4a, resolveFeed(options.feedDots)])
-      : GAP_SEEK
-  );
+  // A counted feed, never a gap seek. Seeking after every label looked like
+  // the careful thing to do — the printer measuring instead of counting — but
+  // it drifts: the seek does not stop where this code assumed, so a run of
+  // four walked the artwork off the sticker. The raster is exactly the band
+  // height and this is exactly the rest of the pitch, so a label always
+  // advances 34 mm and cannot accumulate error at all. Registration happens
+  // once per job instead; see buildEscPosJob.
+  parts.push(Uint8Array.from([0x1b, 0x4a, resolveFeed(options.feedDots)]));
   return concatBytes(parts);
 }
 
@@ -228,11 +226,8 @@ export function presentDotsFromMm(mm: string | number | null | undefined) {
  * it changed nothing: the label still had to be walked out by hand. The
  * vendor's own driver ends a job with a counted `ESC J` for the same reason.
  *
- * A blind job feeds a whole pitch instead. It has no sensor to recover with,
- * so the feed has to be an exact pitch or every later label is out of step.
  */
-function presentCommands(blind: boolean, presentDots?: number) {
-  if (blind) return feedCommands(PITCH_DOTS);
+function presentCommands(presentDots?: number) {
   const dots = Math.trunc(presentDots ?? DEFAULT_PRESENT_DOTS);
   return feedCommands(
     Math.max(0, Math.min(MAX_PRESENT_DOTS, Number.isFinite(dots) ? dots : DEFAULT_PRESENT_DOTS))
@@ -242,7 +237,7 @@ function presentCommands(blind: boolean, presentDots?: number) {
 /** A complete print job for a run of labels. */
 export function buildEscPosJob(rasters: LabelRaster[], options: EscPosOptions = {}) {
   const copies = Math.max(1, Math.min(99, Math.trunc(options.copies ?? 1)));
-  const blind = options.endOfLabel === "feed" || options.feedDots !== undefined;
+  const register = options.register ?? true;
   const present = options.present ?? true;
 
   const labels: Uint8Array[] = [];
@@ -254,15 +249,17 @@ export function buildEscPosJob(rasters: LabelRaster[], options: EscPosOptions = 
 
   const parts: Uint8Array[] = [];
 
-  // Register before the first label. The previous job ended by feeding the
-  // last label out past the tear bar, which leaves the paper part-way down a
-  // sticker; without this the first label of every job would print there.
-  // It also makes the first label right after the roll is loaded, whatever
-  // position the paper happened to be in.
-  if (present && !blind) parts.push(GAP_SEEK);
+  // The one gap seek in the whole job, and the only absolute reference in it.
+  // The previous job ended by feeding the last label out past the tear bar,
+  // which leaves the paper part-way down a sticker; without this the first
+  // label would print there. It also makes the first label right after a roll
+  // is loaded, whatever position the paper happened to be in — which is
+  // exactly what the shop sees, a perfect first label. Every label after it
+  // is placed by counted feed from this one point, so nothing drifts.
+  if (register) parts.push(GAP_SEEK);
 
   parts.push(...labels);
-  if (present) parts.push(...presentCommands(blind, options.presentDots));
+  if (present) parts.push(...presentCommands(options.presentDots));
 
   return concatBytes(parts);
 }

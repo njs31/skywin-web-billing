@@ -68,10 +68,10 @@ test("buildEscPosLabel", async (t) => {
   const job = buildEscPosLabel(raster());
 
   await t.test("matches the byte count the vendor driver produces", () => {
-    // 64 lead-in + 6 full bands + 2-byte gap seek, for the 368 × 144 dot
+    // 64 lead-in + 6 full bands + 3-byte counted feed, for the 368 × 144 dot
     // printable band. buildEscPosLabel is one label, so no present feed.
-    assert.equal(job.length, 64 + 6 * (8 + BAND_ROWS * BYTES_PER_ROW) + 2);
-    assert.equal(job.length, 6738);
+    assert.equal(job.length, 64 + 6 * (8 + BAND_ROWS * BYTES_PER_ROW) + 3);
+    assert.equal(job.length, 6739);
   });
 
   await t.test("leads with the zero-byte wake-up", () => {
@@ -97,21 +97,17 @@ test("buildEscPosLabel", async (t) => {
     );
   });
 
-  await t.test("ends by seeking the die cut with GS FF", () => {
-    // The printer's own gap sensor, not a counted feed: this is what stops a
-    // run drifting out of registration one label at a time.
-    assert.deepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
+  await t.test("ends with a counted feed, not a gap seek", () => {
+    // Seeking after every label drifted a run of four off the sticker: the
+    // seek does not stop where the geometry says it should. Counting does.
+    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, DEFAULT_FEED_DOTS]);
+    assert.notDeepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
   });
 
-  await t.test("falls back to a counted feed when asked", () => {
-    const blind = buildEscPosLabel(raster(), { endOfLabel: "feed" });
-    assert.deepEqual([...blind.subarray(-3)], [0x1b, 0x4a, DEFAULT_FEED_DOTS]);
-  });
-
-  await t.test("counts exactly one sticker pitch when it has to count", () => {
-    // Without the sensor the printer advances only what it is told. If image
-    // + feed overshoots the pitch, every label drifts further down the roll
-    // than the last; the vendor driver's 80-dot tear-off feed did this.
+  await t.test("advances exactly one sticker pitch per label", () => {
+    // The whole of the anti-drift argument, in one line: the raster is the
+    // band and the feed is the rest of the pitch, so a label can never leave
+    // the paper anywhere but the top of the next sticker.
     const pitch = LABEL_PITCH_MM * DOTS_PER_MM;
     assert.equal(PRINT_BAND_H_DOTS + DEFAULT_FEED_DOTS, pitch);
   });
@@ -180,8 +176,8 @@ test("buildEscPosJob", async (t) => {
     // the next job then skips an extra sticker every time.
     assert.deepEqual([...buildEscPosJob([raster()], { presentDots: 9999 }).subarray(-3)],
       [0x1b, 0x4a, 200]);
-    assert.deepEqual([...buildEscPosJob([raster()], { presentDots: -5 }).subarray(-2)],
-      [0x1d, 0x0c], "a zero feed leaves the label's own seek as the last command");
+    assert.deepEqual([...buildEscPosJob([raster()], { presentDots: -5 }).subarray(-3)],
+      [0x1b, 0x4a, DEFAULT_FEED_DOTS], "a zero present leaves the label's own feed last");
     assert.deepEqual([...buildEscPosJob([raster()], { presentDots: Number.NaN }).subarray(-3)],
       [0x1b, 0x4a, DEFAULT_PRESENT_DOTS]);
   });
@@ -194,11 +190,10 @@ test("buildEscPosJob", async (t) => {
     assert.equal(presentDotsFromMm("abc"), DEFAULT_PRESENT_DOTS);
   });
 
-  await t.test("a run of labels keeps every label registered", () => {
-    // The shape a multi-label run depends on: one seek to register the paper,
-    // then each label followed by its own seek, then a single present feed.
-    // Copies must not each pay the present feed, or a run of twenty wastes
-    // twenty stickers.
+  await t.test("a run of labels is placed from a single reference", () => {
+    // The shape that stops a run drifting: exactly one gap seek, at the very
+    // start, then every label placed by counted feed from it. A seek per
+    // label is what walked a run of four off the sticker.
     const job = buildEscPosJob([raster(), raster(), raster()]);
     const one = buildEscPosLabel(raster());
 
@@ -209,13 +204,14 @@ test("buildEscPosJob", async (t) => {
     for (let i = 0; i < job.length - 1; i++) {
       if (job[i] === 0x1d && job[i + 1] === 0x0c) seeks++;
     }
-    assert.equal(seeks, 4, "one register plus one per label");
+    assert.equal(seeks, 1, "one seek for the whole run, however many labels");
 
+    // Three per-label feeds plus one present feed.
     let feeds = 0;
     for (let i = 0; i < job.length - 2; i++) {
       if (job[i] === 0x1b && job[i + 1] === 0x4a) feeds++;
     }
-    assert.equal(feeds, 1, "exactly one present feed for the whole run");
+    assert.equal(feeds, 4);
   });
 
   await t.test("registers before the first label", () => {
@@ -233,20 +229,12 @@ test("buildEscPosJob", async (t) => {
 
   await t.test("can be told not to present", () => {
     const job = buildEscPosJob([raster()], { present: false });
-    assert.equal(job.length, buildEscPosLabel(raster()).length);
-    assert.deepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
+    assert.equal(job.length, LEAD_BYTES + buildEscPosLabel(raster()).length);
   });
 
-  await t.test("presents by counted feed when the sensor is not in use", () => {
-    // A blind job has no sensor to recover with, so its feed must be an exact
-    // pitch or every later label is out of step. ESC J tops out at 255 dots,
-    // so that takes two commands. And it must not lead with a seek.
-    const job = buildEscPosJob([raster()], { endOfLabel: "feed" });
-    const pitch = LABEL_PITCH_MM * DOTS_PER_MM;
-    assert.deepEqual(
-      [...job.subarray(-6)],
-      [0x1b, 0x4a, 255, 0x1b, 0x4a, pitch - 255]
-    );
+  await t.test("can be told not to register, for a printer with no sensor", () => {
+    const job = buildEscPosJob([raster()], { register: false });
     assert.notDeepEqual([...job.subarray(0, 2)], [0x1d, 0x0c]);
+    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, DEFAULT_PRESENT_DOTS]);
   });
 });
