@@ -6,6 +6,8 @@ import {
   buildEscPosLabel,
   buildRasterBand,
   DEFAULT_FEED_DOTS,
+  DEFAULT_PRESENT_DOTS,
+  presentDotsFromMm,
 } from "./escpos-print";
 import {
   DOTS_PER_MM,
@@ -162,8 +164,58 @@ test("buildEscPosJob", async (t) => {
     // gap, and the parked position is where the sensor sees the gap. Only a
     // counted feed actually moves the label out to the tear bar.
     const job = buildEscPosJob([raster()]);
-    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, 144]);
+    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, DEFAULT_PRESENT_DOTS]);
     assert.notDeepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
+  });
+
+  await t.test("takes the tear-off distance from settings", () => {
+    // Tear bars differ between printers, so the shop can tune this without a
+    // deploy rather than waiting on another guess.
+    const job = buildEscPosJob([raster()], { presentDots: 64 });
+    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, 64]);
+  });
+
+  await t.test("clamps a nonsense tear-off distance", () => {
+    // Past 25 mm the feed crosses the following die cut, and the seek opening
+    // the next job then skips an extra sticker every time.
+    assert.deepEqual([...buildEscPosJob([raster()], { presentDots: 9999 }).subarray(-3)],
+      [0x1b, 0x4a, 200]);
+    assert.deepEqual([...buildEscPosJob([raster()], { presentDots: -5 }).subarray(-2)],
+      [0x1d, 0x0c], "a zero feed leaves the label's own seek as the last command");
+    assert.deepEqual([...buildEscPosJob([raster()], { presentDots: Number.NaN }).subarray(-3)],
+      [0x1b, 0x4a, DEFAULT_PRESENT_DOTS]);
+  });
+
+  await t.test("mm from settings convert to dots", () => {
+    assert.equal(presentDotsFromMm("12"), 96);
+    assert.equal(presentDotsFromMm(18), 144);
+    assert.equal(presentDotsFromMm(""), DEFAULT_PRESENT_DOTS);
+    assert.equal(presentDotsFromMm(null), DEFAULT_PRESENT_DOTS);
+    assert.equal(presentDotsFromMm("abc"), DEFAULT_PRESENT_DOTS);
+  });
+
+  await t.test("a run of labels keeps every label registered", () => {
+    // The shape a multi-label run depends on: one seek to register the paper,
+    // then each label followed by its own seek, then a single present feed.
+    // Copies must not each pay the present feed, or a run of twenty wastes
+    // twenty stickers.
+    const job = buildEscPosJob([raster(), raster(), raster()]);
+    const one = buildEscPosLabel(raster());
+
+    assert.deepEqual([...job.subarray(0, 2)], [0x1d, 0x0c], "leading register");
+    assert.equal(job.length, LEAD_BYTES + one.length * 3 + PRESENT_BYTES);
+
+    let seeks = 0;
+    for (let i = 0; i < job.length - 1; i++) {
+      if (job[i] === 0x1d && job[i + 1] === 0x0c) seeks++;
+    }
+    assert.equal(seeks, 4, "one register plus one per label");
+
+    let feeds = 0;
+    for (let i = 0; i < job.length - 2; i++) {
+      if (job[i] === 0x1b && job[i + 1] === 0x4a) feeds++;
+    }
+    assert.equal(feeds, 1, "exactly one present feed for the whole run");
   });
 
   await t.test("registers before the first label", () => {

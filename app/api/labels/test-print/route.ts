@@ -9,7 +9,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { verifyLabelApiKey } from "@/lib/api-auth";
-import { buildEscPosJob } from "@/lib/escpos-print";
+import { buildEscPosJob, presentDotsFromMm } from "@/lib/escpos-print";
+import { getSettings } from "@/lib/settings";
 import { renderTestLabelRasterServer } from "@/lib/label-escpos-server";
 
 export const runtime = "nodejs";
@@ -20,7 +21,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const job = buildEscPosJob([await renderTestLabelRasterServer()]);
+  const settings = await getSettings();
+  const job = buildEscPosJob([await renderTestLabelRasterServer()], {
+    presentDots: presentDotsFromMm(settings.labelTearOffMm),
+  });
 
   return new Response(job as unknown as BodyInit, {
     headers: {

@@ -98,7 +98,14 @@ function PrinterStatus({
   );
 }
 
-export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
+export function ProductLabelSheet({
+  products,
+  presentDots,
+}: {
+  products: LabelProduct[];
+  /** Tear-off feed from Settings; omitted falls back to the built-in default. */
+  presentDots?: number;
+}) {
   const [labelPngMap, setLabelPngMap] = useState<Record<number, string>>({});
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState<"" | "usb" | "serial" | "test">("");
@@ -169,7 +176,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     if (!ready || busy) return;
     setBusy("usb");
     try {
-      await printLabelsViaUsb(products, { copies });
+      await printLabelsViaUsb(products, { copies, presentDots });
     } catch (error) {
       reportError(error, "USB print failed. Check the cable and try again.");
     } finally {
@@ -182,7 +189,7 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
     if (!ready || busy) return;
     setBusy("serial");
     try {
-      await printLabelsViaSerial(products, { copies });
+      await printLabelsViaSerial(products, { copies, presentDots });
     } catch (error) {
       reportError(
         error,
@@ -206,11 +213,11 @@ export function ProductLabelSheet({ products }: { products: LabelProduct[] }) {
       const preferUsb =
         usbSupported && (access?.usbPaired || !access?.serialPaired);
       if (preferUsb) {
-        await printTestLabelViaUsb();
+        await printTestLabelViaUsb({ presentDots });
       } else if (serialSupported) {
-        await printTestLabelViaSerial();
+        await printTestLabelViaSerial({ presentDots });
       } else {
-        await printTestLabelViaUsb();
+        await printTestLabelViaUsb({ presentDots });
       }
     } catch (error) {
       reportError(error, "Test print failed.");

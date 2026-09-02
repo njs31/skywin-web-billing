@@ -12,6 +12,8 @@ import { db } from "@/db";
 import { products } from "@/db/schema";
 import { verifyLabelApiKey } from "@/lib/api-auth";
 import { buildEscPosForProducts } from "@/lib/label-escpos-server";
+import { presentDotsFromMm } from "@/lib/escpos-print";
+import { getSettings } from "@/lib/settings";
 import { DOTS_PER_MM } from "@/lib/label-print-config";
 
 export const runtime = "nodejs";
@@ -84,8 +86,10 @@ export async function GET(req: NextRequest) {
     .map((id) => byId.get(id))
     .filter((row): row is (typeof rows)[number] => Boolean(row));
 
+  const settings = await getSettings();
   const job = await buildEscPosForProducts(
-    ordered.map((product) => ({ product, copies, feedDots }))
+    ordered.map((product) => ({ product, copies, feedDots })),
+    { presentDots: presentDotsFromMm(settings.labelTearOffMm) }
   );
 
   return new Response(job as unknown as BodyInit, {

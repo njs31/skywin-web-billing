@@ -77,6 +77,12 @@ export type EscPosOptions = {
    */
   present?: boolean;
   /**
+   * How far that push is, in dots. Defaults to DEFAULT_PRESENT_DOTS; Settings
+   * overrides it because the head-to-tear-bar distance is a property of the
+   * printer, not of the label.
+   */
+  presentDots?: number;
+  /**
    * How a label ends. "gap" lets the printer find the die cut itself and is
    * what die-cut stock wants; "feed" counts out `feedDots` blindly.
    */
@@ -177,15 +183,40 @@ function feedCommands(dots: number) {
 /**
  * How far to feed at the end of a job so the label clears the tear bar.
  *
- * At the parked position the finished label's trailing edge is only about
- * 9 mm past the head, and the tear bar is further away than that, so the label
- * is still gripped — visible, but not tearable without holding the feed
- * button. 18 mm puts the trailing edge about 27 mm past the head, comfortably
- * beyond the tear bar on a printer this size, while leaving the paper at
- * roughly 23 mm into the next sticker: still short of its die cut, so the seek
- * that opens the next job behaves normally.
+ * Measured on 2026-09-02 rather than guessed. Feeding 18 mm left 4 mm of the
+ * *next* sticker past the tear edge, and that one observation pins the
+ * geometry: the head parks 5 mm into the next sticker (39 mm in paper terms),
+ * fed 18 mm to 57 mm, and the tear edge sat at 38 mm — so the tear bar is
+ * 19 mm downstream of the head.
+ *
+ * From there the arithmetic is fixed. To put the tear edge in the middle of
+ * the 4 mm gap, at 32 mm, the feed is 32 + 19 - 39 = 12 mm. That leaves the
+ * whole printed label out with a clean line to tear along and none of the next
+ * sticker showing, and the paper at 17 mm into the next sticker — well short of
+ * its die cut, so the seek that opens the next job behaves normally.
+ *
+ * Tear bars differ between printers, so Settings can override this; see
+ * `presentDots`.
  */
-const PRESENT_FEED_DOTS = 144; // 18 mm
+export const DEFAULT_PRESENT_DOTS = 96; // 12 mm
+
+/**
+ * Ceiling for an overridden present feed.
+ *
+ * 25 mm is the most that can be fed and still leave the paper inside the next
+ * sticker. Beyond that the feed crosses the following die cut, and the seek
+ * opening the next job skips an extra sticker for every job.
+ */
+const MAX_PRESENT_DOTS = 200;
+
+/** Settings stores millimetres as text; a job wants dots. */
+export function presentDotsFromMm(mm: string | number | null | undefined) {
+  const value = typeof mm === "string" ? Number.parseFloat(mm) : mm;
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return DEFAULT_PRESENT_DOTS;
+  }
+  return Math.round(value * DOTS_PER_MM);
+}
 
 /**
  * Advance the finished label clear of the tear-off edge.
@@ -200,8 +231,12 @@ const PRESENT_FEED_DOTS = 144; // 18 mm
  * A blind job feeds a whole pitch instead. It has no sensor to recover with,
  * so the feed has to be an exact pitch or every later label is out of step.
  */
-function presentCommands(blind: boolean) {
-  return feedCommands(blind ? PITCH_DOTS : PRESENT_FEED_DOTS);
+function presentCommands(blind: boolean, presentDots?: number) {
+  if (blind) return feedCommands(PITCH_DOTS);
+  const dots = Math.trunc(presentDots ?? DEFAULT_PRESENT_DOTS);
+  return feedCommands(
+    Math.max(0, Math.min(MAX_PRESENT_DOTS, Number.isFinite(dots) ? dots : DEFAULT_PRESENT_DOTS))
+  );
 }
 
 /** A complete print job for a run of labels. */
@@ -227,7 +262,7 @@ export function buildEscPosJob(rasters: LabelRaster[], options: EscPosOptions = 
   if (present && !blind) parts.push(GAP_SEEK);
 
   parts.push(...labels);
-  if (present) parts.push(...presentCommands(blind));
+  if (present) parts.push(...presentCommands(blind, options.presentDots));
 
   return concatBytes(parts);
 }

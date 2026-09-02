@@ -22,10 +22,23 @@ export type PrintJobOptions = EscPosOptions;
  * pipe and silently drops the rest of the job. macOS's own CUPS backend writes
  * in 8 KB blocks and hits this — a label then prints about three quarters of
  * the way down and the trailing feed command never arrives, so the sticker
- * never advances out. We stay well under the buffer and give the head time.
+ * never advances out.
+ *
+ * The pause is what keeps the send slower than the print, and it has to be
+ * sized against the printer rather than picked. A label is about 7 KB, and the
+ * head takes roughly 0.7 s to burn 18 mm and seek the next gap — call it
+ * 10 KB/s. At 60 ms the sender ran at 33 KB/s, three times faster, so it gained
+ * half a second on every label; the 8 KB buffer holds barely one, and from the
+ * third label onward bytes were dropped mid-raster. That is why single labels
+ * were fine and runs came out wrong.
+ *
+ * 300 ms puts the sender at 2048 / 0.3 ≈ 6.8 KB/s, comfortably under what the
+ * head consumes, so the buffer drains as fast as it fills however long the run.
+ * A single label costs about 0.9 s more; a run now sends in roughly the time it
+ * takes to print, which is the point.
  */
 const PACE_BYTES = 2048;
-const PACE_MS = 60;
+const PACE_MS = 300;
 
 const pause = () => new Promise((resolve) => setTimeout(resolve, PACE_MS));
 

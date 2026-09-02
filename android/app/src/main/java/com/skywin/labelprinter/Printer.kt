@@ -23,10 +23,12 @@ object Printer {
      * Flow control. The P58D has roughly an 8 KB input buffer and applies no
      * backpressure: pushed a whole label at once it stops accepting data and
      * silently drops the rest, so the sticker prints about three quarters down
-     * and never feeds out. These figures mirror the web app's USB path.
+     * and never feeds out. These figures mirror the web app's USB path: the
+     * pause must keep the sender under the ~10 KB/s the head consumes, or a
+     * run of labels overruns the buffer even though a single label is fine.
      */
     private const val PACE_BYTES = 2048
-    private const val PACE_MS = 60L
+    private const val PACE_MS = 300L
     private const val CHUNK = 256
 
     class PrinterError(message: String) : Exception(message)

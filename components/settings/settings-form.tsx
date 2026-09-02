@@ -38,6 +38,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             qwicksApiKey: fd.get("qwicksApiKey") as string,
             widgetApiKey: fd.get("widgetApiKey") as string,
             labelApiKey: fd.get("labelApiKey") as string,
+            labelTearOffMm: fd.get("labelTearOffMm") as string,
             qwicksHost: fd.get("qwicksHost") as string,
             seedLicense: fd.get("seedLicense") as string,
             fertLicense: fd.get("fertLicense") as string,
@@ -174,6 +175,22 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
                 Used by the Android label printing app. Change this from the
                 shipped default — it reaches /api/labels/print, which returns
                 product names and prices.
+              </p>
+            </div>
+            <div>
+              <Label>Label tear-off feed (mm)</Label>
+              <Input
+                name="labelTearOffMm"
+                type="number"
+                min={0}
+                max={25}
+                step={1}
+                defaultValue={settings.labelTearOffMm}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                How far the paper feeds after printing so the last label clears
+                the tear bar. Raise it if the label will not tear off; lower it
+                if part of the next sticker comes out.
               </p>
             </div>
           </div>

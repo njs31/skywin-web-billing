@@ -95,7 +95,10 @@ export type LabelPrintRequest = {
  * single copy count to every raster it is given, and a run can ask for
  * different counts per product.
  */
-export async function buildEscPosForProducts(requests: LabelPrintRequest[]) {
+export async function buildEscPosForProducts(
+  requests: LabelPrintRequest[],
+  options: { presentDots?: number } = {}
+) {
   const rasters: LabelRaster[] = [];
   for (const { product, copies } of requests) {
     const raster = await renderLabelRasterServer(product);
@@ -106,5 +109,5 @@ export async function buildEscPosForProducts(requests: LabelPrintRequest[]) {
   // One gap override applies to the whole run: it describes the roll, and the
   // print route takes it from a single query parameter.
   const feedDots = requests.find((request) => request.feedDots !== undefined)?.feedDots;
-  return buildEscPosJob(rasters, { feedDots });
+  return buildEscPosJob(rasters, { feedDots, presentDots: options.presentDots });
 }

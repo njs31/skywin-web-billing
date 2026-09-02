@@ -36,10 +36,12 @@ enum PrinterError: LocalizedError {
  *
  * The P58D has roughly an 8 KB input buffer and applies no backpressure: fed a
  * whole label at once it stops accepting data and silently drops the rest, so
- * the sticker prints about three quarters down and never feeds out.
+ * the sticker prints about three quarters down and never feeds out. The pause
+ * must keep the sender under the ~10 KB/s the head consumes, or a run of labels
+ * overruns the buffer even though a single label is fine.
  */
 private let paceBytes = 2048
-private let paceInterval: useconds_t = 60_000 // microseconds
+private let paceInterval: useconds_t = 300_000 // microseconds
 
 // MARK: - USB
 
