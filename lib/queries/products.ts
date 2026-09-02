@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import { products, categories, productBatches, stockMovements, sales, saleItems } from "@/db/schema";
-import { ilike, or, sql, asc, eq, and, gt, inArray, gte, lte, isNotNull } from "drizzle-orm";
+import { ilike, or, sql, asc, desc, eq, and, gt, inArray, gte, lte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { parseSkuFromName } from "@/lib/gst";
 
@@ -12,6 +12,19 @@ const CACHE_TAG = {
   sales: "sales",
 } as const;
 
+/** What counts as a match. Shared so the list and POS search agree. */
+function productMatches(q: string) {
+  return and(
+    eq(products.isActive, true),
+    or(
+      ilike(products.name, `%${q}%`),
+      ilike(products.sku, `%${q}%`),
+      ilike(products.barcode, `%${q}%`),
+      eq(products.barcode, q)
+    )
+  );
+}
+
 export async function searchProducts(query: string, limit = 20) {
   const q = query.trim();
   if (!q) return [];
@@ -19,19 +32,53 @@ export async function searchProducts(query: string, limit = 20) {
   return db
     .select()
     .from(products)
-    .where(
-      and(
-        eq(products.isActive, true),
-        or(
-          ilike(products.name, `%${q}%`),
-          ilike(products.sku, `%${q}%`),
-          ilike(products.barcode, `%${q}%`),
-          eq(products.barcode, q)
-        )
-      )
-    )
+    .where(productMatches(q))
     .orderBy(asc(products.name))
     .limit(limit);
+}
+
+export const PRODUCT_SORTS = ["name", "recent", "price", "stock", "expiry"] as const;
+export type ProductSort = (typeof PRODUCT_SORTS)[number];
+export type SortDir = "asc" | "desc";
+
+/**
+ * Which way each sort runs when you first pick it.
+ *
+ * The useful direction, not a uniform one: newest additions and the biggest
+ * numbers are what you are looking for when you ask for them, while names read
+ * A to Z and expiry dates matter soonest-first.
+ */
+export const DEFAULT_SORT_DIR: Record<ProductSort, SortDir> = {
+  name: "asc",
+  recent: "desc",
+  price: "desc",
+  stock: "desc",
+  expiry: "asc",
+};
+
+function productOrderBy(sort: ProductSort, dir: SortDir) {
+  const by = dir === "asc" ? asc : desc;
+  // Name breaks every tie, so a page never reshuffles between loads.
+  switch (sort) {
+    case "recent":
+      return [by(products.createdAt), asc(products.name)];
+    case "price":
+      return [by(products.saleRate), asc(products.name)];
+    case "stock":
+      return [by(products.stockQty), asc(products.name)];
+    case "expiry":
+      // Most products have no expiry date and are never the answer to "what
+      // needs selling first", so they sink to the bottom whichever way this
+      // runs. Postgres would otherwise sort nulls first on desc.
+      return [
+        dir === "asc"
+          ? sql`${products.expiryDate} asc nulls last`
+          : sql`${products.expiryDate} desc nulls last`,
+        asc(products.name),
+      ];
+    default:
+      return [by(products.name)];
+  }
 }
 
 export type ProductBatchSearchResult = {
@@ -154,16 +201,31 @@ export async function searchProductBatches(
 }
 
 export const getProducts = unstable_cache(
-  async (search?: string, page = 1, pageSize = 50) => {
-    if (search?.trim()) {
-      return searchProducts(search, 100);
+  async (
+    search?: string,
+    page = 1,
+    pageSize = 50,
+    sort: ProductSort = "name",
+    dir: SortDir = "asc"
+  ) => {
+    const order = productOrderBy(sort, dir);
+    const q = search?.trim();
+    if (q) {
+      // Search results are sorted the same way, so switching sort does not
+      // silently stop applying once something is typed in the search box.
+      return db
+        .select()
+        .from(products)
+        .where(productMatches(q))
+        .orderBy(...order)
+        .limit(100);
     }
     const offset = (page - 1) * pageSize;
     return db
       .select()
       .from(products)
       .where(eq(products.isActive, true))
-      .orderBy(asc(products.name))
+      .orderBy(...order)
       .limit(pageSize)
       .offset(offset);
   },
