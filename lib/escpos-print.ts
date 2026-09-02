@@ -175,35 +175,59 @@ function feedCommands(dots: number) {
 }
 
 /**
+ * How far to feed at the end of a job so the label clears the tear bar.
+ *
+ * At the parked position the finished label's trailing edge is only about
+ * 9 mm past the head, and the tear bar is further away than that, so the label
+ * is still gripped — visible, but not tearable without holding the feed
+ * button. 18 mm puts the trailing edge about 27 mm past the head, comfortably
+ * beyond the tear bar on a printer this size, while leaving the paper at
+ * roughly 23 mm into the next sticker: still short of its die cut, so the seek
+ * that opens the next job behaves normally.
+ */
+const PRESENT_FEED_DOTS = 144; // 18 mm
+
+/**
  * Advance the finished label clear of the tear-off edge.
  *
- * The head sits several millimetres upstream of the tear bar, so when a label
- * finishes and the gap seek parks the paper for the next one, the label just
- * printed is still gripped inside the printer — visible, but impossible to
- * tear off without holding the feed button. The vendor's own driver ends a job
- * with a 10 mm `ESC J` for this reason.
+ * This must be a counted feed, not a gap seek. A seek stops the moment the
+ * sensor sees the gap, and the parked position *is* the position where the
+ * sensor sees the gap — so a second `GS FF` finds the gap it is already
+ * sitting on and moves nothing at all. That was the first attempt at this, and
+ * it changed nothing: the label still had to be walked out by hand. The
+ * vendor's own driver ends a job with a counted `ESC J` for the same reason.
  *
- * One further gap seek advances exactly one sticker pitch, which clears the
- * tear bar and, unlike a counted feed, leaves the paper registered so the next
- * job needs no correction. The cost is one blank sticker per job, which is why
- * this is per *job* and not per label: a run of twenty labels pays it once.
+ * A blind job feeds a whole pitch instead. It has no sensor to recover with,
+ * so the feed has to be an exact pitch or every later label is out of step.
  */
 function presentCommands(blind: boolean) {
-  return blind ? feedCommands(PITCH_DOTS) : [GAP_SEEK];
+  return feedCommands(blind ? PITCH_DOTS : PRESENT_FEED_DOTS);
 }
 
 /** A complete print job for a run of labels. */
 export function buildEscPosJob(rasters: LabelRaster[], options: EscPosOptions = {}) {
   const copies = Math.max(1, Math.min(99, Math.trunc(options.copies ?? 1)));
-  const parts: Uint8Array[] = [];
+  const blind = options.endOfLabel === "feed" || options.feedDots !== undefined;
+  const present = options.present ?? true;
+
+  const labels: Uint8Array[] = [];
   for (const raster of rasters) {
     const label = buildEscPosLabel(raster, options);
-    for (let i = 0; i < copies; i++) parts.push(label);
+    for (let i = 0; i < copies; i++) labels.push(label);
   }
+  if (labels.length === 0) return concatBytes([]);
 
-  if (parts.length > 0 && (options.present ?? true)) {
-    const blind = options.endOfLabel === "feed" || options.feedDots !== undefined;
-    parts.push(...presentCommands(blind));
-  }
+  const parts: Uint8Array[] = [];
+
+  // Register before the first label. The previous job ended by feeding the
+  // last label out past the tear bar, which leaves the paper part-way down a
+  // sticker; without this the first label of every job would print there.
+  // It also makes the first label right after the roll is loaded, whatever
+  // position the paper happened to be in.
+  if (present && !blind) parts.push(GAP_SEEK);
+
+  parts.push(...labels);
+  if (present) parts.push(...presentCommands(blind));
+
   return concatBytes(parts);
 }

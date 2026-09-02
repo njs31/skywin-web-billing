@@ -15,8 +15,10 @@ import {
 } from "./label-print-config";
 
 const BYTES_PER_ROW = PRINT_W_DOTS / 8; // 48
-/** The trailing gap seek that pushes the last label past the tear bar. */
-const PRESENT_BYTES = 2;
+/** The trailing ESC J that pushes the last label past the tear bar. */
+const PRESENT_BYTES = 3;
+/** The leading gap seek that registers the paper before the first label. */
+const LEAD_BYTES = 2;
 
 function raster(height = PRINT_BAND_H_DOTS) {
   return {
@@ -136,55 +138,63 @@ test("buildEscPosJob", async (t) => {
     const one = buildEscPosLabel(raster());
     assert.equal(
       buildEscPosJob([raster()], { copies: 3 }).length,
-      one.length * 3 + PRESENT_BYTES
+      LEAD_BYTES + one.length * 3 + PRESENT_BYTES
     );
   });
 
   await t.test("defaults to a single copy and clamps nonsense", () => {
     const one = buildEscPosLabel(raster());
-    assert.equal(buildEscPosJob([raster()]).length, one.length + PRESENT_BYTES);
-    assert.equal(
-      buildEscPosJob([raster()], { copies: 0 }).length,
-      one.length + PRESENT_BYTES
-    );
+    const expected = LEAD_BYTES + one.length + PRESENT_BYTES;
+    assert.equal(buildEscPosJob([raster()]).length, expected);
+    assert.equal(buildEscPosJob([raster()], { copies: 0 }).length, expected);
   });
 
   await t.test("concatenates multiple products", () => {
     const one = buildEscPosLabel(raster());
     assert.equal(
       buildEscPosJob([raster(), raster()]).length,
-      one.length * 2 + PRESENT_BYTES
+      LEAD_BYTES + one.length * 2 + PRESENT_BYTES
     );
   });
 
-  await t.test("presents the last label clear of the tear bar", () => {
-    // Without this the finished label is still gripped by the printer and
-    // only the feed button gets it out.
+  await t.test("presents the last label with a counted feed, not a seek", () => {
+    // A second gap seek is a no-op: the seek stops when the sensor sees the
+    // gap, and the parked position is where the sensor sees the gap. Only a
+    // counted feed actually moves the label out to the tear bar.
     const job = buildEscPosJob([raster()]);
-    assert.deepEqual([...job.subarray(-4)], [0x1d, 0x0c, 0x1d, 0x0c]);
+    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, 144]);
+    assert.notDeepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
+  });
+
+  await t.test("registers before the first label", () => {
+    // The previous job left the paper part-way down a sticker.
+    const job = buildEscPosJob([raster()]);
+    assert.deepEqual([...job.subarray(0, 2)], [0x1d, 0x0c]);
   });
 
   await t.test("pays the present feed once per job, not once per label", () => {
     // It costs a blank sticker, so a run of twenty must not cost twenty.
-    const one = buildEscPosJob([raster()]);
+    const one = buildEscPosLabel(raster());
     const twenty = buildEscPosJob([raster()], { copies: 20 });
-    assert.equal(twenty.length, (one.length - PRESENT_BYTES) * 20 + PRESENT_BYTES);
+    assert.equal(twenty.length, LEAD_BYTES + one.length * 20 + PRESENT_BYTES);
   });
 
   await t.test("can be told not to present", () => {
     const job = buildEscPosJob([raster()], { present: false });
-    assert.deepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
     assert.equal(job.length, buildEscPosLabel(raster()).length);
+    assert.deepEqual([...job.subarray(-2)], [0x1d, 0x0c]);
   });
 
   await t.test("presents by counted feed when the sensor is not in use", () => {
-    // A blind job cannot seek, so it counts out one whole sticker pitch, and
-    // ESC J tops out at 255 dots so that takes two commands.
+    // A blind job has no sensor to recover with, so its feed must be an exact
+    // pitch or every later label is out of step. ESC J tops out at 255 dots,
+    // so that takes two commands. And it must not lead with a seek.
     const job = buildEscPosJob([raster()], { endOfLabel: "feed" });
     const pitch = LABEL_PITCH_MM * DOTS_PER_MM;
     assert.deepEqual(
       [...job.subarray(-6)],
       [0x1b, 0x4a, 255, 0x1b, 0x4a, pitch - 255]
     );
+    assert.notDeepEqual([...job.subarray(0, 2)], [0x1d, 0x0c]);
   });
 });
