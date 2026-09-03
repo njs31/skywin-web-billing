@@ -1,4 +1,4 @@
-import { formatNumber, toNumber } from "./utils";
+import { formatNumber, formatRate, toNumber } from "./utils";
 
 export type InvoiceDiscountItem = {
   qty: string | number;
@@ -36,7 +36,7 @@ export function lineDiscountLabel(item: InvoiceDiscountItem): string {
   if (item.discountType === "value") {
     return formatNumber(amount, 2);
   }
-  if (percent > 0) return `${formatNumber(percent, 2)}%`;
+  if (percent > 0) return `${formatRate(percent)}%`;
   if (amount > 0) return formatNumber(amount, 2);
   return "";
 }

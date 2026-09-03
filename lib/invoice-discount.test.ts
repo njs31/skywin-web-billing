@@ -18,7 +18,7 @@ describe("retail invoice discount details", () => {
     };
     assert.equal(lineDiscountPercent(item), 10);
     assert.equal(lineDiscountAmount(item), 20.79);
-    assert.equal(lineDiscountLabel(item), "10.00%");
+    assert.equal(lineDiscountLabel(item), "10%");
   });
 
   it("totals both discounted lines on that cash bill", () => {

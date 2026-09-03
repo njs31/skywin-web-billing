@@ -759,10 +759,10 @@ function RetailReceiptLayout({
         <thead>
           <tr className="border-b border-dashed border-slate-400 text-left">
             <th className="py-0.5 font-semibold">Item</th>
-            <th className="py-0.5 text-right font-semibold">Qty</th>
-            <th className="py-0.5 text-right font-semibold">Rate</th>
-            <th className="py-0.5 text-right font-semibold">Disc</th>
-            <th className="py-0.5 text-right font-semibold">Amt</th>
+            <th className="py-0.5 pl-2 text-right font-semibold">Qty</th>
+            <th className="py-0.5 pl-2 text-right font-semibold">Rate</th>
+            <th className="py-0.5 pl-2 text-right font-semibold">Disc</th>
+            <th className="py-0.5 pl-2 text-right font-semibold">Amt</th>
           </tr>
         </thead>
         <tbody>
@@ -774,12 +774,12 @@ function RetailReceiptLayout({
                 <td className="py-0.5 pr-1">
                   {item.productName ?? item.customName ?? "Custom Item"}
                 </td>
-                <td className="py-0.5 text-right whitespace-nowrap">
+                <td className="py-0.5 pl-2 text-right whitespace-nowrap">
                   {formatNumber(item.qty, 2)} {unit}
                 </td>
-                <td className="py-0.5 text-right">{formatNumber(item.rate, 2)}</td>
-                <td className="py-0.5 text-right whitespace-nowrap">{disc || "—"}</td>
-                <td className="py-0.5 text-right">{formatNumber(item.amount, 2)}</td>
+                <td className="py-0.5 pl-2 text-right">{formatNumber(item.rate, 2)}</td>
+                <td className="py-0.5 pl-2 text-right whitespace-nowrap">{disc || "—"}</td>
+                <td className="py-0.5 pl-2 text-right">{formatNumber(item.amount, 2)}</td>
               </tr>
             );
           })}
