@@ -7,6 +7,11 @@ import {
 } from "@/lib/utils";
 import { amountInIndianWords } from "@/lib/print-helpers";
 import { invoiceSettlement } from "@/lib/sale-settlement";
+import {
+  lineDiscountLabel,
+  lineDiscountPercent,
+  totalLineDiscount,
+} from "@/lib/invoice-discount";
 
 type InvoiceSale = {
   invoiceNo: string;
@@ -97,13 +102,7 @@ type HsnRow = {
 };
 
 function discPercent(item: InvoiceItem): number {
-  if (toNumber(item.discountPercent) > 0) return toNumber(item.discountPercent);
-  if (item.discountType === "percent") return toNumber(item.discountValue);
-  const qty = toNumber(item.qty);
-  const rate = toNumber(item.rate);
-  const gross = qty * rate;
-  if (gross <= 0) return 0;
-  return Math.round((toNumber(item.discountValue) / gross) * 10000) / 100;
+  return lineDiscountPercent(item);
 }
 
 function paymentLabel(sale: InvoiceSale): string {
@@ -703,6 +702,7 @@ function RetailReceiptLayout({
   const customer = sale.customerRecordName ?? sale.customerName ?? null;
   const interstate = toNumber(sale.igst) > 0;
   const taxableTotal = items.reduce((s, i) => s + toNumber(i.amount), 0);
+  const discountTotal = totalLineDiscount(items);
   const roundOff = toNumber(sale.roundOff);
   const invoiceDate = formatDateIST(sale.date);
   const settlement = invoiceSettlement({
@@ -761,21 +761,24 @@ function RetailReceiptLayout({
             <th className="py-0.5 font-semibold">Item</th>
             <th className="py-0.5 text-right font-semibold">Qty</th>
             <th className="py-0.5 text-right font-semibold">Rate</th>
+            <th className="py-0.5 text-right font-semibold">Disc</th>
             <th className="py-0.5 text-right font-semibold">Amt</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, idx) => {
             const unit = (item.unit || "PCS").toUpperCase();
+            const disc = lineDiscountLabel(item);
             return (
               <tr key={idx} className="align-top">
                 <td className="py-0.5 pr-1">
                   {item.productName ?? item.customName ?? "Custom Item"}
                 </td>
-                <td className="py-0.5 text-right">
+                <td className="py-0.5 text-right whitespace-nowrap">
                   {formatNumber(item.qty, 2)} {unit}
                 </td>
                 <td className="py-0.5 text-right">{formatNumber(item.rate, 2)}</td>
+                <td className="py-0.5 text-right whitespace-nowrap">{disc || "—"}</td>
                 <td className="py-0.5 text-right">{formatNumber(item.amount, 2)}</td>
               </tr>
             );
@@ -784,6 +787,9 @@ function RetailReceiptLayout({
       </table>
 
       <div className={dash} />
+      {discountTotal > 0.004 && (
+        <ReceiptRow label="Discount" value={formatNumber(discountTotal, 2)} />
+      )}
       <ReceiptRow label="Taxable" value={formatNumber(taxableTotal, 2)} />
       {interstate ? (
         <ReceiptRow label="IGST" value={formatNumber(sale.igst, 2)} />
