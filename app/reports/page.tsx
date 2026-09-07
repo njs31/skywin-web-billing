@@ -6,7 +6,7 @@ import {
   getPurchaseBook,
 } from "@/lib/queries/reports";
 import { getSales } from "@/lib/queries/sales";
-import { formatCurrency, formatDateIST } from "@/lib/utils";
+import { formatCurrency, formatDateIST, formatNumber } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TallyExportButton } from "@/components/reports/tally-export-button";
 import { EwayExportButton } from "@/components/reports/eway-export-button";
@@ -90,7 +90,7 @@ export default async function ReportsPage() {
   const kpis = [
     {
       label: "Revenue (MTD)",
-      value: formatCurrency(profit.revenue),
+      value: formatCurrency(profit.revenue, { round: true }),
       sub: monthLabel,
       icon: TrendingUp,
       accent: "bg-emerald-50 text-emerald-600",
@@ -98,7 +98,7 @@ export default async function ReportsPage() {
     },
     {
       label: "Est. Cost",
-      value: formatCurrency(profit.cost),
+      value: formatCurrency(profit.cost, { round: true }),
       sub: "Purchase cost estimate",
       icon: Package,
       accent: "bg-slate-100 text-slate-600",
@@ -106,7 +106,7 @@ export default async function ReportsPage() {
     },
     {
       label: "Gross Profit",
-      value: formatCurrency(profit.grossProfit),
+      value: formatCurrency(profit.grossProfit, { round: true }),
       sub: profit.grossProfit >= 0 ? "Positive this month" : "Loss this month",
       icon: Wallet,
       accent:
@@ -118,7 +118,7 @@ export default async function ReportsPage() {
     },
     {
       label: "Margin",
-      value: `${profit.margin.toFixed(1)}%`,
+      value: `${Math.round(profit.margin)}%`,
       sub: "Gross margin %",
       icon: Percent,
       accent: "bg-amber-50 text-amber-600",
@@ -230,10 +230,10 @@ export default async function ReportsPage() {
                           {d.billCount}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatCurrency(d.salesTotal)}
+                          {formatCurrency(d.salesTotal, { round: true })}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatCurrency(d.purchaseTotal)}
+                          {formatCurrency(d.purchaseTotal, { round: true })}
                         </TableCell>
                         <TableCell
                           className={`text-right font-semibold tabular-nums ${
@@ -242,7 +242,7 @@ export default async function ReportsPage() {
                               : "text-red-600"
                           }`}
                         >
-                          {formatCurrency(d.grossProfit)}
+                          {formatCurrency(d.grossProfit, { round: true })}
                         </TableCell>
                       </TableRow>
                     ))
@@ -286,10 +286,10 @@ export default async function ReportsPage() {
                           {p.productName}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {p.totalQty}
+                          {formatNumber(p.totalQty, 0)}
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums">
-                          {formatCurrency(p.totalAmount)}
+                          {formatCurrency(p.totalAmount, { round: true })}
                         </TableCell>
                       </TableRow>
                     ))
@@ -334,7 +334,7 @@ export default async function ReportsPage() {
                           {p.billCount}
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums">
-                          {formatCurrency(p.totalAmount)}
+                          {formatCurrency(p.totalAmount, { round: true })}
                         </TableCell>
                       </TableRow>
                     ))
@@ -411,7 +411,7 @@ export default async function ReportsPage() {
                         {s.paymentMode}
                       </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums">
-                        {formatCurrency(s.grandTotal)}
+                        {formatCurrency(s.grandTotal, { round: true })}
                       </TableCell>
                     </TableRow>
                   ))
@@ -472,7 +472,7 @@ export default async function ReportsPage() {
                         </span>
                       </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums">
-                        {formatCurrency(p.grandTotal)}
+                        {formatCurrency(p.grandTotal, { round: true })}
                       </TableCell>
                     </TableRow>
                   ))
