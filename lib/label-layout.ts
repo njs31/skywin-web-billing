@@ -198,10 +198,17 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   });
 
   // EXP and MRP share the footer line; MRP wins the space it needs.
+  // MRP sits a few mm in from the content edge rather than flush to `right`:
+  // on this printer the head runs slightly past the sticker's right edge, so
+  // text flush right loses its last glyphs (the paise of the MRP) off the
+  // label. See label-print-config.ts for the head/sticker geometry.
+  const footerRightInset = Math.round(2.5 * DOTS_PER_MM); // 20 dots ≈ 2.5 mm
+  const mrpRight = right - footerRightInset;
   const mrpText = `MRP ${fields.mrp}`;
   const mrp = fitToWidth(mrpText, L.mrpSize, false, CONTENT_W_DOTS * 0.6);
   const expText = `EXP ${fields.exp || "—"}`;
-  const expRoom = CONTENT_W_DOTS - measureText(mrp.text, mrp.size, false) - 8;
+  const expRoom =
+    CONTENT_W_DOTS - footerRightInset - measureText(mrp.text, mrp.size, false) - 8;
   const exp = fitToWidth(expText, L.expSize, false, Math.max(24, expRoom));
 
   texts.push({
@@ -215,7 +222,7 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   // The price keeps its prominence through size, not weight.
   texts.push({
     text: mrp.text,
-    x: right,
+    x: mrpRight,
     baseline: L.footerBaseline,
     size: mrp.size,
     bold: false,
