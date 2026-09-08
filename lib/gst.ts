@@ -178,24 +178,28 @@ export function isInterstateGst(
   return customerState !== businessState;
 }
 
+/**
+ * One selling price for every customer.
+ *
+ * Retail and wholesale bills now charge the same rate — the product sale rate.
+ * The `wholesaleRate` column is left in place (product form, exports) but is no
+ * longer applied at billing; `billType` still only decides invoice numbering
+ * and reporting. Changed on request 2026-09-08.
+ */
 export function getProductRate(
   product: {
     saleRate: string;
     wholesaleRate: string | null;
   },
-  billType: "retail" | "wholesale" | "others"
+  _billType: "retail" | "wholesale" | "others"
 ) {
-  // "others" prices like retail (product sale rate).
-  if (billType === "wholesale" && product.wholesaleRate) {
-    return toNumber(product.wholesaleRate);
-  }
   return toNumber(product.saleRate);
 }
 
 /**
- * POS / sale-entry rate for a specific batch. Prefers the batch sale rate so
- * different lots can bill at their own price; wholesale still uses the
- * product wholesale rate when set.
+ * Sale-entry rate for a specific batch: the batch's own sale rate when set,
+ * otherwise the product sale rate. Same for every customer — the wholesale
+ * rate is not consulted. See getProductRate.
  */
 export function getBatchBillingRate(
   row: {
@@ -203,18 +207,11 @@ export function getBatchBillingRate(
     wholesaleRate?: string | number | null;
     batchSaleRate?: string | number | null;
   },
-  billType: "retail" | "wholesale" | "others" | "sale" | "purchase"
+  _billType: "retail" | "wholesale" | "others" | "sale" | "purchase"
 ) {
   const productSale = toNumber(row.saleRate);
   const batchSale = toNumber(row.batchSaleRate);
-  const wholesale = toNumber(row.wholesaleRate);
-  if (billType === "wholesale") {
-    if (wholesale > 0) return wholesale;
-    if (batchSale > 0) return batchSale;
-    return productSale;
-  }
-  if (batchSale > 0) return batchSale;
-  return productSale;
+  return batchSale > 0 ? batchSale : productSale;
 }
 
 /** GST-inclusive customer price from exclusive sale rate. */

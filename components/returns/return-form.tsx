@@ -231,7 +231,8 @@ export function ReturnForm({
       {
         product: p,
         qty: 1,
-        rate: toNumber(isWholesale ? p.wholesaleRate ?? p.saleRate : p.saleRate),
+        // One price for every customer — no wholesale rate. See lib/gst.ts.
+        rate: toNumber(p.saleRate),
         discountPercent: 0,
       },
     ]);

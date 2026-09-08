@@ -53,13 +53,21 @@ describe("batch-wise sale rate", () => {
     );
   });
 
-  it("prefers wholesale rate in wholesale billing", () => {
+  it("ignores the wholesale rate — one price for every customer", () => {
+    // Changed 2026-09-08: wholesale and retail bill at the same rate.
     assert.equal(
       getBatchBillingRate(
         { saleRate: "100", wholesaleRate: "80", batchSaleRate: "125" },
         "wholesale"
       ),
-      80
+      125
+    );
+    assert.equal(
+      getBatchBillingRate(
+        { saleRate: "100", wholesaleRate: "80", batchSaleRate: null },
+        "wholesale"
+      ),
+      100
     );
   });
 });

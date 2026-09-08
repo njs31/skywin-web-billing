@@ -8,6 +8,7 @@ import {
   applyRupeeRounding,
   calculateGstBreakdown,
   calculateLineAmount,
+  getBatchBillingRate,
   getProductRate,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
@@ -73,7 +74,9 @@ export function QuotationForm({ customers }: { customers: Customer[] }) {
         product: p,
         name: p.name,
         qty: 1,
-        rate: getProductRate(p, "wholesale"),
+        // Same price as the counter: batch sale rate baked into p.saleRate by
+        // addBatchRow, else the product sale rate. No wholesale rate.
+        rate: getProductRate(p, "retail"),
         gstRate: toNumber(p.gstRate),
         discountPercent: 0,
         hsnCode: p.hsnCode ?? undefined,
@@ -91,7 +94,9 @@ export function QuotationForm({ customers }: { customers: Customer[] }) {
       barcode: row.barcode,
       hsnCode: row.hsnCode,
       gstRate: row.gstRate,
-      saleRate: row.saleRate,
+      // Bill at this batch's sale rate (fall back to product rate) — the same
+      // rate the POS counter uses for this lot.
+      saleRate: String(getBatchBillingRate(row, "sale")),
       wholesaleRate: row.wholesaleRate,
       purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
       stockQty: row.productStockQty,
