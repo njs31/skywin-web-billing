@@ -84,11 +84,11 @@ describe("barcode dot layout", () => {
 });
 
 describe("thermal sticker geometry", () => {
-  it("is 50 × 30 mm at 8 dots/mm (400 × 240 dots)", () => {
+  it("is 50 × 24.5 mm at 8 dots/mm (400 × 196 dots)", () => {
     assert.equal(LABEL_W_DOTS, 400);
-    assert.equal(LABEL_H_DOTS, 240);
+    assert.equal(LABEL_H_DOTS, 196);
     assert.equal(mmToDots(50), 400);
-    assert.equal(mmToDots(30), 240);
+    assert.equal(mmToDots(24.5), 196);
   });
 
   it("starts the raster where the head actually starts", () => {

@@ -40,7 +40,7 @@ function textExtent(item: ReturnType<typeof buildLabelPlan>["texts"][number]) {
 }
 
 describe("label plan", () => {
-  it("is exactly one 50 × 30 mm sticker", () => {
+  it("is exactly one 50 × 24.5 mm sticker", () => {
     for (const fields of SAMPLES) {
       const plan = buildLabelPlan(fields);
       assert.equal(plan.widthDots, LABEL_W_DOTS);
@@ -101,15 +101,15 @@ describe("label plan", () => {
     }
   });
 
-  it("keeps the barcode modules wide enough to scan", () => {
-    // The QR used to rescue a marginal read; it has been removed, so the
-    // Code 128 is the only machine-readable mark and one dot per module —
-    // 0.125 mm at 8 dots/mm — is finer than thermal bleed can hold.
+  it("keeps the QR modules wide enough to scan", () => {
+    // The label carries a QR of the code and no linear barcode (client design
+    // 2026-09-08). A QR module finer than ~3 dots (0.375 mm at 8 dots/mm)
+    // closes up under thermal bleed and a phone camera cannot resolve it.
     for (const fields of SAMPLES) {
       const plan = buildLabelPlan(fields);
       assert.ok(
-        plan.barcode.moduleDots >= 2,
-        `${fields.code}: module is ${plan.barcode.moduleDots} dots`
+        plan.barcode.moduleDots >= 3,
+        `${fields.code}: QR module is ${plan.barcode.moduleDots} dots`
       );
     }
   });
@@ -126,31 +126,40 @@ describe("label plan", () => {
     );
   });
 
-  it("centres the barcode in the content column", () => {
+  it("puts the QR on the right and keeps it square", () => {
     const contentRight = CONTENT_X_DOTS + CONTENT_W_DOTS;
     for (const fields of SAMPLES) {
       const plan = buildLabelPlan(fields);
-      const xs = plan.bars.map((bar) => bar.x);
-      const ends = plan.bars.map((bar) => bar.x + bar.width);
-      const leftGap = Math.min(...xs) - CONTENT_X_DOTS;
-      const rightGap = contentRight - Math.max(...ends);
-      // Whole-dot modules mean the two margins can differ by a dot or so.
+      const minX = Math.min(...plan.bars.map((b) => b.x));
+      const maxX = Math.max(...plan.bars.map((b) => b.x + b.width));
+      const minY = Math.min(...plan.bars.map((b) => b.y));
+      const maxY = Math.max(...plan.bars.map((b) => b.y + b.height));
+
+      // Right-aligned, a couple of mm in from the content edge.
       assert.ok(
-        Math.abs(leftGap - rightGap) <= 2,
-        `${fields.code}: barcode off-centre by ${Math.abs(leftGap - rightGap)} dots`
+        contentRight - maxX <= 6,
+        `${fields.code}: QR right edge is ${contentRight - maxX} dots from the content edge`
+      );
+      // Sits in the right half of the label, not over the left text column.
+      assert.ok(minX >= LABEL_W_DOTS / 2, `${fields.code}: QR reaches into the left column`);
+      // Square, within one module.
+      assert.ok(
+        Math.abs((maxX - minX) - (maxY - minY)) <= plan.barcode.moduleDots,
+        `${fields.code}: QR is not square`
       );
     }
   });
 
-  it("has no QR code", () => {
+  it("carries a QR code, not a single-height barcode", () => {
     for (const fields of SAMPLES) {
       const plan = buildLabelPlan(fields);
-      // Every bar is a barcode bar: same y, same height, full bar height.
+      // A QR has many short module-height bars stacked over several rows; a
+      // Code 128 would be a handful of full-height bars all sharing one y.
+      const rows = new Set(plan.bars.map((b) => b.y));
+      assert.ok(rows.size >= 10, `${fields.code}: only ${rows.size} bar rows — not a QR`);
       assert.ok(
-        plan.bars.every(
-          (bar) => bar.y === plan.barcode.y && bar.height === plan.barcode.height
-        ),
-        `${fields.code}: a bar is not part of the Code 128`
+        plan.bars.every((b) => b.height === plan.barcode.moduleDots),
+        `${fields.code}: a bar is taller than one QR module`
       );
     }
   });
@@ -166,24 +175,41 @@ describe("label plan", () => {
     assert.equal(PRINT_BAND_BOTTOM_DOTS, PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS);
   });
 
-  it("never drops the price or the barcode text", () => {
+  it("never drops the price or the code text", () => {
     for (const fields of SAMPLES) {
       const texts = buildLabelPlan(fields).texts.map((item) => item.text);
       assert.ok(
-        texts.some((text) => text === `MRP ${fields.mrp}`),
-        `${fields.code}: MRP was truncated`
+        texts.some((text) => text === `RATE: ${fields.mrp}`),
+        `${fields.code}: RATE was truncated`
       );
       assert.ok(texts.includes(fields.code), `${fields.code}: code text was truncated`);
     }
   });
 
-  it("gives a long product name every line it is allowed", () => {
-    const plan = buildLabelPlan(SAMPLES[1]!);
-    const { nameBaseline, nameLineHeight, nameLines } = LABEL_LAYOUT;
-    const last = nameBaseline + (nameLines - 1) * nameLineHeight;
-    const lines = plan.texts.filter(
-      (item) => item.baseline >= nameBaseline && item.baseline <= last
+  it("prints the shop name and the tagline in brackets", () => {
+    const texts = buildLabelPlan(SAMPLES[0]!).texts.map((item) => item.text);
+    assert.ok(texts.includes("SKYWIN BIOTECH"), "shop name missing");
+    assert.ok(
+      texts.some((text) => text.startsWith("(") && text.endsWith(")")),
+      "bracketed tagline missing"
     );
-    assert.equal(lines.length, nameLines);
+  });
+
+  it("keeps EXP labelled even with no date", () => {
+    const plan = buildLabelPlan(SAMPLES[2]!); // exp: ""
+    assert.ok(
+      plan.texts.some((item) => item.text === "EXP:"),
+      "EXP: label was dropped when there is no date"
+    );
+  });
+
+  it("gives the product name one left-aligned line", () => {
+    const plan = buildLabelPlan(SAMPLES[1]!); // the longest name in the catalogue
+    const nameRuns = plan.texts.filter(
+      (item) => item.baseline === LABEL_LAYOUT.nameBaseline
+    );
+    assert.equal(nameRuns.length, 1);
+    assert.equal(nameRuns[0]!.anchor, "start");
+    assert.ok(nameRuns[0]!.text.endsWith("…"), "a name too long to fit should be clipped");
   });
 });

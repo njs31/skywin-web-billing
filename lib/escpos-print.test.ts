@@ -68,10 +68,16 @@ test("buildEscPosLabel", async (t) => {
   const job = buildEscPosLabel(raster());
 
   await t.test("matches the byte count the vendor driver produces", () => {
-    // 64 lead-in + 6 full bands + 2-byte gap seek, for the 368 × 144 dot
-    // printable band. buildEscPosLabel is one label, so no present feed.
-    assert.equal(job.length, 64 + 6 * (8 + BAND_ROWS * BYTES_PER_ROW) + 2);
-    assert.equal(job.length, 6738);
+    // 64 lead-in + one GS v 0 band per BAND_ROWS of the printable band (the
+    // last band is short) + 2-byte gap seek. One label, so no present feed.
+    const full = Math.floor(PRINT_BAND_H_DOTS / BAND_ROWS);
+    const tail = PRINT_BAND_H_DOTS % BAND_ROWS;
+    const expected =
+      64 +
+      full * (8 + BAND_ROWS * BYTES_PER_ROW) +
+      (tail ? 8 + tail * BYTES_PER_ROW : 0) +
+      2;
+    assert.equal(job.length, expected);
   });
 
   await t.test("leads with the zero-byte wake-up", () => {
@@ -113,7 +119,9 @@ test("buildEscPosLabel", async (t) => {
     // + feed overshoots the pitch, every label drifts further down the roll
     // than the last; the vendor driver's 80-dot tear-off feed did this.
     const pitch = LABEL_PITCH_MM * DOTS_PER_MM;
-    assert.equal(PRINT_BAND_H_DOTS + DEFAULT_FEED_DOTS, pitch);
+    // The pitch (27.9 mm) is not a whole number of dots, so allow the
+    // rounding slack in DEFAULT_FEED_DOTS.
+    assert.ok(Math.abs(PRINT_BAND_H_DOTS + DEFAULT_FEED_DOTS - pitch) <= 1);
   });
 
   await t.test("an explicit gap means the sensor cannot be used", () => {
@@ -176,10 +184,10 @@ test("buildEscPosJob", async (t) => {
   });
 
   await t.test("clamps a nonsense tear-off distance", () => {
-    // Past 25 mm the feed crosses the following die cut, and the seek opening
-    // the next job then skips an extra sticker every time.
+    // Past ~17.5 mm the feed crosses the following die cut on the 27.9 mm-pitch
+    // stock, and the seek opening the next job then skips an extra sticker.
     assert.deepEqual([...buildEscPosJob([raster()], { presentDots: 9999 }).subarray(-3)],
-      [0x1b, 0x4a, 200]);
+      [0x1b, 0x4a, 140]);
     assert.deepEqual([...buildEscPosJob([raster()], { presentDots: -5 }).subarray(-2)],
       [0x1d, 0x0c], "a zero feed leaves the label's own seek as the last command");
     assert.deepEqual([...buildEscPosJob([raster()], { presentDots: Number.NaN }).subarray(-3)],
@@ -250,15 +258,13 @@ test("buildEscPosJob", async (t) => {
   });
 
   await t.test("presents by counted feed when the sensor is not in use", () => {
-    // A blind job has no sensor to recover with, so its feed must be an exact
-    // pitch or every later label is out of step. ESC J tops out at 255 dots,
-    // so that takes two commands. And it must not lead with a seek.
+    // A blind job has no sensor to recover with, so its final feed must be an
+    // exact pitch or every later label is out of step. The 27.9 mm pitch is
+    // 223 dots, under the 255 an ESC J holds, so it is one command — and it
+    // must not lead with a seek.
     const job = buildEscPosJob([raster()], { endOfLabel: "feed" });
-    const pitch = LABEL_PITCH_MM * DOTS_PER_MM;
-    assert.deepEqual(
-      [...job.subarray(-6)],
-      [0x1b, 0x4a, 255, 0x1b, 0x4a, pitch - 255]
-    );
+    const pitch = Math.round(LABEL_PITCH_MM * DOTS_PER_MM);
+    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, pitch]);
     assert.notDeepEqual([...job.subarray(0, 2)], [0x1d, 0x0c]);
   });
 });

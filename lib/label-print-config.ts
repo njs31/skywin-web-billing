@@ -1,39 +1,43 @@
 /**
  * POSiFLOW P58D 2-inch thermal label printer, 203 DPI.
  *
- * Media, measured off the roll on 2026-09-01:
+ * Media, measured off the roll on 2026-09-08 (50 × 25 mm stock — the earlier
+ * 50 × 30 mm figures drove every print down the roll because the feed maths
+ * over-fed ~7 mm a label):
  *
- *   liner width      55 mm
- *   sticker          50 × 30 mm, centred on the liner (2.5 mm each side)
- *   gap between      4 mm
- *   pitch            34 mm  (sticker + gap)
+ *   liner width      54 mm
+ *   sticker          50 mm wide × 24.5 mm tall, 2 mm liner each side
+ *   gap between      3 mm
+ *   pitch            27.9 mm   (measured over 10 stickers, not derived)
  *
- * 8 dots/mm makes the label exactly 400 × 240 dots. Using 8 rather than
- * 203/25.4 keeps the artwork on the same grid the head burns on, which avoids
- * a sub-dot drift down the label.
+ * 8 dots/mm keeps the artwork on the grid the head burns on, which avoids a
+ * sub-dot drift down the label. 24.5 mm → 196 dots tall.
  */
 export const DOTS_PER_MM = 8;
 
 export const LABEL_W_MM = 50;
-export const LABEL_H_MM = 30;
+export const LABEL_H_MM = 24.5;
 
-/** Backing paper width. The sticker is centred on it. */
-export const LINER_W_MM = 55;
+/** Backing paper width. The sticker is centred on it (2 mm each side). */
+export const LINER_W_MM = 54;
 
 /**
- * Liner gap between die-cut stickers, in mm. Measure your roll and change this
- * if labels creep: the printer is fed the image (exactly LABEL_H_MM) and then
- * this gap, so image + gap must equal the sticker pitch. Feeding more than the
- * pitch makes every label drift further down the roll than the last; feeding
- * less walks it up, which is the "half a QR after the gap" symptom.
+ * Liner gap between die-cut stickers, in mm. Only used for the blind-feed
+ * fallback; the normal path seeks the gap with the sensor. Measure your roll
+ * and change this if labels creep in blind mode.
  */
-export const LABEL_GAP_MM = 4;
+export const LABEL_GAP_MM = 3;
 
-/** Sticker to sticker. The paper must advance exactly this per label. */
-export const LABEL_PITCH_MM = LABEL_H_MM + LABEL_GAP_MM; // 34
+/**
+ * Sticker to sticker. The single most important number: every "how far to the
+ * next label" feed is derived from it. MEASURED over ten stickers, not
+ * `LABEL_H_MM + LABEL_GAP_MM` — a 0.4 mm error here is what accumulates into a
+ * whole sticker of drift over a run.
+ */
+export const LABEL_PITCH_MM = 27.9;
 
 export const LABEL_W_DOTS = LABEL_W_MM * DOTS_PER_MM; // 400
-export const LABEL_H_DOTS = LABEL_H_MM * DOTS_PER_MM; // 240
+export const LABEL_H_DOTS = Math.round(LABEL_H_MM * DOTS_PER_MM); // 196
 
 /**
  * Where the head's first dot lands, measured from the sticker's left edge.
@@ -72,48 +76,33 @@ export const DRIVER_PAGE_W_MM = PRINT_W_DOTS / DOTS_PER_MM; // 48
 export const DRIVER_PAGE_H_MM = LABEL_H_MM;
 
 /**
- * Where the printer parks the paper after a `GS FF` gap seek, in mm.
+ * Where the printer parks the paper after a `GS FF` gap seek, in mm from the
+ * top of the sticker.
  *
- * Measured from a print on 2026-09-01: the gap sensor stops the paper with the
- * head roughly 5 mm *past* the die cut, not level with it — the sensor sits
- * upstream of the head, so by the time the gap is detected the paper has run
- * on. Every label therefore starts 5 mm down the sticker, and the top 5 mm of
- * a sticker cannot be printed at all.
- *
- * This is a property of the printer, not of the design. Nothing in the layout
- * can recover that strip; what the layout must do is stop drawing before the
- * die cut at the other end, which is what PRINT_BAND_H_MM is for.
+ * A property of the printer (the gap sensor sits upstream of the head, so the
+ * paper runs on a little before the gap is registered), so it carries over from
+ * the 30 mm media unchanged at 5 mm — but it has NOT been re-measured on the
+ * 24.5 mm stock. Print the test label (border + mm scale) and adjust if the
+ * artwork's top edge does not land 5 mm down.
  */
 export const PRINT_TOP_OFFSET_MM = 5;
 export const PRINT_TOP_OFFSET_DOTS = PRINT_TOP_OFFSET_MM * DOTS_PER_MM; // 40
 
 /**
- * How much of the sticker is actually printed, in mm.
+ * How much of the sticker is actually printed, in mm, starting at
+ * PRINT_TOP_OFFSET_MM.
  *
- * Starts at PRINT_TOP_OFFSET_MM. Geometry alone would allow 25 mm, but the
- * printer stops burning before then: measured on 2026-09-01, ink at sticker
- * rows 175..181 printed and ink at rows 199..207 — EXP and MRP — did not,
- * while being present in the raster the printer was sent. So the head goes
- * dead somewhere around 23-25 mm down the sticker, roughly mirroring the 5 mm
- * dead zone at the top, which is what a sensor offset from the head would do
- * at both ends.
- *
- * 18 mm keeps every mark inside the region that demonstrably burns, with the
- * lowest ink at row 179 against the last row known to print, 181. It is
- * deliberately conservative: the exact cut-off has not been measured, only
- * bracketed between rows 181 and 199. The test label's millimetre scale is
- * what will pin it down, and this can then be opened back up.
- *
- * It also has to finish before the gap regardless, or `GS FF` has no travel
- * left and skips a whole sticker hunting the next one — which is what left
- * every second sticker blank.
+ * 24.5 mm sticker − 5 mm dead top − ~2.5 mm the gap seek needs to re-find the
+ * die cut ≈ 17 mm. Keeping the raster inside this leaves `GS FF` room to
+ * re-register every label; overrunning it is what let the print walk off the
+ * sticker after a few labels.
  */
-export const PRINT_BAND_H_MM = 18;
-export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 144
+export const PRINT_BAND_H_MM = 17;
+export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 136
 
 /** First and last artwork row the printer can actually burn. */
 export const PRINT_BAND_TOP_DOTS = PRINT_TOP_OFFSET_DOTS; // 40
-export const PRINT_BAND_BOTTOM_DOTS = PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS; // 224
+export const PRINT_BAND_BOTTOM_DOTS = PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS; // 176
 
 /**
  * The column the content occupies, centred on the sticker.
@@ -171,59 +160,59 @@ export function mmToDots(mm: number) {
  * position text by its baseline — sharing that one convention is what keeps
  * the on-screen preview, the downloaded PNG and the printed sticker identical.
  */
+/**
+ * Layout, client design 2026-09-08:
+ *
+ *   SKYWIN BIOTECH            (bold, centred)
+ *   (AGRI SUPER MARKET)       (regular, centred)
+ *   <product name>            (left)          ┌──────────┐
+ *   <code>            (left, large)           │    QR    │  code, on the right,
+ *   EXP: <date>              (left)           │  square  │  square, spanning the
+ *   RATE: <price>     (left, large)           └──────────┘  code..RATE rows
+ *
+ * No linear barcode any more — the QR is the only machine-readable mark.
+ * Everything lives between PRINT_BAND_TOP_DOTS (40) and PRINT_BAND_BOTTOM_DOTS
+ * (224), the only rows the head can reach. Every `*Baseline` is a text baseline.
+ */
 export const LABEL_LAYOUT = {
-  /** The shop name is the masthead: centred, and the largest thing on it. */
-  companyBaseline: 56,
-  companySize: 18,
+  /** The shop name is the masthead: centred, bold, the largest thing on it. */
+  companyBaseline: 51,
+  companySize: 13,
+  /** The tagline, in brackets, centred under the name. Regular weight. */
+  taglineBaseline: 63,
+  taglineSize: 8,
   /**
-   * Product name, centred under the masthead.
-   *
-   * Regular weight, like everything below the masthead. Bold at this size
-   * prints as a blob: a bold stroke is two dots, thermal bleed spreads each
-   * one, and the counters close up — the shop could see the text and not read
-   * it. Lighter and a dot larger reads better than heavier and smaller.
+   * Product name, one line, left-aligned, kept clear of the QR column and
+   * clipped (not shrunk to nothing) when it is too long. Regular weight — bold
+   * at this size blobs once thermal bleed closes the counters.
    */
-  nameBaseline: 76,
-  nameSize: 13,
-  nameLineHeight: 14,
-  nameLines: 2,
+  nameBaseline: 78,
+  nameSize: 10,
+  /** The product code in figures, left, large — the human-readable copy of the QR. */
+  codeBaseline: 102,
+  codeSize: 14,
+  /** EXP and RATE are read across a counter, so they are the largest text. */
+  expBaseline: 123,
+  expSize: 10,
+  rateBaseline: 145,
+  rateSize: 14,
   /**
-   * The barcode is centred by layoutCode128Dots inside the content column and
-   * takes whatever whole-dot module width fits, so its width varies with the
-   * length of the code. That is deliberate — module width is what decides
-   * whether a scanner can read it, so it gets first claim on the space.
+   * The QR square, in the right column. `qrTop` is its top edge (just below the
+   * tagline); `qrMaxSize` is the box it is fitted into — the real QR is floored
+   * to a whole-dot module, so a 21-module code comes out 105 dots (module 5 =
+   * 0.625 mm). Right edge sits `qrRightInset` in from the content edge. Bottom
+   * (66 + 105 = 171) stays inside PRINT_BAND_BOTTOM_DOTS (176).
    */
-  barcodeY: 98,
-  /**
-   * 48 dots is 6 mm. Shorter than one would like, and shorter than it was:
-   * the printable band lost 5 mm when it turned out the head stops burning
-   * before the die cut, and the barcode is what had the height to give.
-   */
-  barcodeH: 48,
-  codeBaseline: 158,
-  codeSize: 10,
-  /**
-   * EXP and MRP are read across a counter, so they are the largest text below
-   * the masthead — bigger than the code digits above them, which are only
-   * there for a human to check against the barcode.
-   *
-   * Size is the only lever here. Weight is not: bold at this size prints as a
-   * blob once thermal bleed closes the counters, which is why the whole label
-   * below the masthead is regular. Bigger and lighter beats smaller and
-   * heavier on this printer.
-   *
-   * The ceiling is the burn cut-off, not the sticker. Ink at row 181 is known
-   * to print and rows past 182 are unverified, so at this baseline the price
-   * can reach 16 dots and no further.
-   */
-  footerBaseline: 176,
-  expSize: 14,
-  mrpSize: 16,
+  qrTop: 66,
+  qrMaxSize: 106,
+  qrRightInset: 2,
 } as const;
 
 /** Lowest ink on the label. Must not reach PRINT_BAND_BOTTOM_DOTS. */
-export const LABEL_INK_BOTTOM_DOTS =
-  LABEL_LAYOUT.footerBaseline + Math.ceil(LABEL_LAYOUT.mrpSize * 0.25);
+export const LABEL_INK_BOTTOM_DOTS = Math.max(
+  LABEL_LAYOUT.rateBaseline + Math.ceil(LABEL_LAYOUT.rateSize * 0.25),
+  LABEL_LAYOUT.qrTop + LABEL_LAYOUT.qrMaxSize
+);
 
 /** Highest ink on the label. Must not rise above PRINT_BAND_TOP_DOTS. */
 export const LABEL_INK_TOP_DOTS = Math.floor(

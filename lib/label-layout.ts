@@ -11,7 +11,7 @@
  * exactly what the printer burns. Everything is in printer dots at 8 dots/mm.
  */
 import { BUSINESS } from "@/lib/business";
-import { layoutCode128Dots } from "@/lib/code128";
+import { layoutQrDots } from "@/lib/qr-code";
 import {
   CONTENT_W_DOTS,
   CONTENT_X_DOTS,
@@ -93,6 +93,16 @@ export type LabelPlanFields = {
   exp: string;
 };
 
+/** Keep the size; drop trailing characters (with an ellipsis) until it fits. */
+function clipToWidth(text: string, size: number, bold: boolean, maxWidth: number) {
+  if (measureText(text, size, bold) <= maxWidth) return text;
+  let clipped = text;
+  while (clipped.length > 1 && measureText(`${clipped}…`, size, bold) > maxWidth) {
+    clipped = clipped.slice(0, -1);
+  }
+  return `${clipped}…`;
+}
+
 /** Shrink until it fits, then clip with an ellipsis as a last resort. */
 function fitToWidth(text: string, size: number, bold: boolean, maxWidth: number) {
   let fitted = size;
@@ -108,36 +118,6 @@ function fitToWidth(text: string, size: number, bold: boolean, maxWidth: number)
   return { text: `${clipped}…`, size: fitted };
 }
 
-function wrapToLines(
-  text: string,
-  size: number,
-  bold: boolean,
-  maxWidth: number,
-  maxLines: number
-) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = "";
-
-  for (const word of words) {
-    const trial = current ? `${current} ${word}` : word;
-    if (measureText(trial, size, bold) <= maxWidth) {
-      current = trial;
-      continue;
-    }
-    if (current) lines.push(current);
-    current = word;
-  }
-  if (current) lines.push(current);
-  if (lines.length === 0) return [""];
-
-  if (lines.length <= maxLines) return lines;
-  // Too many lines: keep the first ones and fold the rest into the last.
-  const kept = lines.slice(0, maxLines);
-  kept[maxLines - 1] = lines.slice(maxLines - 1).join(" ");
-  return kept;
-}
-
 /** Build the full drawing plan for one label. */
 export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   const L = LABEL_LAYOUT;
@@ -146,10 +126,17 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   const centre = LABEL_W_DOTS / 2;
   const texts: LabelTextSpec[] = [];
 
-  // Heading and product name both centre on the label itself. They used to
-  // centre on a narrower column, because the QR occupied the top-right; with
-  // the QR gone there is nothing to sit beside, and off-centre text under a
-  // centred barcode reads as a mistake.
+  // The QR of the product code sits on the right, square. It is placed first so
+  // the left-hand text column knows where to stop; the head runs slightly past
+  // the sticker's right edge, so it is inset a couple of mm (see
+  // label-print-config.ts).
+  const qr = layoutQrDots(fields.code, L.qrMaxSize);
+  const qrRight = right - L.qrRightInset;
+  const qrLeft = qrRight - qr.totalDots;
+  // Left text keeps an 8-dot gap from the QR so it never eats into its quiet zone.
+  const columnWidth = Math.max(40, qrLeft - left - 8);
+
+  // Masthead: shop name (bold), then the tagline in brackets, both centred.
   const company = fitToWidth(BUSINESS.name, L.companySize, true, CONTENT_W_DOTS);
   texts.push({
     text: company.text,
@@ -159,91 +146,87 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     bold: true,
     anchor: "middle",
   });
-
-  // Only the masthead is bold. Below it, bold strokes are two dots wide and
-  // thermal bleed closes the counters, so the text prints legible on screen
-  // and unreadable on paper.
-  const nameLines = wrapToLines(
-    fields.name.toUpperCase(),
-    L.nameSize,
+  const tagline = fitToWidth(
+    `(${BUSINESS.tagline})`,
+    L.taglineSize,
     false,
-    CONTENT_W_DOTS,
-    L.nameLines
-  );
-  nameLines.forEach((line, index) => {
-    const fitted = fitToWidth(line, L.nameSize, false, CONTENT_W_DOTS);
-    texts.push({
-      text: fitted.text,
-      x: centre,
-      baseline: L.nameBaseline + index * L.nameLineHeight,
-      size: fitted.size,
-      bold: false,
-      anchor: "middle",
-    });
-  });
-
-  const { bars, moduleDots, totalDots } = layoutCode128Dots(
-    fields.code,
     CONTENT_W_DOTS
   );
-
-  const code = fitToWidth(fields.code, L.codeSize, false, CONTENT_W_DOTS);
   texts.push({
-    text: code.text,
+    text: tagline.text,
     x: centre,
-    baseline: L.codeBaseline,
-    size: code.size,
+    baseline: L.taglineBaseline,
+    size: tagline.size,
     bold: false,
     anchor: "middle",
   });
 
-  // EXP and MRP share the footer line; MRP wins the space it needs.
-  // MRP sits a few mm in from the content edge rather than flush to `right`:
-  // on this printer the head runs slightly past the sticker's right edge, so
-  // text flush right loses its last glyphs (the paise of the MRP) off the
-  // label. See label-print-config.ts for the head/sticker geometry.
-  const footerRightInset = Math.round(2.5 * DOTS_PER_MM); // 20 dots ≈ 2.5 mm
-  const mrpRight = right - footerRightInset;
-  const mrpText = `MRP ${fields.mrp}`;
-  const mrp = fitToWidth(mrpText, L.mrpSize, false, CONTENT_W_DOTS * 0.6);
-  const expText = `EXP ${fields.exp || "—"}`;
-  const expRoom =
-    CONTENT_W_DOTS - footerRightInset - measureText(mrp.text, mrp.size, false) - 8;
-  const exp = fitToWidth(expText, L.expSize, false, Math.max(24, expRoom));
+  // Everything below the masthead is regular weight and left-aligned, kept
+  // clear of the QR. Bold at these sizes blobs once thermal bleed closes the
+  // counters.
+  texts.push({
+    text: clipToWidth(fields.name.toUpperCase(), L.nameSize, false, columnWidth),
+    x: left,
+    baseline: L.nameBaseline,
+    size: L.nameSize,
+    bold: false,
+    anchor: "start",
+  });
 
+  // The code in figures — the human-readable copy of the QR.
+  const code = fitToWidth(fields.code, L.codeSize, false, columnWidth);
+  texts.push({
+    text: code.text,
+    x: left,
+    baseline: L.codeBaseline,
+    size: code.size,
+    bold: false,
+    anchor: "start",
+  });
+
+  // EXP keeps its label even with no date, matching the sample the shop approved.
+  const exp = fitToWidth(
+    `EXP:${fields.exp ? ` ${fields.exp}` : ""}`,
+    L.expSize,
+    false,
+    columnWidth
+  );
   texts.push({
     text: exp.text,
     x: left,
-    baseline: L.footerBaseline,
+    baseline: L.expBaseline,
     size: exp.size,
     bold: false,
     anchor: "start",
   });
+
   // The price keeps its prominence through size, not weight.
+  const rate = fitToWidth(`RATE: ${fields.mrp}`, L.rateSize, false, columnWidth);
   texts.push({
-    text: mrp.text,
-    x: mrpRight,
-    baseline: L.footerBaseline,
-    size: mrp.size,
+    text: rate.text,
+    x: left,
+    baseline: L.rateBaseline,
+    size: rate.size,
     bold: false,
-    anchor: "end",
+    anchor: "start",
   });
 
   return {
     widthDots: LABEL_W_DOTS,
     heightDots: LABEL_H_DOTS,
     texts,
-    bars: bars.map((bar) => ({
-      x: CONTENT_X_DOTS + bar.x,
-      y: L.barcodeY,
+    bars: qr.bars.map((bar) => ({
+      x: qrLeft + bar.x,
+      y: L.qrTop + bar.y,
       width: bar.width,
-      height: L.barcodeH,
+      height: bar.height,
     })),
+    // `barcode` now describes the QR — the label's one machine-readable mark.
     barcode: {
-      moduleDots,
-      totalDots,
-      y: L.barcodeY,
-      height: L.barcodeH,
+      moduleDots: qr.moduleDots,
+      totalDots: qr.totalDots,
+      y: L.qrTop,
+      height: qr.totalDots,
     },
   };
 }

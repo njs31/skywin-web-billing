@@ -21,7 +21,7 @@ import {
 } from "@/lib/label-print-config";
 
 /** One sticker pitch in dots. What a gap seek covers from a parked position. */
-const PITCH_DOTS = Math.round(LABEL_PITCH_MM * DOTS_PER_MM); // 272
+const PITCH_DOTS = Math.round(LABEL_PITCH_MM * DOTS_PER_MM); // 223
 
 /**
  * Rows per `GS v 0` block. The printer's input buffer will not take a whole
@@ -59,15 +59,15 @@ const GAP_SEEK = Uint8Array.from([0x1d, 0x0c]);
  * How far to feed after each label when counting dots instead, in dots.
  *
  * Only used when `endOfLabel` is "feed" — a roll with no gap for the sensor to
- * find, or a printer that lacks one. Then image + feed must equal the sticker
- * pitch exactly: the raster is PRINT_BAND_H_MM tall (23 mm), so this is the
- * remaining 11 mm. Get it wrong in either direction and the error repeats on
- * every label until the artwork straddles a die cut — the vendor driver's
- * 80-dot tear-off feed walks it down the roll, a short feed walks it up.
+ * find, or a printer that lacks one. image + feed must equal the sticker pitch
+ * exactly: the raster is PRINT_BAND_H_MM (17 mm) tall and the pitch is
+ * LABEL_PITCH_MM (27.9 mm), so this is the remaining ~10.9 mm. Get it wrong in
+ * either direction and the error repeats every label until the artwork straddles
+ * a die cut.
  */
 export const DEFAULT_FEED_DOTS = Math.round(
   (LABEL_PITCH_MM - PRINT_BAND_H_MM) * DOTS_PER_MM
-); // 88
+); // 87
 
 export type EscPosOptions = {
   /** Copies of each label. */
@@ -181,33 +181,20 @@ function feedCommands(dots: number) {
 }
 
 /**
- * How far to feed at the end of a job so the label clears the tear bar.
+ * How far to feed at the end of a job so the last label clears the tear bar.
  *
- * Measured on 2026-09-02 rather than guessed. Feeding 18 mm left 4 mm of the
- * *next* sticker past the tear edge, and that one observation pins the
- * geometry: the head parks 5 mm into the next sticker (39 mm in paper terms),
- * fed 18 mm to 57 mm, and the tear edge sat at 38 mm — so the tear bar is
- * 19 mm downstream of the head.
- *
- * From there the arithmetic is fixed. To put the tear edge in the middle of
- * the 4 mm gap, at 32 mm, the feed is 32 + 19 - 39 = 12 mm. That leaves the
- * whole printed label out with a clean line to tear along and none of the next
- * sticker showing, and the paper at 17 mm into the next sticker — well short of
- * its die cut, so the seek that opens the next job behaves normally.
- *
- * Tear bars differ between printers, so Settings can override this; see
- * `presentDots`.
+ * The tear bar sits ~19 mm downstream of the head (measured 2026-09-02). Set in
+ * Settings as `labelTearOffMm` (default 12 mm); this is only the fallback. Raise
+ * it if the label will not tear off, lower it if the next sticker shows.
  */
 export const DEFAULT_PRESENT_DOTS = 96; // 12 mm
 
 /**
- * Ceiling for an overridden present feed.
- *
- * 25 mm is the most that can be fed and still leave the paper inside the next
- * sticker. Beyond that the feed crosses the following die cut, and the seek
- * opening the next job skips an extra sticker for every job.
+ * Ceiling for an overridden present feed. On the 24.5 mm / 27.9 mm-pitch stock
+ * a feed beyond ~17 mm pushes the paper across the next die cut, and the seek
+ * that opens the following job then skips a whole sticker.
  */
-const MAX_PRESENT_DOTS = 200;
+const MAX_PRESENT_DOTS = 140; // ~17.5 mm
 
 /** Settings stores millimetres as text; a job wants dots. */
 export function presentDotsFromMm(mm: string | number | null | undefined) {
