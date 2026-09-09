@@ -202,13 +202,28 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     anchor: "start",
   });
 
-  // The price keeps its prominence through size, not weight.
-  const rate = fitToWidth(`RATE: ${fields.mrp}`, L.rateSize, false, columnWidth);
+  // Price line: "MRP" bold, then " : <value>" regular — the shop's approved
+  // sample. Two runs because a text run carries a single weight.
   texts.push({
-    text: rate.text,
+    text: "MRP",
     x: left,
-    baseline: L.rateBaseline,
-    size: rate.size,
+    baseline: L.mrpBaseline,
+    size: L.mrpSize,
+    bold: true,
+    anchor: "start",
+  });
+  const mrpLabelW = measureText("MRP", L.mrpSize, true);
+  const mrpValue = fitToWidth(
+    ` : ${fields.mrp}`,
+    L.mrpSize,
+    false,
+    Math.max(24, columnWidth - mrpLabelW)
+  );
+  texts.push({
+    text: mrpValue.text,
+    x: left + mrpLabelW,
+    baseline: L.mrpBaseline,
+    size: mrpValue.size,
     bold: false,
     anchor: "start",
   });

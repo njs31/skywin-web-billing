@@ -81,17 +81,16 @@ export const PRINT_TOP_OFFSET_MM = 2;
 export const PRINT_TOP_OFFSET_DOTS = PRINT_TOP_OFFSET_MM * DOTS_PER_MM; // 16
 
 /**
- * How much of the sticker is actually printed, in mm, starting at
+ * How much of the sticker is used for artwork, in mm, starting at
  * PRINT_TOP_OFFSET_MM.
  *
- * Deliberately conservative — 18 mm on a 24.5 mm sticker — because the shop
- * cannot do trial prints: even if the head parks up to ~4 mm past the die cut
- * instead of the assumed 2 mm, an 18 mm band still finishes ~2.5 mm before the
- * next die cut, so nothing lands on the following sticker and `GS FF` keeps its
- * travel.
+ * 20 mm of the 24.5 mm sticker — the labels are now printed as a PDF through
+ * the POSiFLOW app, which drives the media itself, so this no longer has to
+ * leave the extra gap-seek margin the direct ESC/POS path needed. Still ends
+ * 2.5 mm before the die cut so the direct path keeps working too.
  */
-export const PRINT_BAND_H_MM = 18;
-export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 144
+export const PRINT_BAND_H_MM = 20;
+export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 160
 
 /** First and last artwork row the printer can actually burn. */
 export const PRINT_BAND_TOP_DOTS = PRINT_TOP_OFFSET_DOTS; // 16
@@ -165,44 +164,44 @@ export function mmToDots(mm: number) {
  */
 export const LABEL_LAYOUT = {
   /** The shop name is the masthead: centred, bold, the largest thing on it. */
-  companyBaseline: 30,
-  companySize: 14,
+  companyBaseline: 38,
+  companySize: 18,
   /**
-   * The tagline, in brackets, centred under the name. Regular weight, and small
-   * enough to stay left of the QR column.
+   * The tagline, in brackets, centred under the name. Regular weight, roughly
+   * two-thirds the masthead — the shop's approved sample has it prominent.
    */
-  taglineBaseline: 43,
-  taglineSize: 7,
+  taglineBaseline: 60,
+  taglineSize: 12,
   /**
    * Product name, one line, left-aligned, kept clear of the QR column and
-   * clipped (not shrunk to nothing) when it is too long. Regular weight — bold
-   * at this size blobs once thermal bleed closes the counters.
+   * clipped (not shrunk to nothing) when it is too long.
    */
-  nameBaseline: 60,
-  nameSize: 11,
+  nameBaseline: 84,
+  nameSize: 12,
   /** The product code in figures, left, large — the human-readable copy of the QR. */
-  codeBaseline: 88,
-  codeSize: 17,
-  /** EXP and RATE are read across a counter, so they are the largest text. */
-  expBaseline: 114,
-  expSize: 11,
-  rateBaseline: 140,
-  rateSize: 16,
+  codeBaseline: 110,
+  codeSize: 19,
+  /** EXP and MRP are read across a counter, so they are large. */
+  expBaseline: 138,
+  expSize: 15,
+  /** "MRP" prints bold, the value regular; see buildLabelPlan. */
+  mrpBaseline: 168,
+  mrpSize: 16,
   /**
-   * The QR square, in the right column. `qrTop` is its top edge (just below the
-   * tagline); `qrMaxSize` is the box it is fitted into — the real QR is floored
-   * to a whole-dot module, so a 21-module code comes out 105 dots (module 5 =
-   * 0.625 mm, ~13 mm square). Bottom (46 + 105 = 151) sits well inside the
-   * 18 mm band. Right edge sits `qrRightInset` in from the content edge.
+   * The QR square, right column, vertically centred against the text block.
+   * `qrMaxSize` is the box it is fitted into — floored to a whole-dot module,
+   * so a 21-module code comes out 105 dots (module 5 = 0.625 mm, ~13 mm).
+   * Bottom (62 + 105 = 167) sits inside the 20 mm band. Right edge sits
+   * `qrRightInset` in from the content edge.
    */
-  qrTop: 46,
-  qrMaxSize: 105,
+  qrTop: 62,
+  qrMaxSize: 110,
   qrRightInset: 4,
 } as const;
 
 /** Lowest ink on the label. Must not reach PRINT_BAND_BOTTOM_DOTS. */
 export const LABEL_INK_BOTTOM_DOTS = Math.max(
-  LABEL_LAYOUT.rateBaseline + Math.ceil(LABEL_LAYOUT.rateSize * 0.25),
+  LABEL_LAYOUT.mrpBaseline + Math.ceil(LABEL_LAYOUT.mrpSize * 0.25),
   LABEL_LAYOUT.qrTop + LABEL_LAYOUT.qrMaxSize
 );
 

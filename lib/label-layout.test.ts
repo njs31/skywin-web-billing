@@ -176,10 +176,16 @@ describe("label plan", () => {
 
   it("never drops the price or the code text", () => {
     for (const fields of SAMPLES) {
-      const texts = buildLabelPlan(fields).texts.map((item) => item.text);
+      const plan = buildLabelPlan(fields);
+      const texts = plan.texts.map((item) => item.text);
+      // Price line is two runs: bold "MRP" then " : <value>".
       assert.ok(
-        texts.some((text) => text === `RATE: ${fields.mrp}`),
-        `${fields.code}: RATE was truncated`
+        plan.texts.some((t) => t.text === "MRP" && t.bold),
+        `${fields.code}: bold MRP label missing`
+      );
+      assert.ok(
+        texts.some((text) => text === ` : ${fields.mrp}`),
+        `${fields.code}: MRP value was truncated`
       );
       assert.ok(texts.includes(fields.code), `${fields.code}: code text was truncated`);
     }
