@@ -84,29 +84,30 @@ export const PRINT_TOP_OFFSET_DOTS = PRINT_TOP_OFFSET_MM * DOTS_PER_MM; // 16
  * How much of the sticker is actually printed, in mm, starting at
  * PRINT_TOP_OFFSET_MM.
  *
- * 24.5 mm sticker − 2 mm dead top − ~2.5 mm the gap seek needs to re-find the
- * die cut ≈ 20 mm. Keeping the raster inside this leaves `GS FF` room to
- * re-register every label; overrunning it is what let the print walk off the
- * sticker after a few labels.
+ * Deliberately conservative — 18 mm on a 24.5 mm sticker — because the shop
+ * cannot do trial prints: even if the head parks up to ~4 mm past the die cut
+ * instead of the assumed 2 mm, an 18 mm band still finishes ~2.5 mm before the
+ * next die cut, so nothing lands on the following sticker and `GS FF` keeps its
+ * travel.
  */
-export const PRINT_BAND_H_MM = 20;
-export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 160
+export const PRINT_BAND_H_MM = 18;
+export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 144
 
 /** First and last artwork row the printer can actually burn. */
 export const PRINT_BAND_TOP_DOTS = PRINT_TOP_OFFSET_DOTS; // 16
-export const PRINT_BAND_BOTTOM_DOTS = PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS; // 176
+export const PRINT_BAND_BOTTOM_DOTS = PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS; // 160
 
 /**
- * The column the content occupies.
+ * The column the content occupies — a conservative safe zone.
  *
- * Deliberately right-of-centre on the canvas: the head prints ~4 mm left of
- * where the geometry says, so a canvas-centred block clips on the left. Starting
- * at 64 dots (8 mm) and ending 24 dots before the canvas edge lands the visible
- * content roughly centred on the sticker. Revisit once the real head offset is
- * measured.
+ * The head prints a few mm left of where the geometry says and its exact
+ * position cannot be measured (printer is off-site). 60 dots (7.5 mm) in on the
+ * left and 44 dots (5.5 mm) before the canvas edge on the right keeps every mark
+ * on the 50 mm sticker for any head offset in roughly ±3 mm — at the cost of a
+ * wider white border. Tighten only once a real print can be checked.
  */
-export const CONTENT_X_DOTS = 64; // 8 mm
-export const CONTENT_W_DOTS = LABEL_W_DOTS - CONTENT_X_DOTS - 24; // 312
+export const CONTENT_X_DOTS = 60;
+export const CONTENT_W_DOTS = LABEL_W_DOTS - CONTENT_X_DOTS - 44; // 296
 
 /**
  * Anything darker than this becomes a burnt dot when the artwork is packed
@@ -165,7 +166,7 @@ export function mmToDots(mm: number) {
 export const LABEL_LAYOUT = {
   /** The shop name is the masthead: centred, bold, the largest thing on it. */
   companyBaseline: 30,
-  companySize: 15,
+  companySize: 14,
   /**
    * The tagline, in brackets, centred under the name. Regular weight, and small
    * enough to stay left of the QR column.
@@ -177,25 +178,24 @@ export const LABEL_LAYOUT = {
    * clipped (not shrunk to nothing) when it is too long. Regular weight — bold
    * at this size blobs once thermal bleed closes the counters.
    */
-  nameBaseline: 62,
-  nameSize: 12,
+  nameBaseline: 60,
+  nameSize: 11,
   /** The product code in figures, left, large — the human-readable copy of the QR. */
-  codeBaseline: 94,
-  codeSize: 19,
+  codeBaseline: 88,
+  codeSize: 17,
   /** EXP and RATE are read across a counter, so they are the largest text. */
-  expBaseline: 124,
-  expSize: 12,
-  rateBaseline: 158,
-  rateSize: 18,
+  expBaseline: 114,
+  expSize: 11,
+  rateBaseline: 140,
+  rateSize: 16,
   /**
    * The QR square, in the right column. `qrTop` is its top edge (just below the
    * tagline); `qrMaxSize` is the box it is fitted into — the real QR is floored
    * to a whole-dot module, so a 21-module code comes out 105 dots (module 5 =
-   * 0.625 mm, ~13 mm square). Smaller than before, on request, and module 5
-   * bleeds less than module 6 did. Right edge sits `qrRightInset` in from the
-   * content edge.
+   * 0.625 mm, ~13 mm square). Bottom (46 + 105 = 151) sits well inside the
+   * 18 mm band. Right edge sits `qrRightInset` in from the content edge.
    */
-  qrTop: 48,
+  qrTop: 46,
   qrMaxSize: 105,
   qrRightInset: 4,
 } as const;
