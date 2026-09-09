@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 const COLORS = {
   lime: "#84cc16",
@@ -197,6 +197,12 @@ export function BillTypeChart({
   );
 }
 
+/**
+ * Ranked list with a revenue bar behind each product name. Not a Recharts
+ * chart: the category-axis version clipped long names at a fixed width and the
+ * SVG text spilled over neighbouring cards. This is plain flex — the name
+ * truncates, the rank/units/amount stay put.
+ */
 export function TopProductsChart({
   data,
 }: {
@@ -204,53 +210,37 @@ export function TopProductsChart({
 }) {
   if (!data.length) return <ChartEmpty label="No product sales yet." />;
 
+  const max = Math.max(...data.map((d) => d.revenue), 1);
+
   return (
-    <ResponsiveContainer width="100%" height={Math.max(220, data.length * 36)}>
-      <BarChart
-        data={data}
-        layout="vertical"
-        margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
-      >
-        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-        <XAxis
-          type="number"
-          tick={{ fontSize: 11, fill: "#94a3b8" }}
-          tickLine={false}
-          axisLine={false}
-          tickFormatter={(v) =>
-            v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : String(v)
-          }
-        />
-        <YAxis
-          type="category"
-          dataKey="name"
-          width={110}
-          tick={{ fontSize: 11, fill: "#475569" }}
-          tickLine={false}
-          axisLine={false}
-        />
-        <Tooltip
-          content={({ active, payload }) => {
-            if (!active || !payload?.length) return null;
-            const row = payload[0].payload as (typeof data)[0];
-            return (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-md">
-                <p className="mb-1 font-medium text-slate-700">{row.fullName}</p>
-                <p className="text-slate-600">Revenue: {formatCurrency(row.revenue)}</p>
-                <p className="text-slate-500">Qty: {row.qty}</p>
-              </div>
-            );
-          }}
-        />
-        <Bar
-          dataKey="revenue"
-          name="Revenue"
-          fill={COLORS.lime}
-          radius={[0, 6, 6, 0]}
-          maxBarSize={18}
-        />
-      </BarChart>
-    </ResponsiveContainer>
+    <ol className="space-y-1.5">
+      {data.map((row, i) => {
+        const pct = Math.max(4, Math.round((row.revenue / max) * 100));
+        return (
+          <li key={i} className="flex items-center gap-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-xs font-semibold text-emerald-700">
+              {i + 1}
+            </span>
+            <div className="relative min-w-0 flex-1 overflow-hidden rounded-md">
+              <span
+                aria-hidden
+                className="absolute inset-y-0 left-0 rounded-md bg-emerald-100"
+                style={{ width: `${pct}%` }}
+              />
+              <span className="relative block truncate px-2 py-1.5 text-sm font-medium text-slate-800">
+                {row.fullName}
+              </span>
+            </div>
+            <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-slate-400">
+              {formatNumber(row.qty, 0)} units
+            </span>
+            <span className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums text-slate-900">
+              {formatCurrency(row.revenue, { round: true })}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

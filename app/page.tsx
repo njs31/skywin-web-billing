@@ -67,7 +67,7 @@ export default async function DashboardPage() {
     getSalesTrend(30),
     getPaymentModeMix(30),
     getBillTypeMix(30),
-    getTopProductsChart(8, 30),
+    getTopProductsChart(10, 30),
     getCashUpiSplit(30),
   ]);
 
@@ -236,8 +236,8 @@ export default async function DashboardPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Top products by revenue</CardTitle>
-          <p className="text-xs text-slate-500">Last 30 days</p>
+          <CardTitle className="text-base">Top products</CardTitle>
+          <p className="text-xs text-slate-500">Best sellers this month by revenue</p>
         </CardHeader>
         <CardContent>
           <TopProductsChart data={topProductsChart} />
