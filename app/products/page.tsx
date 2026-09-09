@@ -60,11 +60,6 @@ export default async function ProductsPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button asChild variant="outline">
-            <a href="/products/labels/images">
-              Download all label images (PNG ZIP)
-            </a>
-          </Button>
           <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
             <Link href="/products/new">Add Product</Link>
           </Button>
