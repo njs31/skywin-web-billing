@@ -40,29 +40,21 @@ export const LABEL_W_DOTS = LABEL_W_MM * DOTS_PER_MM; // 400
 export const LABEL_H_DOTS = Math.round(LABEL_H_MM * DOTS_PER_MM); // 196
 
 /**
- * Where the head's first dot lands, measured from the sticker's left edge.
+ * Left inset of the raster on the canvas, in dots.
  *
- * Measured on 2026-09-02, not derived. The layout puts MRP's right edge 3 mm
- * in from the sticker, and on paper it printed hard against the edge with a
- * correspondingly wide gap on the left — so the artwork was landing 3 mm
- * further right than intended, and the head starts at 4 mm rather than the
- * 1 mm this file used to assume.
+ * On the 24.5 mm stock the print landed ~4 mm LEFT of centre — text clipped off
+ * the left edge, wide blank on the right — the opposite of the 30 mm roll. So
+ * the raster now starts near the canvas's own left edge (1 mm) and the CONTENT
+ * column below is pushed well in from there. The head is 384 dots (48 mm), so
+ * that is the raster width.
  *
- * The old assumption was that a 48 mm head sits centred on the 55 mm liner.
- * It does not: starting at 4 mm it reaches to 52 mm, past the sticker's right
- * edge at 50 mm, so the last 2 mm of the head hangs off the label entirely.
- * The paper evidently rides to one side of the paper path.
+ * NOT yet dialled in against a ruler — the left / right blank margins on a real
+ * print pin the true head origin, and this plus CONTENT_X_DOTS follow from it.
  */
-export const PRINT_X_DOTS = 32; // 4 mm
+export const PRINT_X_DOTS = 8; // 1 mm
 
-/**
- * Dots of the head that actually fall on the sticker.
- *
- * The head itself is 384 dots (48 mm), but only the ones between
- * PRINT_X_DOTS and the sticker's right edge land on anything worth printing,
- * so that is all the raster carries. The rest of the head burns nothing.
- */
-export const PRINT_W_DOTS = LABEL_W_DOTS - PRINT_X_DOTS; // 368
+/** The reachable head width, 384 dots (48 mm). */
+export const PRINT_W_DOTS = LABEL_W_DOTS - PRINT_X_DOTS * 2; // 384
 
 /**
  * Page size to ask a print driver for, in mm.
@@ -105,20 +97,16 @@ export const PRINT_BAND_TOP_DOTS = PRINT_TOP_OFFSET_DOTS; // 16
 export const PRINT_BAND_BOTTOM_DOTS = PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS; // 176
 
 /**
- * The column the content occupies, centred on the sticker.
+ * The column the content occupies.
  *
- * Centred on the *sticker*, not on the printable window, or the label reads as
- * lopsided however neat the numbers are. The head cannot reach the first 4 mm,
- * so a centred block can be at most 50 - 2 x 4 = 42 mm wide, and its own left
- * edge lands exactly where the head starts.
- *
- * That leaves a 4 mm blank margin either side: unreachable paper on the left,
- * deliberate margin on the right. There is no room for more — at 40 mm the
- * Code 128 for a long code drops to one dot per module, which thermal bleed
- * closes up.
+ * Deliberately right-of-centre on the canvas: the head prints ~4 mm left of
+ * where the geometry says, so a canvas-centred block clips on the left. Starting
+ * at 64 dots (8 mm) and ending 24 dots before the canvas edge lands the visible
+ * content roughly centred on the sticker. Revisit once the real head offset is
+ * measured.
  */
-export const CONTENT_X_DOTS = PRINT_X_DOTS; // 32
-export const CONTENT_W_DOTS = LABEL_W_DOTS - PRINT_X_DOTS * 2; // 336
+export const CONTENT_X_DOTS = 64; // 8 mm
+export const CONTENT_W_DOTS = LABEL_W_DOTS - CONTENT_X_DOTS - 24; // 312
 
 /**
  * Anything darker than this becomes a burnt dot when the artwork is packed
@@ -202,13 +190,14 @@ export const LABEL_LAYOUT = {
   /**
    * The QR square, in the right column. `qrTop` is its top edge (just below the
    * tagline); `qrMaxSize` is the box it is fitted into — the real QR is floored
-   * to a whole-dot module, so a 21-module code comes out 126 dots (module 6 =
-   * 0.75 mm). Right edge sits `qrRightInset` in from the content edge. Bottom
-   * (48 + 126 = 174) stays inside PRINT_BAND_BOTTOM_DOTS (176).
+   * to a whole-dot module, so a 21-module code comes out 105 dots (module 5 =
+   * 0.625 mm, ~13 mm square). Smaller than before, on request, and module 5
+   * bleeds less than module 6 did. Right edge sits `qrRightInset` in from the
+   * content edge.
    */
   qrTop: 48,
-  qrMaxSize: 126,
-  qrRightInset: 2,
+  qrMaxSize: 105,
+  qrRightInset: 4,
 } as const;
 
 /** Lowest ink on the label. Must not reach PRINT_BAND_BOTTOM_DOTS. */

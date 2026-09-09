@@ -114,16 +114,15 @@ describe("label plan", () => {
     }
   });
 
-  it("centres the content column on the sticker", () => {
-    // The bug this guards: the column was centred on the printable window
-    // instead, and since the head starts 4 mm in from the sticker's left edge
-    // and overhangs its right, that printed the whole label 3 mm right and
-    // pushed MRP hard against the edge.
-    assert.equal(
-      CONTENT_X_DOTS + CONTENT_W_DOTS / 2,
-      LABEL_W_DOTS / 2,
-      "content column is not centred on the sticker"
-    );
+  it("biases the content column right of the canvas centre", () => {
+    // The head prints ~4 mm left of where the geometry says, so a canvas-centred
+    // column clips on the left. The column is placed right of centre to land the
+    // visible print roughly centred on the sticker; the left inset must exceed
+    // the right one, and both stay on the sticker.
+    const leftInset = CONTENT_X_DOTS;
+    const rightInset = LABEL_W_DOTS - (CONTENT_X_DOTS + CONTENT_W_DOTS);
+    assert.ok(leftInset > rightInset, "column is not biased right");
+    assert.ok(rightInset >= 0, "content column runs off the right of the canvas");
   });
 
   it("puts the QR on the right and keeps it square", () => {

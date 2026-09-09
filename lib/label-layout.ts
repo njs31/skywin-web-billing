@@ -123,7 +123,9 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   const L = LABEL_LAYOUT;
   const left = CONTENT_X_DOTS;
   const right = CONTENT_X_DOTS + CONTENT_W_DOTS;
-  const centre = LABEL_W_DOTS / 2;
+  // Centre the masthead on the content column, not the raw canvas: the head
+  // prints left of centre, and the column is placed to compensate.
+  const centre = (left + right) / 2;
   const texts: LabelTextSpec[] = [];
 
   // The QR of the product code sits on the right, square. It is placed first so
