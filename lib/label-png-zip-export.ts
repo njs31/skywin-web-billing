@@ -18,12 +18,17 @@ export const LABEL_IMAGE_H_PX = LABEL_H_DOTS;
 /**
  * Render one standalone PNG, pixel-for-pixel the same label the USB path
  * prints — both are drawn from the shared plan in `label-layout`.
+ *
+ * The label is pure black on white, so a 2-colour palette PNG at a light
+ * compression level is a fraction of the size and far quicker to encode than
+ * a full RGBA PNG at level 9 — which matters when the catalogue export
+ * rasterises this ~1,400 times in one request.
  */
 export async function renderLabelPng(product: LabelPngProduct): Promise<Buffer> {
   const svg = labelSvgFor(product);
 
   return sharp(Buffer.from(svg))
-    .png({ compressionLevel: 9 })
+    .png({ palette: true, colours: 2, compressionLevel: 6 })
     .withMetadata({ density: THERMAL_PRINTER_DPI })
     .toBuffer();
 }
@@ -90,14 +95,27 @@ function createZip(entries: Array<{ name: string; data: Buffer }>) {
   return Buffer.concat([...localFiles, ...centralDirectory, footer]);
 }
 
-/** Build one PNG per active product, packaged for a single download. */
+/**
+ * Build one PNG per active product, packaged for a single download.
+ *
+ * Rasterised in parallel batches — a serial loop over ~1,400 products spends
+ * most of a minute waiting on one sharp call at a time. The batch cap keeps
+ * libvips's own thread pool from being swamped.
+ */
 export async function buildAllLabelPngZip(products: LabelPngProduct[]) {
+  const BATCH = 32;
   const entries: Array<{ name: string; data: Buffer }> = [];
-  for (const product of products) {
-    entries.push({
-      name: `labels/label-${String(product.id).padStart(5, "0")}-${productCode(product).replace(/[^a-zA-Z0-9._-]+/g, "-")}.png`,
-      data: await renderLabelPng(product),
+
+  for (let i = 0; i < products.length; i += BATCH) {
+    const batch = products.slice(i, i + BATCH);
+    const pngs = await Promise.all(batch.map((product) => renderLabelPng(product)));
+    batch.forEach((product, j) => {
+      entries.push({
+        name: `labels/label-${String(product.id).padStart(5, "0")}-${productCode(product).replace(/[^a-zA-Z0-9._-]+/g, "-")}.png`,
+        data: pngs[j]!,
+      });
     });
   }
+
   return createZip(entries);
 }
