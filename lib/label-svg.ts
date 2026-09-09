@@ -82,7 +82,7 @@ export function labelPlanToSvg(plan: LabelPlan) {
   return (
     `<svg width="${plan.widthDots}" height="${plan.heightDots}" viewBox="0 0 ${plan.widthDots} ${plan.heightDots}" xmlns="http://www.w3.org/2000/svg">` +
     `<rect width="100%" height="100%" fill="#ffffff"/>` +
-    `<g fill="#000000" font-family="Arial, Helvetica, sans-serif">${bars}${texts}</g>` +
+    `<g fill="#000000" font-family="'Liberation Sans', Arial, Helvetica, 'DejaVu Sans', sans-serif">${bars}${texts}</g>` +
     `</svg>`
   );
 }

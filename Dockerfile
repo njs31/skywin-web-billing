@@ -18,6 +18,13 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# sharp rasterises the product-label SVG on the server; the base image ships no
+# fonts, so without this every glyph renders as a missing-glyph box. Liberation
+# Sans is metric-compatible with the Arial widths label-layout.ts measures with.
+RUN apk add --no-cache fontconfig font-liberation font-dejavu \
+    || apk add --no-cache fontconfig ttf-liberation ttf-dejavu \
+    || apk add --no-cache fontconfig ttf-dejavu
+RUN fc-cache -f
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
