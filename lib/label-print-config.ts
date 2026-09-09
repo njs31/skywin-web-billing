@@ -77,31 +77,31 @@ export const DRIVER_PAGE_H_MM = LABEL_H_MM;
 
 /**
  * Where the printer parks the paper after a `GS FF` gap seek, in mm from the
- * top of the sticker.
+ * top of the sticker — i.e. the dead strip the head cannot reach.
  *
- * A property of the printer (the gap sensor sits upstream of the head, so the
- * paper runs on a little before the gap is registered), so it carries over from
- * the 30 mm media unchanged at 5 mm — but it has NOT been re-measured on the
- * 24.5 mm stock. Print the test label (border + mm scale) and adjust if the
- * artwork's top edge does not land 5 mm down.
+ * Corrected 2026-09-09 from a real run on the 24.5 mm stock: at 5 mm the whole
+ * label was squeezed into the top third of the sticker with the masthead
+ * clipped at the edge, so the true park is closer to 2 mm. If the artwork's top
+ * edge still does not land ~2 mm down, print the test label (border + mm scale)
+ * and nudge this by ±1.
  */
-export const PRINT_TOP_OFFSET_MM = 5;
-export const PRINT_TOP_OFFSET_DOTS = PRINT_TOP_OFFSET_MM * DOTS_PER_MM; // 40
+export const PRINT_TOP_OFFSET_MM = 2;
+export const PRINT_TOP_OFFSET_DOTS = PRINT_TOP_OFFSET_MM * DOTS_PER_MM; // 16
 
 /**
  * How much of the sticker is actually printed, in mm, starting at
  * PRINT_TOP_OFFSET_MM.
  *
- * 24.5 mm sticker − 5 mm dead top − ~2.5 mm the gap seek needs to re-find the
- * die cut ≈ 17 mm. Keeping the raster inside this leaves `GS FF` room to
+ * 24.5 mm sticker − 2 mm dead top − ~2.5 mm the gap seek needs to re-find the
+ * die cut ≈ 20 mm. Keeping the raster inside this leaves `GS FF` room to
  * re-register every label; overrunning it is what let the print walk off the
  * sticker after a few labels.
  */
-export const PRINT_BAND_H_MM = 17;
-export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 136
+export const PRINT_BAND_H_MM = 20;
+export const PRINT_BAND_H_DOTS = PRINT_BAND_H_MM * DOTS_PER_MM; // 160
 
 /** First and last artwork row the printer can actually burn. */
-export const PRINT_BAND_TOP_DOTS = PRINT_TOP_OFFSET_DOTS; // 40
+export const PRINT_BAND_TOP_DOTS = PRINT_TOP_OFFSET_DOTS; // 16
 export const PRINT_BAND_BOTTOM_DOTS = PRINT_TOP_OFFSET_DOTS + PRINT_BAND_H_DOTS; // 176
 
 /**
@@ -176,35 +176,38 @@ export function mmToDots(mm: number) {
  */
 export const LABEL_LAYOUT = {
   /** The shop name is the masthead: centred, bold, the largest thing on it. */
-  companyBaseline: 51,
-  companySize: 13,
-  /** The tagline, in brackets, centred under the name. Regular weight. */
-  taglineBaseline: 63,
-  taglineSize: 8,
+  companyBaseline: 30,
+  companySize: 15,
+  /**
+   * The tagline, in brackets, centred under the name. Regular weight, and small
+   * enough to stay left of the QR column.
+   */
+  taglineBaseline: 43,
+  taglineSize: 7,
   /**
    * Product name, one line, left-aligned, kept clear of the QR column and
    * clipped (not shrunk to nothing) when it is too long. Regular weight — bold
    * at this size blobs once thermal bleed closes the counters.
    */
-  nameBaseline: 78,
-  nameSize: 10,
+  nameBaseline: 62,
+  nameSize: 12,
   /** The product code in figures, left, large — the human-readable copy of the QR. */
-  codeBaseline: 102,
-  codeSize: 14,
+  codeBaseline: 94,
+  codeSize: 19,
   /** EXP and RATE are read across a counter, so they are the largest text. */
-  expBaseline: 123,
-  expSize: 10,
-  rateBaseline: 145,
-  rateSize: 14,
+  expBaseline: 124,
+  expSize: 12,
+  rateBaseline: 158,
+  rateSize: 18,
   /**
    * The QR square, in the right column. `qrTop` is its top edge (just below the
    * tagline); `qrMaxSize` is the box it is fitted into — the real QR is floored
-   * to a whole-dot module, so a 21-module code comes out 105 dots (module 5 =
-   * 0.625 mm). Right edge sits `qrRightInset` in from the content edge. Bottom
-   * (66 + 105 = 171) stays inside PRINT_BAND_BOTTOM_DOTS (176).
+   * to a whole-dot module, so a 21-module code comes out 126 dots (module 6 =
+   * 0.75 mm). Right edge sits `qrRightInset` in from the content edge. Bottom
+   * (48 + 126 = 174) stays inside PRINT_BAND_BOTTOM_DOTS (176).
    */
-  qrTop: 66,
-  qrMaxSize: 106,
+  qrTop: 48,
+  qrMaxSize: 126,
   qrRightInset: 2,
 } as const;
 
