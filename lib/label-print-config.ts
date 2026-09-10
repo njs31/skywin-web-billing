@@ -194,13 +194,15 @@ export const LABEL_LAYOUT = {
   mrpSize: 24,
   /**
    * The QR square, right column, vertically centred against the text block.
-   * `qrMaxSize` is the box it is fitted into — floored to a whole-dot module,
-   * so a 21-module code comes out 105 dots (module 5 = 0.625 mm, ~13 mm).
-   * Bottom (62 + 105 = 167) sits inside the 20 mm band. Right edge sits
-   * `qrRightInset` in from the content edge.
+   * `qrMaxSize` is the box it is fitted into — floored to a whole-dot module.
+   * Shrunk ~1.5× on request (110 → 73) because the printed code was crowding
+   * the label: a 21-module code now floors to module 3 (0.375 mm) → 63 dots
+   * (~8 mm), down from module 5 → 105 dots. Bottom (62 + 63 = 125) still sits
+   * well inside the 20 mm band. Right edge sits `qrRightInset` in from the
+   * content edge.
    */
   qrTop: 62,
-  qrMaxSize: 110,
+  qrMaxSize: 73,
   qrRightInset: 4,
 } as const;
 
