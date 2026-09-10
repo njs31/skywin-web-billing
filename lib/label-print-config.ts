@@ -184,9 +184,14 @@ export const LABEL_LAYOUT = {
   /** EXP and MRP are read across a counter, so they are large. */
   expBaseline: 138,
   expSize: 15,
-  /** "MRP" prints bold, the value regular; see buildLabelPlan. */
+  /**
+   * "MRP" prints bold, the value regular; see buildLabelPlan. Sized up on
+   * request so the price reads clearly across the counter — both the "MRP"
+   * label and its value share this size. Baseline + 0.25 em stays inside
+   * PRINT_BAND_BOTTOM_DOTS (176), so the line still clears the die cut.
+   */
   mrpBaseline: 168,
-  mrpSize: 16,
+  mrpSize: 24,
   /**
    * The QR square, right column, vertically centred against the text block.
    * `qrMaxSize` is the box it is fitted into — floored to a whole-dot module,
