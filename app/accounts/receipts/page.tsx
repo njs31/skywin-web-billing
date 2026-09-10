@@ -17,24 +17,40 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ReceiptForm } from "@/components/accounts/receipt-form";
+import { ReceiptDateFilter } from "@/components/accounts/receipt-date-filter";
 import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
+
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+const cleanDate = (value?: string) => (value && YMD.test(value) ? value : undefined);
 
 export default async function ReceiptsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; from?: string; to?: string }>;
 }) {
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, from: fromParam, to: toParam } = await searchParams;
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
+  const from = cleanDate(fromParam);
+  const to = cleanDate(toParam);
+  const filters = { from, to };
 
   const [receipts, totalCount, customers] = await Promise.all([
-    getReceipts(page),
-    getReceiptCount(),
+    getReceipts(page, RECEIPTS_PAGE_SIZE, filters),
+    getReceiptCount(filters),
     getCustomers(),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / RECEIPTS_PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
+
+  // Keep from/to on the pager links so paging stays inside the filtered range.
+  const pageHref = (n: number) => {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    params.set("page", String(n));
+    return `/accounts/receipts?${params.toString()}`;
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -55,16 +71,24 @@ export default async function ReceiptsPage({
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Receipt History</CardTitle>
-          <p className="text-sm text-slate-500">
-            {totalCount} receipt{totalCount === 1 ? "" : "s"} — page{" "}
-            {currentPage} of {totalPages}
-          </p>
+        <CardHeader className="space-y-3">
+          <div>
+            <CardTitle className="text-base">Receipt History</CardTitle>
+            <p className="text-sm text-slate-500">
+              {totalCount} receipt{totalCount === 1 ? "" : "s"}
+              {from || to ? " in range" : ""} — page {currentPage} of{" "}
+              {totalPages}
+            </p>
+          </div>
+          <ReceiptDateFilter key={`${from ?? ""}-${to ?? ""}`} from={from} to={to} />
         </CardHeader>
         <CardContent className="p-0">
           {receipts.length === 0 ? (
-            <p className="p-6 text-sm text-slate-400">No receipts yet.</p>
+            <p className="p-6 text-sm text-slate-400">
+              {from || to
+                ? "No receipts in the selected dates."
+                : "No receipts yet."}
+            </p>
           ) : (
             <Table>
               <TableHeader>
@@ -112,10 +136,7 @@ export default async function ReceiptsPage({
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <Button asChild variant="outline" size="sm" disabled={currentPage <= 1}>
-            <Link
-              href={`/accounts/receipts?page=${currentPage - 1}`}
-              aria-disabled={currentPage <= 1}
-            >
+            <Link href={pageHref(currentPage - 1)} aria-disabled={currentPage <= 1}>
               Previous
             </Link>
           </Button>
@@ -129,7 +150,7 @@ export default async function ReceiptsPage({
             disabled={currentPage >= totalPages}
           >
             <Link
-              href={`/accounts/receipts?page=${currentPage + 1}`}
+              href={pageHref(currentPage + 1)}
               aria-disabled={currentPage >= totalPages}
             >
               Next

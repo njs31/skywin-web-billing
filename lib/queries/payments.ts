@@ -7,7 +7,7 @@ import {
   purchases,
   sales,
 } from "@/db/schema";
-import { desc, eq, sql, asc, and, isNotNull, count } from "drizzle-orm";
+import { desc, eq, sql, asc, and, gte, isNotNull, count } from "drizzle-orm";
 import { z } from "zod";
 
 const allocationSchema = z.object({
@@ -224,13 +224,48 @@ export async function getOutstandingPurchasesForSupplier(supplierId: number) {
 
 export const RECEIPTS_PAGE_SIZE = 15;
 
+export type ReceiptFilters = {
+  /** Inclusive lower bound, `YYYY-MM-DD`. */
+  from?: string;
+  /** Inclusive upper bound, `YYYY-MM-DD`. */
+  to?: string;
+};
+
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
- * One page of receipt history, newest first. Paginated because the shop now
- * has well over 100 receipts and the old flat `.limit(100)` silently dropped
- * everything older than the newest hundred. `id` is the tiebreaker so a row
- * never straddles two pages when timestamps collide.
+ * Date-range conditions for the receipt list. Both bounds are inclusive
+ * whole days: `from` is compared against midnight, `to` against midnight of
+ * the following day, so a receipt stamped any time on the `to` date still
+ * counts. Bounds are read in the database's own clock — the same one
+ * `now()` stamps receipts with — so the range lines up with the dates shown
+ * in the table.
  */
-export async function getReceipts(page = 1, pageSize = RECEIPTS_PAGE_SIZE) {
+function receiptDateConditions({ from, to }: ReceiptFilters) {
+  const conditions = [];
+  if (from && YMD.test(from)) {
+    conditions.push(gte(partyPayments.date, sql`${from}::timestamp`));
+  }
+  if (to && YMD.test(to)) {
+    conditions.push(
+      sql`${partyPayments.date} < (${to}::timestamp + interval '1 day')`
+    );
+  }
+  return conditions;
+}
+
+/**
+ * One page of receipt history, newest first, optionally limited to a date
+ * range. Paginated because the shop now has well over 100 receipts and the
+ * old flat `.limit(100)` silently dropped everything older than the newest
+ * hundred. `id` is the tiebreaker so a row never straddles two pages when
+ * timestamps collide.
+ */
+export async function getReceipts(
+  page = 1,
+  pageSize = RECEIPTS_PAGE_SIZE,
+  filters: ReceiptFilters = {}
+) {
   const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
   const customerIds = await getScopedCustomerIds();
@@ -256,7 +291,10 @@ export async function getReceipts(page = 1, pageSize = RECEIPTS_PAGE_SIZE) {
     .from(partyPayments)
     .innerJoin(customers, eq(partyPayments.customerId, customers.id));
 
-  const baseCondition = eq(partyPayments.type, "receipt");
+  const baseCondition = and(
+    eq(partyPayments.type, "receipt"),
+    ...receiptDateConditions(filters)
+  );
 
   if (customerIds !== null) {
     if (customerIds.length === 0) return [];
@@ -274,13 +312,19 @@ export async function getReceipts(page = 1, pageSize = RECEIPTS_PAGE_SIZE) {
     .offset(offset);
 }
 
-/** Total receipts in scope — drives the page count on the receipts page. */
-export async function getReceiptCount() {
+/**
+ * Total receipts in scope for the given date range — drives the page count
+ * on the receipts page. Must apply the same filters as `getReceipts`.
+ */
+export async function getReceiptCount(filters: ReceiptFilters = {}) {
   const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
   const customerIds = await getScopedCustomerIds();
 
-  const baseCondition = eq(partyPayments.type, "receipt");
+  const baseCondition = and(
+    eq(partyPayments.type, "receipt"),
+    ...receiptDateConditions(filters)
+  );
 
   if (customerIds !== null) {
     if (customerIds.length === 0) return 0;
