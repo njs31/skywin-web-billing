@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { getReceipts } from "@/lib/queries/payments";
+import {
+  getReceipts,
+  getReceiptCount,
+  RECEIPTS_PAGE_SIZE,
+} from "@/lib/queries/payments";
 import { getCustomers } from "@/lib/queries/customers";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,11 +19,22 @@ import {
 import { ReceiptForm } from "@/components/accounts/receipt-form";
 import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
 
-export default async function ReceiptsPage() {
-  const [receipts, customers] = await Promise.all([
-    getReceipts(),
+export default async function ReceiptsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const { page: pageParam } = await searchParams;
+  const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
+
+  const [receipts, totalCount, customers] = await Promise.all([
+    getReceipts(page),
+    getReceiptCount(),
     getCustomers(),
   ]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / RECEIPTS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
 
   return (
     <div className="space-y-6 p-6">
@@ -42,6 +57,10 @@ export default async function ReceiptsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Receipt History</CardTitle>
+          <p className="text-sm text-slate-500">
+            {totalCount} receipt{totalCount === 1 ? "" : "s"} — page{" "}
+            {currentPage} of {totalPages}
+          </p>
         </CardHeader>
         <CardContent className="p-0">
           {receipts.length === 0 ? (
@@ -89,6 +108,35 @@ export default async function ReceiptsPage() {
           )}
         </CardContent>
       </Card>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button asChild variant="outline" size="sm" disabled={currentPage <= 1}>
+            <Link
+              href={`/accounts/receipts?page=${currentPage - 1}`}
+              aria-disabled={currentPage <= 1}
+            >
+              Previous
+            </Link>
+          </Button>
+          <span className="text-sm text-slate-500">
+            Page {currentPage} of {totalPages}
+          </span>
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            disabled={currentPage >= totalPages}
+          >
+            <Link
+              href={`/accounts/receipts?page=${currentPage + 1}`}
+              aria-disabled={currentPage >= totalPages}
+            >
+              Next
+            </Link>
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

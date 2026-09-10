@@ -7,7 +7,7 @@ import {
   purchases,
   sales,
 } from "@/db/schema";
-import { desc, eq, sql, asc, and, isNotNull } from "drizzle-orm";
+import { desc, eq, sql, asc, and, isNotNull, count } from "drizzle-orm";
 import { z } from "zod";
 
 const allocationSchema = z.object({
@@ -222,10 +222,20 @@ export async function getOutstandingPurchasesForSupplier(supplierId: number) {
     .orderBy(asc(purchases.date));
 }
 
-export async function getReceipts() {
+export const RECEIPTS_PAGE_SIZE = 15;
+
+/**
+ * One page of receipt history, newest first. Paginated because the shop now
+ * has well over 100 receipts and the old flat `.limit(100)` silently dropped
+ * everything older than the newest hundred. `id` is the tiebreaker so a row
+ * never straddles two pages when timestamps collide.
+ */
+export async function getReceipts(page = 1, pageSize = RECEIPTS_PAGE_SIZE) {
   const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
   const customerIds = await getScopedCustomerIds();
+
+  const offset = (Math.max(1, page) - 1) * pageSize;
 
   const query = db
     .select({
@@ -252,14 +262,42 @@ export async function getReceipts() {
     if (customerIds.length === 0) return [];
     return query
       .where(and(baseCondition, inArray(partyPayments.customerId, customerIds)))
-      .orderBy(desc(partyPayments.date))
-      .limit(100);
+      .orderBy(desc(partyPayments.date), desc(partyPayments.id))
+      .limit(pageSize)
+      .offset(offset);
   }
 
   return query
     .where(baseCondition)
-    .orderBy(desc(partyPayments.date))
-    .limit(100);
+    .orderBy(desc(partyPayments.date), desc(partyPayments.id))
+    .limit(pageSize)
+    .offset(offset);
+}
+
+/** Total receipts in scope — drives the page count on the receipts page. */
+export async function getReceiptCount() {
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const customerIds = await getScopedCustomerIds();
+
+  const baseCondition = eq(partyPayments.type, "receipt");
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return 0;
+    const [row] = await db
+      .select({ value: count() })
+      .from(partyPayments)
+      .where(
+        and(baseCondition, inArray(partyPayments.customerId, customerIds))
+      );
+    return row?.value ?? 0;
+  }
+
+  const [row] = await db
+    .select({ value: count() })
+    .from(partyPayments)
+    .where(baseCondition);
+  return row?.value ?? 0;
 }
 
 export async function getPartyPaymentById(id: number) {
