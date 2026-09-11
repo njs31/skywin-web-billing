@@ -151,9 +151,11 @@ function drawLabel(doc: jsPDF, product: BulkLabelProduct) {
   doc.setLineWidth(0.15);
   doc.line(margin, 7.4, W - margin, 7.4);
 
-  // QR — right column, flush with the inset margin (not the sticker edge).
+  // QR — right column. Pulled 1.5mm further left of the margin on request,
+  // so it reads clearly clear of the corner rather than sitting flush with it.
   const qrSize = 9.7;
-  const qrX = W - margin - qrSize;
+  const qrRightInset = 1.5;
+  const qrX = W - margin - qrRightInset - qrSize;
   const qrY = 8.4;
   drawQr(doc, productCode(product), qrX, qrY, qrSize);
 
