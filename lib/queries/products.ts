@@ -270,6 +270,23 @@ export async function getAllProductsForLabelPdf() {
     .orderBy(asc(products.name));
 }
 
+export async function getAllProductsForStockLabelPdf() {
+  return db
+    .select({
+      id: products.id,
+      name: products.name,
+      sku: products.sku,
+      barcode: products.barcode,
+      saleRate: products.saleRate,
+      gstRate: products.gstRate,
+      expiryDate: products.expiryDate,
+      stockQty: products.stockQty,
+    })
+    .from(products)
+    .where(and(eq(products.isActive, true), sql`${products.stockQty}::numeric > 0`))
+    .orderBy(asc(products.name));
+}
+
 export const getLowStockProducts = unstable_cache(
   async (threshold = 10) => {
     return db

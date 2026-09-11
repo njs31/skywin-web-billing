@@ -107,3 +107,45 @@ export async function buildAllLabelsPdf(products: LabelPdfProduct[]) {
 
   return Buffer.from(doc.output("arraybuffer"));
 }
+
+export type StockLabelPdfProduct = LabelPdfProduct & { stockQty: string };
+
+/**
+ * One page per unit in stock, not per product — a product with stockQty 100
+ * gets 100 identical pages, same sticker size as `buildAllLabelsPdf`. Fractional
+ * stock (e.g. weighed goods) is floored down to whole labels.
+ */
+export async function buildStockLabelsPdf(products: StockLabelPdfProduct[]) {
+  const doc = new jsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: [LABEL_W_MM, LABEL_H_MM],
+    compress: true,
+  });
+
+  let pageCount = 0;
+  for (const product of products) {
+    const copies = Math.floor(toNumber(product.stockQty));
+    for (let i = 0; i < copies; i++) {
+      if (pageCount > 0) {
+        doc.addPage([LABEL_W_MM, LABEL_H_MM], "landscape");
+      }
+      drawLabel(doc, product);
+      pageCount++;
+    }
+  }
+
+  if (pageCount === 0) {
+    drawLabel(doc, {
+      id: 0,
+      name: "SAMPLE",
+      sku: "SW000000",
+      barcode: "SW000000",
+      saleRate: "0",
+      gstRate: "0",
+      expiryDate: null,
+    });
+  }
+
+  return Buffer.from(doc.output("arraybuffer"));
+}
