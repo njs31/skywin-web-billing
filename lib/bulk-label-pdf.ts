@@ -114,8 +114,8 @@ function drawQr(doc: jsPDF, code: string, x: number, y: number, sizeMm: number) 
  *   ───────────────────────────────
  *   <product name>            ┌──────────┐
  *   <code>                    │    QR    │  right column, sized to fill
- *   EXP: <date>                │  15mm sq │  the body height — the QR is
- *   MRP: <value>  (bold, big)  └──────────┘  the thing a phone has to read
+ *   EXP: <date>                │  9.7mm sq│  right column — shrunk ~1.5×
+ *   MRP: <value>  (bold, big)  └──────────┘  from the original 14.5mm on request
  */
 function drawLabel(doc: jsPDF, product: BulkLabelProduct) {
   const W = BULK_LABEL_W_MM;
@@ -144,8 +144,9 @@ function drawLabel(doc: jsPDF, product: BulkLabelProduct) {
   doc.setLineWidth(0.15);
   doc.line(margin, 8.0, W - margin, 8.0);
 
-  // QR — right column, as large as the body allows.
-  const qrSize = 14.5;
+  // QR — right column. Shrunk ~1.5× on request (14.5 → 9.7mm); the freed
+  // width goes to the text column automatically since it's qrX-derived.
+  const qrSize = 9.7;
   const qrX = W - margin - qrSize;
   const qrY = 8.6;
   drawQr(doc, productCode(product), qrX, qrY, qrSize);
