@@ -218,3 +218,109 @@ export function buildBulkLabelsPdf(products: BulkLabelProduct[]) {
 
   return Buffer.from(doc.output("arraybuffer"));
 }
+
+// ---------------------------------------------------------------------------
+// 50 × 30 mm variant — a bigger sticker some print shops stock instead of
+// 38 × 25 mm. Same content and column layout, hand-tuned to its own margins
+// rather than scaled, so the extra room goes to genuinely larger text and QR
+// instead of proportionally-identical-but-blurry scaling.
+// ---------------------------------------------------------------------------
+
+export const BULK_LABEL_50_W_MM = 50;
+export const BULK_LABEL_50_H_MM = 30;
+
+/** Layout, 50 × 30 mm — same design as the 38×25mm version, more room. */
+function drawLabel50x30(doc: jsPDF, product: BulkLabelProduct) {
+  const W = BULK_LABEL_50_W_MM;
+  const H = BULK_LABEL_50_H_MM;
+  const margin = 2.5;
+  const contentW = W - margin * 2;
+  const centerX = W / 2;
+
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, W, H, "F");
+  doc.setTextColor(0, 0, 0);
+  doc.setDrawColor(0, 0, 0);
+
+  // Masthead
+  const companySize = fitSize(doc, BUSINESS.name, 10, contentW, true);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(companySize);
+  doc.text(BUSINESS.name, centerX, 5.3, { align: "center" });
+
+  const tagline = `(${BUSINESS.tagline})`;
+  const taglineSize = fitSize(doc, tagline, 5.2, contentW, false);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(taglineSize);
+  doc.text(tagline, centerX, 8.2, { align: "center" });
+
+  doc.setLineWidth(0.18);
+  doc.line(margin, 9.2, W - margin, 9.2);
+
+  // QR — right column, pulled 2mm further left of the margin so it clears
+  // the corner (same reasoning as the 38×25mm version).
+  const qrSize = 12;
+  const qrRightInset = 2;
+  const qrX = W - margin - qrRightInset - qrSize;
+  const qrY = 9.8;
+  drawQr(doc, productCode(product), qrX, qrY, qrSize);
+
+  // Left column: name, code, expiry, MRP.
+  const leftX = margin;
+  const leftW = qrX - margin - 1;
+
+  const nameLines = wrapTwoLines(doc, product.name.toUpperCase(), 6.2, leftW, false);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.2);
+  doc.text(nameLines[0] ?? "", leftX, 13.0);
+  if (nameLines[1]) doc.text(nameLines[1], leftX, 15.8);
+
+  const codeText = productCode(product);
+  const codeSize = fitSize(doc, codeText, 6.5, leftW, true);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(codeSize);
+  doc.text(codeText, leftX, 18.8);
+
+  const expText = `EXP:${product.expiryDate ? ` ${formatExp(product.expiryDate)}` : ""}`;
+  const expSize = fitSize(doc, expText, 5.0, leftW, false);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(expSize);
+  doc.text(expText, leftX, 21.8);
+
+  const mrpText = `MRP: ${inclusiveRate(product.saleRate, product.gstRate).toFixed(2)}`;
+  const mrpSize = fitSize(doc, mrpText, 9.5, leftW, true, 6);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(mrpSize);
+  doc.text(mrpText, leftX, 26.3);
+}
+
+/** One 50 × 30 mm page per product. */
+export function buildBulkLabelsPdf50x30(products: BulkLabelProduct[]) {
+  const doc = new jsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: [BULK_LABEL_50_W_MM, BULK_LABEL_50_H_MM],
+    compress: true,
+  });
+
+  products.forEach((product, index) => {
+    if (index > 0) {
+      doc.addPage([BULK_LABEL_50_W_MM, BULK_LABEL_50_H_MM], "landscape");
+    }
+    drawLabel50x30(doc, product);
+  });
+
+  if (products.length === 0) {
+    drawLabel50x30(doc, {
+      id: 0,
+      name: "SAMPLE",
+      sku: "SW000000",
+      barcode: "SW000000",
+      saleRate: "0",
+      gstRate: "0",
+      expiryDate: null,
+    });
+  }
+
+  return Buffer.from(doc.output("arraybuffer"));
+}

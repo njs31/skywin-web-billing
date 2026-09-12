@@ -21,16 +21,23 @@
  *   ) t;
  *   SQL
  *
- * Run: npx tsx scripts/generate-bulk-labels.ts instock.json out.pdf
+ * Run: npx tsx scripts/generate-bulk-labels.ts instock.json out.pdf [38x25|50x30]
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { buildBulkLabelsPdf, type BulkLabelProduct } from "../lib/bulk-label-pdf";
+import {
+  buildBulkLabelsPdf,
+  buildBulkLabelsPdf50x30,
+  type BulkLabelProduct,
+} from "../lib/bulk-label-pdf";
 
 async function main() {
   const jsonPath = process.argv[2];
   const outPath = process.argv[3];
+  const size = process.argv[4] === "50x30" ? "50x30" : "38x25";
   if (!jsonPath || !outPath) {
-    console.error("Usage: generate-bulk-labels.ts <products.json> <out.pdf>");
+    console.error(
+      "Usage: generate-bulk-labels.ts <products.json> <out.pdf> [38x25|50x30]"
+    );
     process.exit(1);
   }
 
@@ -40,8 +47,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Building 38×25mm labels for ${products.length} products…`);
-  const pdf = buildBulkLabelsPdf(products);
+  console.log(`Building ${size}mm labels for ${products.length} products…`);
+  const pdf =
+    size === "50x30" ? buildBulkLabelsPdf50x30(products) : buildBulkLabelsPdf(products);
   writeFileSync(outPath, pdf);
   console.log(`Wrote ${outPath} (${pdf.length} bytes, ${products.length} labels)`);
 }
