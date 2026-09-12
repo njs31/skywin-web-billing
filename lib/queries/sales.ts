@@ -122,6 +122,24 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
       row.created_at instanceof Date
         ? row.created_at
         : new Date(String(row.created_at)),
+    zohoInvoiceId: (row.zoho_invoice_id as string | null) ?? null,
+    zohoContactId: (row.zoho_contact_id as string | null) ?? null,
+    einvoiceStatus: (row.einvoice_status as string | null) ?? "none",
+    irn: (row.irn as string | null) ?? null,
+    ackNo: (row.ack_no as string | null) ?? null,
+    ackDate: row.ack_date == null ? null : new Date(String(row.ack_date)),
+    signedQr: (row.signed_qr as string | null) ?? null,
+    einvoiceError: (row.einvoice_error as string | null) ?? null,
+    einvoiceRaw: (row.einvoice_raw as string | null) ?? null,
+    ewbStatus: (row.ewb_status as string | null) ?? "none",
+    ewbNo: (row.ewb_no as string | null) ?? null,
+    ewbValidUntil:
+      row.ewb_valid_until == null ? null : new Date(String(row.ewb_valid_until)),
+    ewbError: (row.ewb_error as string | null) ?? null,
+    ewbRaw: (row.ewb_raw as string | null) ?? null,
+    transporterGstin: (row.transporter_gstin as string | null) ?? null,
+    transportMode: (row.transport_mode as string | null) ?? null,
+    distanceKm: row.distance_km == null ? null : String(row.distance_km),
   };
 }
 
@@ -902,6 +920,15 @@ export async function getSaleById(id: number) {
       status: sales.status,
       cancelledAt: sales.cancelledAt,
       cancelReason: sales.cancelReason,
+      zohoInvoiceId: sales.zohoInvoiceId,
+      zohoContactId: sales.zohoContactId,
+      einvoiceStatus: sales.einvoiceStatus,
+      irn: sales.irn,
+      einvoiceError: sales.einvoiceError,
+      ewbStatus: sales.ewbStatus,
+      ewbNo: sales.ewbNo,
+      ewbValidUntil: sales.ewbValidUntil,
+      ewbError: sales.ewbError,
       customerRecordName: customers.name,
       customerPhone: customers.phone,
       customerGstin: customers.gstin,

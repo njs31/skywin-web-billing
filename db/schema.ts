@@ -256,6 +256,44 @@ export const sales = pgTable(
     cancelledBy: text("cancelled_by"),
     cancelReason: text("cancel_reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+
+    // --- Zoho Books sync + e-Invoice/e-Way Bill (all nullable: most sales
+    // are B2C and never touch this path; only GSTIN-bearing B2B sales do). ---
+    /** Zoho Books invoice id, once this sale has been synced there. */
+    zohoInvoiceId: text("zoho_invoice_id"),
+    /** Zoho Books contact id for the buyer, cached to skip a lookup per sync. */
+    zohoContactId: text("zoho_contact_id"),
+    /** "none" | "pending" | "pushed" | "failed" | "cancelled". */
+    einvoiceStatus: text("einvoice_status").default("none").notNull(),
+    irn: text("irn"),
+    ackNo: text("ack_no"),
+    ackDate: timestamp("ack_date"),
+    /** The IRP-signed QR payload — printed on the invoice in place of the
+     *  self-drawn one once an IRN exists. */
+    signedQr: text("signed_qr"),
+    /** Verbatim IRP/NIC rejection message, for the Failed bucket. */
+    einvoiceError: text("einvoice_error"),
+    /** The full `einvoice_details` object Zoho returns, as JSON text. Kept
+     *  verbatim because only `inv_ref_num` (→ `irn` above) is confirmed
+     *  against a real response as of this build; ack_no/ack_date/the signed
+     *  QR field names are not yet verified against a real push. Once a real
+     *  push has been run, read this to confirm/add the missing typed columns. */
+    einvoiceRaw: text("einvoice_raw"),
+    /** "none" | "pending" | "generated" | "failed" | "cancelled". */
+    ewbStatus: text("ewb_status").default("none").notNull(),
+    ewbNo: text("ewb_no"),
+    ewbValidUntil: timestamp("ewb_valid_until"),
+    ewbError: text("ewb_error"),
+    /** Full e-way bill object Zoho returns (ewaybill_id, transporter/vehicle
+     *  fields, etc.) — confirmed against a real (test, deleted) response, but
+     *  kept verbatim since cancel/extend haven't been exercised yet. */
+    ewbRaw: text("ewb_raw"),
+    /** Dispatch details entered when generating an e-way bill — distinct
+     *  from `transporterName`/`vehicleNo` above, which are free-text print
+     *  fields a user may have typed for other reasons. */
+    transporterGstin: text("transporter_gstin"),
+    transportMode: text("transport_mode"),
+    distanceKm: numeric("distance_km", { precision: 6, scale: 1 }),
   },
   (table) => ({
     customerIdIdx: index("sales_customer_id_idx").on(table.customerId),
