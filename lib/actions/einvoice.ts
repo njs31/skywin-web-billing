@@ -11,7 +11,7 @@ import { getSaleById } from "@/lib/queries/sales";
 import { EINVOICE_REPORTING_WINDOW_DAYS } from "@/lib/queries/einvoice";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { upsertInvoice, toSyncInputs } from "@/lib/zoho/sync";
-import { pushEInvoice, cancelEInvoice } from "@/lib/zoho/einvoice";
+import { pushEInvoice, cancelEInvoice, einvoiceUpdateFields } from "@/lib/zoho/einvoice";
 import { generateEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
@@ -77,12 +77,7 @@ export async function generateIrn(saleId: number) {
     const pushed = await pushEInvoice(zohoInvoiceId!);
     await db
       .update(sales)
-      .set({
-        einvoiceStatus: pushed.irn ? "pushed" : "pending",
-        irn: pushed.irn,
-        einvoiceRaw: JSON.stringify(pushed.raw),
-        einvoiceError: null,
-      })
+      .set(einvoiceUpdateFields(pushed))
       .where(eq(sales.id, saleId));
     return pushed;
   } catch (err) {

@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { sales } from "@/db/schema";
 import { getSaleById } from "@/lib/queries/sales";
-import { pushEInvoice } from "@/lib/zoho/einvoice";
+import { pushEInvoice, einvoiceUpdateFields } from "@/lib/zoho/einvoice";
 
 async function main() {
   const saleId = Number(process.argv[2]);
@@ -24,12 +24,7 @@ async function main() {
     const pushed = await pushEInvoice(sale.zohoInvoiceId);
     await db
       .update(sales)
-      .set({
-        einvoiceStatus: pushed.irn ? "pushed" : "pending",
-        irn: pushed.irn,
-        einvoiceRaw: JSON.stringify(pushed.raw),
-        einvoiceError: null,
-      })
+      .set(einvoiceUpdateFields(pushed))
       .where(eq(sales.id, saleId));
     console.log(JSON.stringify(pushed, null, 2));
   } catch (err) {

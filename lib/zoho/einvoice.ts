@@ -1,34 +1,36 @@
 /**
  * e-Invoice (IRN) push/cancel against Zoho's confirmed endpoints.
  *
- * Endpoints confirmed via Zoho's own API docs search results + the "Push to
- * IRP" flow shown in Zoho Books' e-Invoicing settings page:
+ * Endpoints:
  *   POST /invoices/{id}/einvoice/push
  *   POST /invoices/{id}/einvoice/cancel
  *   GET  /invoices/{id}            (read back einvoice_details)
  *
- * What's NOT independently verified: the exact `einvoice_details` field
- * names after a *successful* push, and the `einvoice/cancel` request body.
- * A real invoice was never actually pushed while building this (that
- * mints a real IRN against the real GSTIN — a deliberate, separate step,
- * not something to do while writing code). Only `inv_ref_num` (→ IRN) is
- * confirmed, from the pre-push state of a real invoice
- * (`"inv_ref_num":""` before push). The full raw response is kept in
- * `sales.einvoice_raw` for exactly this reason — inspect it after the
- * first real push and extend the mapping below if other fields matter
- * (ack number, ack date, the signed QR payload).
+ * Confirmed against a real push (SKYA/0407/26-27, 2026-09-15 — a genuine
+ * government IRN, not a sandbox one): `inv_ref_num`, `status`,
+ * `ack_number`, `ack_date`, `qr_link` all come back as named here.
+ *
+ * Still NOT independently verified: the `einvoice/cancel` request body —
+ * no real IRN has been cancelled yet. Confirm the shape against a real
+ * (or at least a genuinely necessary) cancellation before relying on it.
  */
 import { zohoRequest } from "./client";
 
 type EinvoiceDetails = {
-  status?: string; // "yet_to_be_pushed" | "generated" | ... (unconfirmed set)
-  inv_ref_num?: string; // the IRN, confirmed field name
+  status?: string; // "yet_to_be_pushed" | "generated" | "pushed" | "failed" | ...
+  inv_ref_num?: string; // the IRN
+  ack_number?: string;
+  ack_date?: string; // "YYYY-MM-DD HH:mm:ss"
+  qr_link?: string; // Zoho-hosted QR code image URL, not the raw signed QR payload
   [key: string]: unknown;
 };
 
 export type PushResult = {
   irn: string | null;
   status: string | null;
+  ackNumber: string | null;
+  ackDate: string | null;
+  qrLink: string | null;
   raw: EinvoiceDetails;
 };
 
@@ -54,7 +56,27 @@ export async function pushEInvoice(zohoInvoiceId: string): Promise<PushResult> {
   return {
     irn: raw.inv_ref_num || null,
     status: raw.status ?? null,
+    ackNumber: raw.ack_number || null,
+    ackDate: raw.ack_date || null,
+    qrLink: raw.qr_link || null,
     raw,
+  };
+}
+
+/** Shared shape for the `sales` row update after a push — used by both the
+ *  generateIrn server action and the zoho-push-einvoice.ts one-off script. */
+export function einvoiceUpdateFields(pushed: PushResult) {
+  return {
+    einvoiceStatus: pushed.irn ? ("pushed" as const) : ("pending" as const),
+    irn: pushed.irn,
+    ackNo: pushed.ackNumber,
+    ackDate: pushed.ackDate ? new Date(pushed.ackDate) : null,
+    // Zoho's `qr_link` is a hosted QR *image* URL, not the raw signed QR
+    // payload string the government schema technically defines — it's what
+    // Zoho's API actually gives back, so it's what's stored here.
+    signedQr: pushed.qrLink,
+    einvoiceRaw: JSON.stringify(pushed.raw),
+    einvoiceError: null,
   };
 }
 
