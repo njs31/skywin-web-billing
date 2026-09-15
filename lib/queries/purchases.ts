@@ -81,7 +81,10 @@ export async function getPurchaseById(id: number) {
       batchNumber: purchaseItems.batchNumber,
       expiryDate: purchaseItems.expiryDate,
       hsnCode: sql<string>`coalesce(${purchaseItems.hsnCode}, ${products.hsnCode})`,
-      gstRate: sql<string>`coalesce(nullif(${purchaseItems.gstRate}::numeric, 0), ${products.gstRate}::numeric, 0)`,
+      // The rate saved on the line, as entered. Falling back to the product's
+      // rate when a line was 0% made GST-free bills (e.g. entered at
+      // tax-inclusive prices) print GST that was never charged.
+      gstRate: sql<string>`${purchaseItems.gstRate}::numeric`,
       product: products,
     })
     .from(purchaseItems)
