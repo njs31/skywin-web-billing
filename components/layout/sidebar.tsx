@@ -58,6 +58,8 @@ const navGroups: NavGroup[] = [
       { href: "/quotations", label: "Quotations", icon: FileText },
       { href: "/returns", label: "Sales Return", icon: RotateCcw },
       { href: "/customers", label: "Customers", icon: Users },
+      { href: "/einvoice", label: "e-Invoice", icon: FileText },
+      { href: "/eway-bill", label: "e-Way Bill", icon: Truck },
     ],
   },
   {

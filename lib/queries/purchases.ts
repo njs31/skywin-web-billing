@@ -9,7 +9,8 @@ import {
   purchaseReturns,
   partyPaymentAllocations,
 } from "@/db/schema";
-import { calculateLineAmount, calculateGstBreakdown, isInterstateGst } from "@/lib/gst";
+import { calculateLineAmount, isInterstateGst } from "@/lib/gst";
+import { calculatePurchaseTotals } from "@/lib/purchase-totals";
 import { getSettings } from "@/lib/settings";
 import { and, desc, eq, gte, lte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -45,6 +46,11 @@ export async function getPurchaseById(id: number) {
       gstTotal: purchases.gstTotal,
       grandTotal: purchases.grandTotal,
       handlingCharges: purchases.handlingCharges,
+      handlingChargeType: purchases.handlingChargeType,
+      handlingChargeValue: purchases.handlingChargeValue,
+      handlingGstRate: purchases.handlingGstRate,
+      handlingGst: purchases.handlingGst,
+      roundOff: purchases.roundOff,
       paidAmount: purchases.paidAmount,
       notes: purchases.notes,
       supplierId: purchases.supplierId,
@@ -159,7 +165,10 @@ const createPurchaseSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   paymentType: z.enum(["credit", "cash"]),
   notes: z.string().optional(),
+  /** Handling as entered: rupees, or a percentage when handlingChargeType is "percent". */
   handlingCharges: z.number().nonnegative().optional().default(0),
+  handlingChargeType: z.enum(["value", "percent"]).optional().default("value"),
+  handlingGstRate: z.number().min(0).max(100).optional().default(0),
   paidAmount: z.number().nonnegative().optional(),
   items: z.array(purchaseItemSchema).min(1),
 });
@@ -212,22 +221,26 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
   }
 
   const interstate = isInterstateGst(supplier.gstin, settings.stateCode);
-  const gst = calculateGstBreakdown(
-    resolvedItems.map((item) => ({
+  const totals = calculatePurchaseTotals({
+    lines: resolvedItems.map((item) => ({
       qty: item.qty,
       rate: item.rate,
       gstRate: item.gstRate,
+      hsnCode: item.hsnCode,
       discountType: item.discountType,
       discountValue: item.discountValue,
     })),
-    { interstate }
-  );
-  const subtotal = gst.taxableAmount;
-  const gstTotal = Math.round((gst.cgst + gst.sgst + gst.igst) * 100) / 100;
+    interstate,
+    handlingType: data.handlingChargeType,
+    handlingValue: data.handlingCharges,
+    handlingGstRate: data.handlingGstRate,
+  });
+  const subtotal = totals.subtotal;
+  const gstTotal = totals.gstTotal;
 
   const purchase = await db.transaction(async (tx) => {
-    const handling = data.handlingCharges ?? 0;
-    const grandTotal = Math.round((gst.grandTotal + handling) * 100) / 100;
+    const handling = totals.handlingAmount;
+    const grandTotal = totals.grandTotal;
     const paidAmount = data.paymentType === "cash"
       ? grandTotal
       : (data.paidAmount ?? 0);
@@ -244,6 +257,11 @@ export async function createPurchase(input: z.infer<typeof createPurchaseSchema>
         grandTotal: grandTotal.toFixed(2),
         paidAmount: paidAmount.toFixed(2),
         handlingCharges: handling.toFixed(2),
+        handlingChargeType: data.handlingChargeType,
+        handlingChargeValue: (data.handlingCharges ?? 0).toFixed(2),
+        handlingGstRate: (data.handlingGstRate ?? 0).toFixed(2),
+        handlingGst: totals.handlingGst.toFixed(2),
+        roundOff: totals.roundOff.toFixed(2),
         notes: data.notes,
       })
       .returning();
@@ -407,7 +425,9 @@ async function applyPurchaseLines(
   resolvedItems: Array<
     (typeof data.items)[number] & { amount: number; gstRate: number; hsnCode: string }
   >,
-  subtotal: number
+  subtotal: number,
+  /** Handling in rupees (before its GST) — spread into each line's landed cost. */
+  handlingAmount: number
 ) {
   const touchedProductIds: number[] = [];
 
@@ -459,7 +479,7 @@ async function applyPurchaseLines(
     if (productId) {
       const effectiveRate = item.amount / item.qty;
       const landedRate =
-        subtotal > 0 ? effectiveRate * (1 + (data.handlingCharges ?? 0) / subtotal) : effectiveRate;
+        subtotal > 0 ? effectiveRate * (1 + handlingAmount / subtotal) : effectiveRate;
 
       const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
       const batchNumber =
@@ -568,20 +588,24 @@ export async function updatePurchase(input: z.infer<typeof updatePurchaseSchema>
   }
 
   const interstate = isInterstateGst(supplier.gstin, settings.stateCode);
-  const gst = calculateGstBreakdown(
-    resolvedItems.map((item) => ({
+  const totals = calculatePurchaseTotals({
+    lines: resolvedItems.map((item) => ({
       qty: item.qty,
       rate: item.rate,
       gstRate: item.gstRate,
+      hsnCode: item.hsnCode,
       discountType: item.discountType,
       discountValue: item.discountValue,
     })),
-    { interstate }
-  );
-  const subtotal = gst.taxableAmount;
-  const gstTotal = Math.round((gst.cgst + gst.sgst + gst.igst) * 100) / 100;
-  const handling = data.handlingCharges ?? 0;
-  const grandTotal = Math.round((gst.grandTotal + handling) * 100) / 100;
+    interstate,
+    handlingType: data.handlingChargeType,
+    handlingValue: data.handlingCharges,
+    handlingGstRate: data.handlingGstRate,
+  });
+  const subtotal = totals.subtotal;
+  const gstTotal = totals.gstTotal;
+  const handling = totals.handlingAmount;
+  const grandTotal = totals.grandTotal;
   const paidAmount =
     data.paymentType === "cash" ? grandTotal : (data.paidAmount ?? 0);
 
@@ -605,6 +629,11 @@ export async function updatePurchase(input: z.infer<typeof updatePurchaseSchema>
         grandTotal: grandTotal.toFixed(2),
         paidAmount: paidAmount.toFixed(2),
         handlingCharges: handling.toFixed(2),
+        handlingChargeType: data.handlingChargeType,
+        handlingChargeValue: (data.handlingCharges ?? 0).toFixed(2),
+        handlingGstRate: (data.handlingGstRate ?? 0).toFixed(2),
+        handlingGst: totals.handlingGst.toFixed(2),
+        roundOff: totals.roundOff.toFixed(2),
         notes: data.notes,
       })
       .where(eq(purchases.id, data.id));
@@ -614,7 +643,8 @@ export async function updatePurchase(input: z.infer<typeof updatePurchaseSchema>
       data.id,
       data,
       resolvedItems,
-      subtotal
+      subtotal,
+      handling
     );
 
     await tx
@@ -661,6 +691,7 @@ export type PurchaseReportBill = {
   subtotal: number;
   gstTotal: number;
   handlingCharges: number;
+  roundOff: number;
   grandTotal: number;
   paidAmount: number;
 };
@@ -723,6 +754,7 @@ export async function getPurchaseReport(
       subtotal: purchases.subtotal,
       gstTotal: purchases.gstTotal,
       handlingCharges: purchases.handlingCharges,
+      roundOff: purchases.roundOff,
       grandTotal: purchases.grandTotal,
       paidAmount: purchases.paidAmount,
       supplierName: suppliers.name,
@@ -741,6 +773,7 @@ export async function getPurchaseReport(
     subtotal: toNum(row.subtotal),
     gstTotal: toNum(row.gstTotal),
     handlingCharges: toNum(row.handlingCharges),
+    roundOff: toNum(row.roundOff),
     grandTotal: toNum(row.grandTotal),
     paidAmount: toNum(row.paidAmount),
   }));

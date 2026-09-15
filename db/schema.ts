@@ -182,7 +182,17 @@ export const purchases = pgTable("purchases", {
   gstTotal: numeric("gst_total", { precision: 14, scale: 2 }).default("0").notNull(),
   grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
   paidAmount: numeric("paid_amount", { precision: 14, scale: 2 }).default("0"),
+  /** Handling in rupees, before its GST (what gets spread into landed cost). */
   handlingCharges: numeric("handling_charges", { precision: 14, scale: 2 }).default("0").notNull(),
+  /** How handling was entered: "value" (₹) or "percent" (of items' taxable value). */
+  handlingChargeType: text("handling_charge_type").default("value").notNull(),
+  /** The number as entered — rupees or a percentage, per handlingChargeType. */
+  handlingChargeValue: numeric("handling_charge_value", { precision: 14, scale: 2 }).default("0").notNull(),
+  handlingGstRate: numeric("handling_gst_rate", { precision: 5, scale: 2 }).default("0").notNull(),
+  /** GST on handling; already included in gstTotal. */
+  handlingGst: numeric("handling_gst", { precision: 14, scale: 2 }).default("0").notNull(),
+  /** Delta applied to round grandTotal to the rupee (can be negative). */
+  roundOff: numeric("round_off", { precision: 14, scale: 2 }).default("0").notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

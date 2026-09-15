@@ -6,6 +6,7 @@ import {
 } from "@/lib/utils";
 import { amountInIndianWords } from "@/lib/print-helpers";
 import { isInterstateGst } from "@/lib/gst";
+import { calculatePurchaseTotals } from "@/lib/purchase-totals";
 
 type PurchaseBill = {
   id: number;
@@ -16,6 +17,8 @@ type PurchaseBill = {
   gstTotal: string;
   grandTotal: string;
   handlingCharges?: string | null;
+  handlingGstRate?: string | null;
+  roundOff?: string | null;
   paidAmount?: string | null;
   notes?: string | null;
   supplierName: string;
@@ -51,16 +54,6 @@ type PurchaseBillTemplateProps = {
   items: PurchaseBillItem[];
 };
 
-type HsnRow = {
-  hsn: string;
-  taxable: number;
-  rate: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  totalTax: number;
-};
-
 function MetaCell({
   label,
   value,
@@ -80,47 +73,6 @@ function MetaCell({
   );
 }
 
-function buildHsnSummary(
-  items: PurchaseBillItem[],
-  interstate: boolean
-): HsnRow[] {
-  const map = new Map<string, HsnRow>();
-  for (const item of items) {
-    const hsn = (item.hsnCode || "-").trim() || "-";
-    const rate = toNumber(item.gstRate);
-    const key = `${hsn}|${rate}`;
-    const taxable = toNumber(item.amount);
-    const tax = Math.round(((taxable * rate) / 100) * 100) / 100;
-    const existing = map.get(key) ?? {
-      hsn,
-      taxable: 0,
-      rate,
-      cgst: 0,
-      sgst: 0,
-      igst: 0,
-      totalTax: 0,
-    };
-    existing.taxable += taxable;
-    if (interstate) {
-      existing.igst += tax;
-    } else {
-      const half = Math.round((tax / 2) * 100) / 100;
-      existing.cgst += half;
-      existing.sgst += Math.round((tax - half) * 100) / 100;
-    }
-    existing.totalTax += tax;
-    map.set(key, existing);
-  }
-  return [...map.values()].map((r) => ({
-    ...r,
-    taxable: Math.round(r.taxable * 100) / 100,
-    cgst: Math.round(r.cgst * 100) / 100,
-    sgst: Math.round(r.sgst * 100) / 100,
-    igst: Math.round(r.igst * 100) / 100,
-    totalTax: Math.round(r.totalTax * 100) / 100,
-  }));
-}
-
 export function PurchaseBillTemplate({
   business,
   purchase,
@@ -128,17 +80,28 @@ export function PurchaseBillTemplate({
 }: PurchaseBillTemplateProps) {
   const billDate = formatDateIST(purchase.date);
   const handling = toNumber(purchase.handlingCharges);
-  const gstTotal = toNumber(purchase.gstTotal);
+  const roundOff = toNumber(purchase.roundOff);
   const totalQty = items.reduce((s, i) => s + toNumber(i.qty), 0);
   const billNo = purchase.invoiceNo?.trim() || `PUR-${purchase.id}`;
   const interstate = isInterstateGst(purchase.supplierGstin, business.stateCode);
-  const halfGst = Math.round((gstTotal / 2) * 100) / 100;
-  const cgst = interstate ? 0 : halfGst;
-  const sgst = interstate ? 0 : Math.round((gstTotal - halfGst) * 100) / 100;
-  const igst = interstate ? gstTotal : 0;
-  const hsnRows = buildHsnSummary(items, interstate);
+  // Totals box and HSN table both come from the same rows, so they agree.
+  // Each stored line amount is already its taxable value (after discount).
+  const totals = calculatePurchaseTotals({
+    lines: items.map((item) => ({
+      qty: 1,
+      rate: toNumber(item.amount),
+      gstRate: toNumber(item.gstRate),
+      hsnCode: item.hsnCode,
+    })),
+    interstate,
+    handlingType: "value",
+    handlingValue: handling,
+    handlingGstRate: toNumber(purchase.handlingGstRate),
+  });
+  const { cgst, sgst, igst } = totals;
+  const hsnRows = totals.rows;
   const showGst =
-    gstTotal > 0 || hsnRows.some((row) => row.rate > 0 || row.totalTax > 0);
+    totals.gstTotal > 0 || hsnRows.some((row) => row.rate > 0 || row.totalTax > 0);
 
   return (
     <div className="mx-auto max-w-[210mm] bg-white p-3 text-slate-900 print-sheet print:p-2">
@@ -261,7 +224,7 @@ export function PurchaseBillTemplate({
               <span className="font-semibold">Amount Chargeable (in words):</span>
             </p>
             <p className="mt-1 break-words font-medium capitalize">
-              {amountInIndianWords(toNumber(purchase.grandTotal))} Only
+              {amountInIndianWords(toNumber(purchase.grandTotal))}
             </p>
             {purchase.notes ? (
               <p className="mt-2 break-words text-slate-600">Notes: {purchase.notes}</p>
@@ -308,6 +271,15 @@ export function PurchaseBillTemplate({
                   </span>
                 </div>
               </>
+            )}
+            {roundOff !== 0 && (
+              <div className="flex justify-between gap-2 border-b border-slate-300 px-2 py-1">
+                <span className="shrink-0">Round Off</span>
+                <span className="min-w-0 text-right tabular-nums">
+                  {roundOff > 0 ? "+" : ""}
+                  {formatCurrency(roundOff)}
+                </span>
+              </div>
             )}
             <div className="flex justify-between gap-2 px-2 py-1.5 text-sm font-bold">
               <span className="shrink-0">Grand Total</span>
@@ -391,7 +363,7 @@ export function PurchaseBillTemplate({
                   className="border-b border-slate-300"
                 >
                   <td className="border-r border-slate-900 px-1 py-1">
-                    {row.hsn}
+                    {row.isHandling ? "Handling Charges" : row.hsn}
                   </td>
                   <td className="border-r border-slate-900 px-1 py-1 text-right">
                     {formatNumber(row.taxable, 2)}

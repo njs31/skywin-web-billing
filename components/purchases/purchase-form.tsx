@@ -5,7 +5,8 @@ import { Plus, Trash2, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Loader
 import { searchProductBatches, resolveProductsForImport } from "@/lib/actions/products";
 import * as XLSX from "xlsx";
 import { createPurchase, updatePurchase } from "@/lib/actions/purchases";
-import { calculateLineAmount, calculateGstBreakdown, isInterstateGst } from "@/lib/gst";
+import { calculateLineAmount, isInterstateGst } from "@/lib/gst";
+import { calculatePurchaseTotals, type HandlingChargeType } from "@/lib/purchase-totals";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { isMeasuredUnit } from "@/lib/units";
 import { BUSINESS } from "@/lib/business";
@@ -114,6 +115,10 @@ type PurchaseEditData = {
   date: Date;
   paymentType: "credit" | "cash";
   handlingCharges: string;
+  handlingChargeType: HandlingChargeType;
+  /** The handling figure as entered (₹ or %). */
+  handlingChargeValue: string;
+  handlingGstRate: string;
   paidAmount: string;
   notes: string | null;
   items: Array<{
@@ -165,6 +170,8 @@ export function PurchaseForm({
 
   // Handling Charges and Paid Amount States
   const [handlingCharges, setHandlingCharges] = useState("0");
+  const [handlingType, setHandlingType] = useState<HandlingChargeType>("value");
+  const [handlingGstRate, setHandlingGstRate] = useState("0");
   const [paidAmount, setPaidAmount] = useState("0");
 
   // Custom Item Form State
@@ -193,7 +200,15 @@ export function PurchaseForm({
     setInvoiceNo(initialPurchase.invoiceNo ?? "");
     setInvoiceDate(`${y}-${m}-${day}`);
     setPaymentType(initialPurchase.paymentType);
-    setHandlingCharges(String(toNumber(initialPurchase.handlingCharges)));
+    setHandlingType(initialPurchase.handlingChargeType);
+    // Bills saved before handling could be a % keep their rupee amount only.
+    setHandlingCharges(
+      String(
+        toNumber(initialPurchase.handlingChargeValue) ||
+          toNumber(initialPurchase.handlingCharges)
+      )
+    );
+    setHandlingGstRate(String(toNumber(initialPurchase.handlingGstRate)));
     setPaidAmount(String(toNumber(initialPurchase.paidAmount)));
     setItems(
       initialPurchase.items.map((row) => ({
@@ -421,22 +436,23 @@ export function PurchaseForm({
     selectedSupplier?.gstin,
     BUSINESS.stateCode
   );
-  const gstPreview = calculateGstBreakdown(
-    items.map((i) => ({
+  // Same helper the server saves with and the printed bill reads from, so the
+  // preview can't disagree with either.
+  const totalsPreview = calculatePurchaseTotals({
+    lines: items.map((i) => ({
       qty: i.qty,
       rate: i.rate,
       gstRate: i.gstRate ?? toNumber(i.product?.gstRate),
+      hsnCode: i.product ? i.product.hsnCode : i.hsnCode,
       discountType: i.discountType,
       discountValue: i.discountValue,
     })),
-    { interstate }
-  );
-  const gstTotalPreview =
-    Math.round((gstPreview.cgst + gstPreview.sgst + gstPreview.igst) * 100) /
-    100;
-  const handlingPreview = parseFloat(handlingCharges) || 0;
-  const grandTotalPreview =
-    Math.round((gstPreview.grandTotal + handlingPreview) * 100) / 100;
+    interstate,
+    handlingType,
+    handlingValue: parseFloat(handlingCharges) || 0,
+    handlingGstRate: parseFloat(handlingGstRate) || 0,
+  });
+  const gstTotalPreview = totalsPreview.gstTotal;
 
   const submit = () => {
     if (!supplierId || items.length === 0) {
@@ -476,6 +492,8 @@ export function PurchaseForm({
               date: invoiceDate,
               paymentType,
               handlingCharges: parseFloat(handlingCharges) || 0,
+              handlingChargeType: handlingType,
+              handlingGstRate: parseFloat(handlingGstRate) || 0,
               paidAmount:
                 paymentType === "cash"
                   ? undefined
@@ -488,6 +506,8 @@ export function PurchaseForm({
               date: invoiceDate,
               paymentType,
               handlingCharges: parseFloat(handlingCharges) || 0,
+              handlingChargeType: handlingType,
+              handlingGstRate: parseFloat(handlingGstRate) || 0,
               paidAmount:
                 paymentType === "cash"
                   ? undefined
@@ -590,15 +610,46 @@ export function PurchaseForm({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Handling Charges (Proportional Landed Cost)</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={handlingCharges}
-              onChange={(e) => setHandlingCharges(e.target.value)}
-              placeholder="0.00"
-            />
+            <Label>Handling Charges</Label>
+            <div className="flex h-10 items-center rounded-lg border border-slate-300 bg-white">
+              <select
+                value={handlingType}
+                onChange={(e) => setHandlingType(e.target.value as HandlingChargeType)}
+                className="h-full rounded-l-lg border-r border-slate-300 bg-slate-50 px-2 text-sm focus:outline-none"
+                aria-label="Handling charge type"
+              >
+                <option value="value">₹</option>
+                <option value="percent">%</option>
+              </select>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={handlingCharges}
+                onChange={(e) => setHandlingCharges(e.target.value)}
+                placeholder={handlingType === "percent" ? "% of items" : "0.00"}
+                className="h-full w-full rounded-r-lg px-3 text-sm focus:outline-none"
+              />
+            </div>
+            {handlingType === "percent" && totalsPreview.handlingAmount > 0 && (
+              <p className="text-xs text-slate-500">
+                = {formatCurrency(totalsPreview.handlingAmount)}
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label>GST on Handling</Label>
+            <select
+              className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+              value={handlingGstRate}
+              onChange={(e) => setHandlingGstRate(e.target.value)}
+            >
+              <option value="0">No GST</option>
+              <option value="5">5%</option>
+              <option value="12">12%</option>
+              <option value="18">18%</option>
+              <option value="28">28%</option>
+            </select>
           </div>
           {paymentType === "credit" && (
             <div className="space-y-2">
@@ -1005,37 +1056,46 @@ export function PurchaseForm({
                 <span>Items Subtotal</span>
                 <span>{formatCurrency(subtotal)}</span>
               </div>
+              {totalsPreview.handlingAmount > 0 && (
+                <div className="flex justify-between text-sm text-slate-700">
+                  <span>Handling</span>
+                  <span>{formatCurrency(totalsPreview.handlingAmount)}</span>
+                </div>
+              )}
               {gstTotalPreview > 0 && (
                 <>
                   {interstate ? (
                     <div className="flex justify-between text-sm text-slate-700">
                       <span>IGST</span>
-                      <span>{formatCurrency(gstPreview.igst)}</span>
+                      <span>{formatCurrency(totalsPreview.igst)}</span>
                     </div>
                   ) : (
                     <>
                       <div className="flex justify-between text-sm text-slate-700">
                         <span>CGST</span>
-                        <span>{formatCurrency(gstPreview.cgst)}</span>
+                        <span>{formatCurrency(totalsPreview.cgst)}</span>
                       </div>
                       <div className="flex justify-between text-sm text-slate-700">
                         <span>SGST</span>
-                        <span>{formatCurrency(gstPreview.sgst)}</span>
+                        <span>{formatCurrency(totalsPreview.sgst)}</span>
                       </div>
                     </>
                   )}
                 </>
               )}
-              {handlingPreview > 0 && (
+              {totalsPreview.roundOff !== 0 && (
                 <div className="flex justify-between text-sm text-slate-700">
-                  <span>Handling</span>
-                  <span>{formatCurrency(handlingPreview)}</span>
+                  <span>Round Off</span>
+                  <span>
+                    {totalsPreview.roundOff > 0 ? "+" : ""}
+                    {formatCurrency(totalsPreview.roundOff)}
+                  </span>
                 </div>
               )}
               <div className="flex justify-between text-base font-bold text-slate-900">
                 <span>Grand Total</span>
                 <span className="text-emerald-700">
-                  {formatCurrency(grandTotalPreview)}
+                  {formatCurrency(totalsPreview.grandTotal)}
                 </span>
               </div>
             </div>
