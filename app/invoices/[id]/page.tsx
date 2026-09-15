@@ -61,17 +61,23 @@ export default async function InvoiceDetailPage({
     termsOfDelivery: settings.termsOfDelivery,
   };
 
-  const einvoiceQrUrl = sale.eInvoiceRequested
-    ? await invoiceQrDataUrl(
-        JSON.stringify({
-          invoiceNo: sale.invoiceNo,
-          date: formatDateIST(sale.date),
-          sellerGstin: settings.gstin,
-          buyerGstin: sale.customerGstin || "",
-          grandTotal: sale.grandTotal,
-        })
-      )
-    : null;
+  // Once a real IRN exists, print the IRP-signed QR Zoho gives back
+  // instead of the self-drawn placeholder — the signed one is what the
+  // government (and a scanning customer) actually recognizes.
+  const einvoiceQrUrl =
+    sale.irn && sale.signedQr
+      ? sale.signedQr
+      : sale.eInvoiceRequested
+        ? await invoiceQrDataUrl(
+            JSON.stringify({
+              invoiceNo: sale.invoiceNo,
+              date: formatDateIST(sale.date),
+              sellerGstin: settings.gstin,
+              buyerGstin: sale.customerGstin || "",
+              grandTotal: sale.grandTotal,
+            })
+          )
+        : null;
 
   return (
     <div className="p-6">

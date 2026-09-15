@@ -50,6 +50,9 @@ type InvoiceSale = {
   paymentTerms?: string | null;
   transporterName?: string | null;
   eInvoiceRequested?: boolean | null;
+  /** A real government IRN, once pushed — when present, the QR shown is
+   *  the IRP-signed one (via einvoiceQrUrl), not the self-drawn preview. */
+  irn?: string | null;
   status?: string | null;
   cancelledAt?: Date | string | null;
   cancelReason?: string | null;
@@ -256,6 +259,11 @@ function WholesaleInvoiceLayout({
                 alt="Invoice QR"
                 className="mt-0.5 h-[72px] w-[72px] print:h-[22mm] print:w-[22mm]"
               />
+              {sale.irn && (
+                <p className="mt-0.5 max-w-[90px] break-all text-center text-[7px] leading-tight">
+                  IRN: {sale.irn}
+                </p>
+              )}
             </div>
           ) : null}
         </div>
@@ -834,6 +842,11 @@ function RetailReceiptLayout({
             className="h-[64px] w-[64px] print:h-[18mm] print:w-[18mm]"
           />
           <p className="text-[9px] font-semibold">e-Invoice</p>
+          {sale.irn && (
+            <p className="max-w-[64mm] break-all text-center text-[7px] leading-tight">
+              IRN: {sale.irn}
+            </p>
+          )}
         </div>
       )}
 

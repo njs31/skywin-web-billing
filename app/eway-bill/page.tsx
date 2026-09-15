@@ -97,10 +97,16 @@ export default async function EwayBillPage() {
                           {row.ewbError}
                         </p>
                       )}
+                      {row.zohoSyncError && (
+                        <p className="max-w-[240px] text-[11px] text-red-600">
+                          Sync error: {row.zohoSyncError}
+                        </p>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <GenerateEwbButton
                         saleId={row.id}
+                        ewbId={row.ewbId}
                         ewbNo={row.ewbNo}
                         ewbStatus={row.ewbStatus}
                         ewbValidUntil={
@@ -108,6 +114,7 @@ export default async function EwayBillPage() {
                             ? formatDateIST(row.ewbValidUntil)
                             : null
                         }
+                        ewbValidUntilIso={row.ewbValidUntil?.toISOString() ?? null}
                         ewbError={row.ewbError}
                         vehicleNo={row.vehicleNo}
                         transporterName={row.transporterName}
@@ -151,6 +158,7 @@ export default async function EwayBillPage() {
                     <TableCell className="text-right">
                       <GenerateEwbButton
                         saleId={row.id}
+                        ewbId={row.ewbId}
                         ewbNo={row.ewbNo}
                         ewbStatus={row.ewbStatus}
                         ewbValidUntil={
@@ -158,6 +166,7 @@ export default async function EwayBillPage() {
                             ? formatDateIST(row.ewbValidUntil)
                             : null
                         }
+                        ewbValidUntilIso={row.ewbValidUntil?.toISOString() ?? null}
                         ewbError={row.ewbError}
                         vehicleNo={row.vehicleNo}
                         transporterName={row.transporterName}

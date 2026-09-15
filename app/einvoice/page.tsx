@@ -90,6 +90,11 @@ export default async function EinvoicePage() {
                             {row.einvoiceError}
                           </p>
                         )}
+                        {row.zohoSyncError && (
+                          <p className="max-w-[240px] text-[11px] text-red-600">
+                            Sync error: {row.zohoSyncError}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {missing.length > 0 ? (
@@ -104,6 +109,7 @@ export default async function EinvoicePage() {
                             irn={row.irn}
                             einvoiceStatus={row.einvoiceStatus}
                             einvoiceError={row.einvoiceError}
+                            ackDate={row.ackDate?.toISOString() ?? null}
                           />
                         )}
                       </TableCell>
@@ -149,6 +155,7 @@ export default async function EinvoicePage() {
                         irn={row.irn}
                         einvoiceStatus={row.einvoiceStatus}
                         einvoiceError={row.einvoiceError}
+                        ackDate={row.ackDate?.toISOString() ?? null}
                       />
                     </TableCell>
                   </TableRow>

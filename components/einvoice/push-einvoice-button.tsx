@@ -5,22 +5,39 @@ import { useRouter } from "next/navigation";
 import { generateIrn, cancelIrn } from "@/lib/actions/einvoice";
 import { Button } from "@/components/ui/button";
 
+const CANCEL_WINDOW_HOURS = 24;
+
+/** Hours left to cancel, or null once the window has closed (or there's no
+ *  ack date to measure from — an older record predating this field). */
+function cancelWindowHoursLeft(ackDate: string | null): number | null {
+  if (!ackDate) return null;
+  const ackMs = new Date(ackDate).getTime();
+  if (Number.isNaN(ackMs)) return null;
+  const deadlineMs = ackMs + CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
+  const hoursLeft = (deadlineMs - Date.now()) / (60 * 60 * 1000);
+  return hoursLeft > 0 ? hoursLeft : null;
+}
+
 export function PushEinvoiceButton({
   saleId,
   irn,
   einvoiceStatus,
   einvoiceError,
+  ackDate,
 }: {
   saleId: number;
   irn: string | null;
   einvoiceStatus: string;
   einvoiceError: string | null;
+  /** ISO date string, so this stays a plain client-component prop. */
+  ackDate?: string | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState(einvoiceError ?? "");
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
+  const hoursLeft = cancelWindowHoursLeft(ackDate ?? null);
 
   const push = () => {
     setError("");
@@ -54,12 +71,20 @@ export function PushEinvoiceButton({
           IRN {irn.slice(0, 10)}…
         </span>
         {!cancelling ? (
-          <button
-            className="text-[11px] text-red-600 underline"
-            onClick={() => setCancelling(true)}
-          >
-            Cancel (within 24h only)
-          </button>
+          ackDate && hoursLeft === null ? (
+            <span className="text-[11px] text-slate-400">
+              Cancel window closed (24h)
+            </span>
+          ) : (
+            <button
+              className="text-[11px] text-red-600 underline"
+              onClick={() => setCancelling(true)}
+            >
+              {hoursLeft != null
+                ? `Cancel (${hoursLeft.toFixed(1)}h left)`
+                : "Cancel (within 24h only)"}
+            </button>
+          )
         ) : (
           <div className="flex flex-col items-end gap-1">
             <input

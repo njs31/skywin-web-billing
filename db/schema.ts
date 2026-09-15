@@ -273,6 +273,11 @@ export const sales = pgTable(
     zohoInvoiceId: text("zoho_invoice_id"),
     /** Zoho Books contact id for the buyer, cached to skip a lookup per sync. */
     zohoContactId: text("zoho_contact_id"),
+    /** Set when the initial Zoho invoice sync (auto, on checkout, or manual
+     *  retry) fails — distinct from einvoiceError/ewbError, which are about
+     *  the IRN/e-way-bill push, a separate later step. Cleared on the next
+     *  successful sync. */
+    zohoSyncError: text("zoho_sync_error"),
     /** "none" | "pending" | "pushed" | "failed" | "cancelled". */
     einvoiceStatus: text("einvoice_status").default("none").notNull(),
     irn: text("irn"),
@@ -291,6 +296,9 @@ export const sales = pgTable(
     einvoiceRaw: text("einvoice_raw"),
     /** "none" | "pending" | "generated" | "failed" | "cancelled". */
     ewbStatus: text("ewb_status").default("none").notNull(),
+    /** Zoho's internal ewaybill_id — needed to cancel/extend via the API.
+     *  Distinct from ewbNo, the government-issued e-way bill number. */
+    ewbId: text("ewb_id"),
     ewbNo: text("ewb_no"),
     ewbValidUntil: timestamp("ewb_valid_until"),
     ewbError: text("ewb_error"),

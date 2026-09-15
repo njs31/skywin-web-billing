@@ -12,7 +12,7 @@ import { EINVOICE_REPORTING_WINDOW_DAYS } from "@/lib/queries/einvoice";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { upsertInvoice, toSyncInputs } from "@/lib/zoho/sync";
 import { pushEInvoice, cancelEInvoice, einvoiceUpdateFields } from "@/lib/zoho/einvoice";
-import { generateEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
+import { generateEwayBill, cancelEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
 
@@ -38,14 +38,25 @@ export async function syncSaleToZoho(saleId: number) {
   }
 
   const { syncSale, customer, items } = toSyncInputs(sale);
-  const result = await upsertInvoice({ sale: syncSale, items, customer });
-
-  await db
-    .update(sales)
-    .set({ zohoInvoiceId: result.zohoInvoiceId, zohoContactId: result.zohoContactId })
-    .where(eq(sales.id, saleId));
-
-  return { ...result, alreadySynced: false as const };
+  try {
+    const result = await upsertInvoice({ sale: syncSale, items, customer });
+    await db
+      .update(sales)
+      .set({
+        zohoInvoiceId: result.zohoInvoiceId,
+        zohoContactId: result.zohoContactId,
+        zohoSyncError: null,
+      })
+      .where(eq(sales.id, saleId));
+    return { ...result, alreadySynced: false as const };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await db
+      .update(sales)
+      .set({ zohoSyncError: message })
+      .where(eq(sales.id, saleId));
+    throw err;
+  }
 }
 
 function withinReportingWindow(date: Date): boolean {
@@ -160,6 +171,7 @@ export async function generateEwb(
       .update(sales)
       .set({
         ewbStatus: ewb.ewaybill_number ? "generated" : "pending",
+        ewbId: ewb.ewaybill_id || null,
         ewbNo: ewb.ewaybill_number || null,
         ewbValidUntil: ewb.ewaybill_expiry_date
           ? new Date(ewb.ewaybill_expiry_date)
@@ -177,6 +189,28 @@ export async function generateEwb(
       .where(eq(sales.id, saleId));
     throw err;
   }
+}
+
+/**
+ * Cancels a generated e-way bill. Only legal within the government's
+ * cancellation window (24h from generation, and only if not yet verified
+ * by an officer in transit) — Zoho/the IRP itself enforces that, not this.
+ * UNVERIFIED request shape (see lib/zoho/eway.ts's cancelEwayBill) —
+ * confirm against a real e-way bill before relying on this.
+ */
+export async function cancelEwb(saleId: number, reason: string) {
+  await requireNonDealer();
+  const sale = await getSaleById(saleId);
+  if (!sale) throw new Error("Sale not found.");
+  if (!sale.ewbId || !sale.ewbNo) {
+    throw new Error(`${sale.invoiceNo} has no e-way bill to cancel.`);
+  }
+
+  await cancelEwayBill(sale.ewbId, reason);
+  await db
+    .update(sales)
+    .set({ ewbStatus: "cancelled" })
+    .where(eq(sales.id, saleId));
 }
 
 /**

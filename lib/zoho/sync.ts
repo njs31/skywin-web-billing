@@ -408,18 +408,24 @@ export async function upsertInvoice(input: {
  * Fire-and-forget push of a just-created B2B sale to Zoho Books, mirroring
  * scheduleQwicksStockPush's pattern in lib/queries/qwicks.ts: called from
  * createSale without awaiting, so a slow or down Zoho API never delays
- * checkout. Errors are logged, not thrown — the sale itself always succeeds
- * regardless of Zoho; a failed auto-sync just leaves zohoInvoiceId null for
- * the next manual push (the e-Invoice/e-Way Bill pages, or the backfill
- * script) to pick up.
+ * checkout. Errors are logged AND persisted to `zohoSyncError` (not thrown
+ * — the sale itself always succeeds regardless of Zoho) so a failure isn't
+ * only visible in the server log: a failed auto-sync leaves zohoInvoiceId
+ * null and zohoSyncError set, for the next manual push (the e-Invoice/
+ * e-Way Bill pages, or the backfill script) to pick up and retry.
  */
 export function scheduleZohoSync(saleId: number) {
-  void autoSyncSaleToZoho(saleId).catch((err) => {
-    console.error(
-      "[Zoho] Auto-sync failed for sale",
-      saleId,
-      err instanceof Error ? err.message : err
-    );
+  void autoSyncSaleToZoho(saleId).catch(async (err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[Zoho] Auto-sync failed for sale", saleId, message);
+    try {
+      await db
+        .update(sales)
+        .set({ zohoSyncError: message })
+        .where(eq(sales.id, saleId));
+    } catch (writeErr) {
+      console.error("[Zoho] Also failed to record the sync error:", writeErr);
+    }
   });
 }
 
@@ -438,6 +444,10 @@ async function autoSyncSaleToZoho(saleId: number): Promise<void> {
 
   await db
     .update(sales)
-    .set({ zohoInvoiceId: result.zohoInvoiceId, zohoContactId: result.zohoContactId })
+    .set({
+      zohoInvoiceId: result.zohoInvoiceId,
+      zohoContactId: result.zohoContactId,
+      zohoSyncError: null,
+    })
     .where(eq(sales.id, saleId));
 }

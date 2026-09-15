@@ -2,23 +2,40 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { generateEwb, updateDispatchDetails } from "@/lib/actions/einvoice";
+import { generateEwb, updateDispatchDetails, cancelEwb } from "@/lib/actions/einvoice";
 import { Button } from "@/components/ui/button";
+
+/** Hours until expiry, or null if there's no valid-until date to measure. */
+function hoursUntilExpiry(validUntilIso: string | null): number | null {
+  if (!validUntilIso) return null;
+  const ms = new Date(validUntilIso).getTime();
+  if (Number.isNaN(ms)) return null;
+  return (ms - Date.now()) / (60 * 60 * 1000);
+}
 
 export function GenerateEwbButton({
   saleId,
+  ewbId,
   ewbNo,
   ewbStatus,
   ewbValidUntil,
+  ewbValidUntilIso,
   ewbError,
   vehicleNo,
   transporterName: prefilledTransporterName,
   distanceKm: prefilledDistanceKm,
 }: {
   saleId: number;
+  /** Zoho's internal ewaybill_id — needed to cancel; the e-way bill NUMBER
+   *  (ewbNo) is a different, government-facing value. */
+  ewbId?: string | null;
   ewbNo: string | null;
   ewbStatus: string;
+  /** Display-formatted "valid till" text. */
   ewbValidUntil: string | null;
+  /** Same date as ewbValidUntil, but as an ISO string, for the expiry
+   *  countdown — kept separate so the display formatting stays server-side. */
+  ewbValidUntilIso?: string | null;
   ewbError: string | null;
   /** Dispatch details already captured at billing time, if any — when
    *  vehicle, transporter and distance are all present, this button skips
@@ -36,6 +53,8 @@ export function GenerateEwbButton({
     prefilledTransporterName ?? ""
   );
   const [distanceKm, setDistanceKm] = useState(prefilledDistanceKm ?? "");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
 
   const readyForOneClick = Boolean(
     vehicleNo?.trim() && prefilledTransporterName?.trim() && prefilledDistanceKm
@@ -83,15 +102,80 @@ export function GenerateEwbButton({
     });
   };
 
+  const confirmCancel = () => {
+    setError("");
+    startTransition(async () => {
+      try {
+        await cancelEwb(saleId, cancelReason);
+        setCancelling(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to cancel e-Way Bill");
+      }
+    });
+  };
+
   if (ewbNo && ewbStatus !== "cancelled") {
+    const hoursLeft = hoursUntilExpiry(ewbValidUntilIso ?? null);
+    const expired = hoursLeft != null && hoursLeft <= 0;
+    const expiringSoon = hoursLeft != null && hoursLeft > 0 && hoursLeft <= 24;
+
     return (
       <div className="flex flex-col items-end gap-0.5">
         <span className="rounded bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-700">
           EWB {ewbNo}
         </span>
         {ewbValidUntil && (
-          <span className="text-[10px] text-slate-500">valid till {ewbValidUntil}</span>
+          <span
+            className={
+              expired
+                ? "text-[10px] font-semibold text-red-600"
+                : expiringSoon
+                  ? "text-[10px] font-semibold text-amber-600"
+                  : "text-[10px] text-slate-500"
+            }
+          >
+            {expired
+              ? `Expired ${ewbValidUntil}`
+              : expiringSoon
+                ? `Expires soon — ${ewbValidUntil}`
+                : `valid till ${ewbValidUntil}`}
+          </span>
         )}
+        {!cancelling ? (
+          <button
+            className="text-[10px] text-red-600 underline"
+            onClick={() => setCancelling(true)}
+            disabled={!ewbId}
+            title={!ewbId ? "No Zoho e-way bill id on file for this invoice" : undefined}
+          >
+            Cancel
+          </button>
+        ) : (
+          <div className="flex flex-col items-end gap-1">
+            <input
+              className="w-40 rounded border border-slate-300 px-1.5 py-0.5 text-xs"
+              placeholder="Reason"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+            <div className="flex gap-1">
+              <Button size="sm" variant="ghost" onClick={() => setCancelling(false)}>
+                Keep
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-red-300 text-red-700"
+                disabled={isPending || cancelReason.trim().length < 3}
+                onClick={confirmCancel}
+              >
+                {isPending ? "…" : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        )}
+        {error && <p className="max-w-[200px] text-right text-[11px] text-red-600">{error}</p>}
       </div>
     );
   }
@@ -149,7 +233,7 @@ export function GenerateEwbButton({
       {error && <p className="text-[11px] text-red-600">{error}</p>}
       <div className="flex justify-end gap-1">
         <Button size="sm" variant="ghost" onClick={() => setOpen(false)} disabled={isPending}>
-          Cancel
+          Close
         </Button>
         <Button size="sm" variant="outline" onClick={saveOnly} disabled={isPending}>
           {isPending ? "…" : "Save"}
