@@ -21,6 +21,7 @@ import {
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR } from "@/lib/financial-year";
+import { scheduleZohoSync } from "@/lib/zoho/sync";
 import { format } from "date-fns";
 import { desc, asc, eq, ne, gte, lte, sql, and, inArray } from "drizzle-orm";
 
@@ -780,6 +781,12 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
 
   const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
   scheduleQwicksStockPush(productIds);
+
+  // Push new B2B sales (GSTIN customer) to Zoho Books in the background;
+  // a no-op for B2C sales, checked inside scheduleZohoSync itself.
+  if (data.customerId) {
+    scheduleZohoSync(sale.id);
+  }
 
   return sale;
 }

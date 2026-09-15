@@ -9,7 +9,7 @@
 import { eq } from "drizzle-orm";
 import { format } from "date-fns";
 import { db } from "@/db";
-import { settings } from "@/db/schema";
+import { sales, settings } from "@/db/schema";
 import { stateNameFromGstin } from "@/lib/gst-states";
 import { zohoRequest } from "./client";
 import { resolveTaxId, zohoStateCode, gstStateCode } from "./gst";
@@ -335,4 +335,42 @@ export async function upsertInvoice(input: {
     adjustment,
     total: round2(subtotal + tax + adjustment),
   };
+}
+
+/**
+ * Fire-and-forget push of a just-created B2B sale to Zoho Books, mirroring
+ * scheduleQwicksStockPush's pattern in lib/queries/qwicks.ts: called from
+ * createSale without awaiting, so a slow or down Zoho API never delays
+ * checkout. Errors are logged, not thrown — the sale itself always succeeds
+ * regardless of Zoho; a failed auto-sync just leaves zohoInvoiceId null for
+ * the next manual push (the e-Invoice/e-Way Bill pages, or the backfill
+ * script) to pick up.
+ */
+export function scheduleZohoSync(saleId: number) {
+  void autoSyncSaleToZoho(saleId).catch((err) => {
+    console.error(
+      "[Zoho] Auto-sync failed for sale",
+      saleId,
+      err instanceof Error ? err.message : err
+    );
+  });
+}
+
+async function autoSyncSaleToZoho(saleId: number): Promise<void> {
+  // Dynamic import: lib/queries/sales.ts imports scheduleZohoSync from this
+  // file, so a static import back would cycle.
+  const { getSaleById } = await import("@/lib/queries/sales");
+  const sale = await getSaleById(saleId);
+  if (!sale) return;
+  if (sale.status !== "active") return;
+  if (sale.zohoInvoiceId) return;
+  if (!sale.customerGstin?.trim()) return; // B2C — nothing to push.
+
+  const { syncSale, customer, items } = toSyncInputs(sale);
+  const result = await upsertInvoice({ sale: syncSale, items, customer });
+
+  await db
+    .update(sales)
+    .set({ zohoInvoiceId: result.zohoInvoiceId, zohoContactId: result.zohoContactId })
+    .where(eq(sales.id, saleId));
 }
