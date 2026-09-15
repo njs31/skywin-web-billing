@@ -107,10 +107,32 @@ export async function cancelIrn(saleId: number, reason: string) {
     .where(eq(sales.id, saleId));
 }
 
-/** Syncs (if needed) then generates the e-Way Bill shell for one sale. */
-export async function generateEwb(saleId: number, dispatch: DispatchDetails) {
+/**
+ * Syncs (if needed) then generates the e-Way Bill shell for one sale.
+ *
+ * `dispatch` is optional — any field left out falls back to what's already
+ * stored on the sale (vehicle no. / transporter name / GSTIN / distance
+ * captured at billing time, when the operator filled those in because the
+ * bill crossed the e-way threshold). This is what makes the one-click path
+ * possible: when billing already captured everything, the e-Way Bill page
+ * can call this with no `dispatch` at all.
+ */
+export async function generateEwb(
+  saleId: number,
+  dispatch: DispatchDetails = {}
+) {
   await requireNonDealer();
   const sale = await loadActiveB2bSale(saleId);
+
+  const resolved: DispatchDetails = {
+    vehicleNumber: dispatch.vehicleNumber ?? sale.vehicleNo ?? undefined,
+    transporterName: dispatch.transporterName ?? sale.transporterName ?? undefined,
+    transporterGstin: dispatch.transporterGstin ?? sale.transporterGstin ?? undefined,
+    distanceKm:
+      dispatch.distanceKm ??
+      (sale.distanceKm != null ? Number(sale.distanceKm) : undefined),
+    transportMode: dispatch.transportMode,
+  };
 
   let zohoInvoiceId = sale.zohoInvoiceId;
   if (!zohoInvoiceId) {
@@ -119,7 +141,7 @@ export async function generateEwb(saleId: number, dispatch: DispatchDetails) {
   }
 
   try {
-    const ewb = await generateEwayBill(zohoInvoiceId!, dispatch);
+    const ewb = await generateEwayBill(zohoInvoiceId!, resolved);
     await db
       .update(sales)
       .set({
@@ -130,9 +152,9 @@ export async function generateEwb(saleId: number, dispatch: DispatchDetails) {
           : null,
         ewbRaw: JSON.stringify(ewb),
         ewbError: null,
-        transporterGstin: dispatch.transporterGstin ?? null,
-        transportMode: dispatch.transportMode ?? null,
-        distanceKm: dispatch.distanceKm != null ? String(dispatch.distanceKm) : null,
+        transporterGstin: resolved.transporterGstin ?? null,
+        transportMode: resolved.transportMode ?? null,
+        distanceKm: resolved.distanceKm != null ? String(resolved.distanceKm) : null,
       })
       .where(eq(sales.id, saleId));
     return ewb;

@@ -64,6 +64,8 @@ const createSaleSchema = z.object({
   deliveryNote: z.string().optional(),
   paymentTerms: z.string().optional(),
   transporterName: z.string().optional(),
+  transporterGstin: z.string().optional(),
+  distanceKm: z.number().nonnegative().optional(),
   eInvoiceRequested: z.boolean().optional(),
   externalOrderId: z.string().optional(),
   items: z.array(saleItemSchema).min(1),
@@ -330,6 +332,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const deliveryNote = data.deliveryNote?.trim() || null;
   const paymentTerms = data.paymentTerms?.trim() || null;
   const transporterName = data.transporterName?.trim() || null;
+  const transporterGstin = data.transporterGstin?.trim().toUpperCase() || null;
+  const distanceKm = data.distanceKm != null ? data.distanceKm.toFixed(1) : null;
   const externalOrderId = data.externalOrderId?.trim() || null;
   const eInvoiceRequested = data.eInvoiceRequested ?? false;
 
@@ -622,7 +626,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             grand_total, round_off, paid_amount, cash_amount, upi_amount,
             po_number, purchase_order_id, quotation_number, eway_bill_no, vehicle_no,
             dispatched_through, destination, delivery_note, payment_terms,
-            transporter_name, e_invoice_requested, external_order_id, notes
+            transporter_name, transporter_gstin, distance_km,
+            e_invoice_requested, external_order_id, notes
           )
           select
             ${invoiceNoSelect},
@@ -651,6 +656,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${deliveryNote}::text,
             ${paymentTerms}::text,
             ${transporterName}::text,
+            ${transporterGstin}::text,
+            ${distanceKm}::numeric,
             ${eInvoiceRequested}::boolean,
             ${externalOrderId}::text,
             ${data.notes ?? null}::text
@@ -923,6 +930,8 @@ export async function getSaleById(id: number) {
       deliveryNote: sales.deliveryNote,
       paymentTerms: sales.paymentTerms,
       transporterName: sales.transporterName,
+      transporterGstin: sales.transporterGstin,
+      distanceKm: sales.distanceKm,
       eInvoiceRequested: sales.eInvoiceRequested,
       status: sales.status,
       cancelledAt: sales.cancelledAt,

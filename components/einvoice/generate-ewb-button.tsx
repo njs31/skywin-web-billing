@@ -11,30 +11,47 @@ export function GenerateEwbButton({
   ewbStatus,
   ewbValidUntil,
   ewbError,
+  vehicleNo,
+  transporterName: prefilledTransporterName,
+  distanceKm: prefilledDistanceKm,
 }: {
   saleId: number;
   ewbNo: string | null;
   ewbStatus: string;
   ewbValidUntil: string | null;
   ewbError: string | null;
+  /** Dispatch details already captured at billing time, if any — when
+   *  vehicle, transporter and distance are all present, this button skips
+   *  the manual form and pushes in one click. */
+  vehicleNo?: string | null;
+  transporterName?: string | null;
+  distanceKm?: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState(ewbError ?? "");
-  const [vehicleNumber, setVehicleNumber] = useState("");
-  const [transporterName, setTransporterName] = useState("");
-  const [distanceKm, setDistanceKm] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState(vehicleNo ?? "");
+  const [transporterName, setTransporterName] = useState(
+    prefilledTransporterName ?? ""
+  );
+  const [distanceKm, setDistanceKm] = useState(prefilledDistanceKm ?? "");
 
-  const submit = () => {
+  const readyForOneClick = Boolean(
+    vehicleNo?.trim() && prefilledTransporterName?.trim() && prefilledDistanceKm
+  );
+
+  const push = (dispatch?: {
+    vehicleNumber?: string;
+    transporterName?: string;
+    distanceKm?: number;
+  }) => {
     setError("");
     startTransition(async () => {
       try {
-        await generateEwb(saleId, {
-          vehicleNumber: vehicleNumber.trim() || undefined,
-          transporterName: transporterName.trim() || undefined,
-          distanceKm: distanceKm.trim() ? Number(distanceKm) : undefined,
-        });
+        // Omitting dispatch (the one-click path) lets generateEwb fall back
+        // to whatever's already stored on the sale from billing time.
+        await generateEwb(saleId, dispatch);
         setOpen(false);
         router.refresh();
       } catch (e) {
@@ -42,6 +59,13 @@ export function GenerateEwbButton({
       }
     });
   };
+
+  const submitForm = () =>
+    push({
+      vehicleNumber: vehicleNumber.trim() || undefined,
+      transporterName: transporterName.trim() || undefined,
+      distanceKm: distanceKm.trim() ? Number(distanceKm) : undefined,
+    });
 
   if (ewbNo && ewbStatus !== "cancelled") {
     return (
@@ -52,6 +76,24 @@ export function GenerateEwbButton({
         {ewbValidUntil && (
           <span className="text-[10px] text-slate-500">valid till {ewbValidUntil}</span>
         )}
+      </div>
+    );
+  }
+
+  if (readyForOneClick && !open) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <Button size="sm" onClick={() => push()} disabled={isPending}>
+          {isPending ? "Pushing…" : "Push e-Way Bill"}
+        </Button>
+        <button
+          className="text-[10px] text-slate-500 underline"
+          onClick={() => setOpen(true)}
+          disabled={isPending}
+        >
+          Edit details first
+        </button>
+        {error && <p className="max-w-[220px] text-right text-[11px] text-red-600">{error}</p>}
       </div>
     );
   }
@@ -93,7 +135,7 @@ export function GenerateEwbButton({
         <Button size="sm" variant="ghost" onClick={() => setOpen(false)} disabled={isPending}>
           Cancel
         </Button>
-        <Button size="sm" onClick={submit} disabled={isPending}>
+        <Button size="sm" onClick={submitForm} disabled={isPending}>
           {isPending ? "…" : "Generate"}
         </Button>
       </div>

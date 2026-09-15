@@ -109,6 +109,9 @@ export default async function EwayBillPage() {
                             : null
                         }
                         ewbError={row.ewbError}
+                        vehicleNo={row.vehicleNo}
+                        transporterName={row.transporterName}
+                        distanceKm={row.distanceKm}
                       />
                     </TableCell>
                   </TableRow>
@@ -155,6 +158,9 @@ export default async function EwayBillPage() {
                             : null
                         }
                         ewbError={row.ewbError}
+                        vehicleNo={row.vehicleNo}
+                        transporterName={row.transporterName}
+                        distanceKm={row.distanceKm}
                       />
                     </TableCell>
                   </TableRow>

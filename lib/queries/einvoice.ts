@@ -27,6 +27,13 @@ export type EinvoiceRow = {
   ewbNo: string | null;
   ewbValidUntil: Date | null;
   ewbError: string | null;
+  /** Dispatch details, if already entered at billing time — when all three
+   *  are present the e-Way Bill page can push in one click instead of
+   *  asking for them again. */
+  vehicleNo: string | null;
+  transporterName: string | null;
+  transporterGstin: string | null;
+  distanceKm: string | null;
 };
 
 /** Active, B2B (GSTIN present) sales within the IRP's reporting window. */
@@ -51,6 +58,10 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
       ewbNo: sales.ewbNo,
       ewbValidUntil: sales.ewbValidUntil,
       ewbError: sales.ewbError,
+      vehicleNo: sales.vehicleNo,
+      transporterName: sales.transporterName,
+      transporterGstin: sales.transporterGstin,
+      distanceKm: sales.distanceKm,
     })
     .from(sales)
     .innerJoin(customers, eq(sales.customerId, customers.id))

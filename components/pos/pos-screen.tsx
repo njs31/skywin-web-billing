@@ -121,6 +121,8 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [deliveryNote, setDeliveryNote] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
   const [transporterName, setTransporterName] = useState("");
+  const [transporterGstin, setTransporterGstin] = useState("");
+  const [distanceKm, setDistanceKm] = useState("");
   const [eInvoiceRequested, setEInvoiceRequested] = useState(false);
 
   useEffect(() => {
@@ -510,9 +512,14 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
           deliveryNote: deliveryNote.trim() || undefined,
           paymentTerms: paymentTerms.trim() || undefined,
           transporterName:
-            billType === "retail"
+            needsEway || billType === "retail"
               ? transporterName.trim() || undefined
               : undefined,
+          transporterGstin: needsEway
+            ? transporterGstin.trim() || undefined
+            : undefined,
+          distanceKm:
+            needsEway && distanceKm.trim() ? Number(distanceKm) : undefined,
           eInvoiceRequested,
           items: cart.map((c) => ({
             productId: c.product ? c.product.id : undefined,
@@ -1119,6 +1126,34 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                           value={destination}
                           onChange={(e) => setDestination(e.target.value)}
                           placeholder="Optional"
+                          className="mt-1 h-9"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Transporter name</Label>
+                        <Input
+                          value={transporterName}
+                          onChange={(e) => setTransporterName(e.target.value)}
+                          placeholder="For the e-Way Bill push"
+                          className="mt-1 h-9"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Transporter GSTIN</Label>
+                        <Input
+                          value={transporterGstin}
+                          onChange={(e) => setTransporterGstin(e.target.value)}
+                          placeholder="Optional"
+                          className="mt-1 h-9"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Distance (km, approx.)</Label>
+                        <Input
+                          value={distanceKm}
+                          onChange={(e) => setDistanceKm(e.target.value)}
+                          inputMode="numeric"
+                          placeholder="For the e-Way Bill push"
                           className="mt-1 h-9"
                         />
                       </div>
