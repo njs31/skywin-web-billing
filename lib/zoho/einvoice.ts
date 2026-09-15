@@ -9,6 +9,10 @@
  * Confirmed against a real push (SKYA/0407/26-27, 2026-09-15 — a genuine
  * government IRN, not a sandbox one): `inv_ref_num`, `status`,
  * `ack_number`, `ack_date`, `qr_link` all come back as named here.
+ * The rejection shape (`status: "failed"`, `failure_list`) is confirmed
+ * too, from a real rejected push (SKYA/0385/26-27) — and both the push
+ * and the follow-up GET return a plain HTTP 200 either way, so `status`/
+ * `failure_list` is the only signal a caller has.
  *
  * Still NOT independently verified: the `einvoice/cancel` request body —
  * no real IRN has been cancelled yet. Confirm the shape against a real
@@ -22,6 +26,10 @@ type EinvoiceDetails = {
   ack_number?: string;
   ack_date?: string; // "YYYY-MM-DD HH:mm:ss"
   qr_link?: string; // Zoho-hosted QR code image URL, not the raw signed QR payload
+  /** Zoho/IRP's own rejection reasons, e.g. "The other charges (Shipping
+   *  Charge + Adjustment) cannot be a negative amount." — confirmed
+   *  against a real rejected push. */
+  failure_list?: string[];
   [key: string]: unknown;
 };
 
@@ -53,6 +61,23 @@ export async function pushEInvoice(zohoInvoiceId: string): Promise<PushResult> {
     `/invoices/${zohoInvoiceId}`
   );
   const raw = detail.invoice.einvoice_details ?? {};
+
+  // Confirmed against a real rejected push (SKYA/0385/26-27): the push
+  // endpoint itself and this follow-up GET both return a plain HTTP 200 —
+  // there's no HTTP-level signal that the push was rejected. The real
+  // outcome only shows up in this "status"/"failure_list" pair, so without
+  // this check a rejected push looked identical to a genuine success.
+  if (raw.status === "failed") {
+    const reasons = Array.isArray(raw.failure_list)
+      ? raw.failure_list.filter((r): r is string => typeof r === "string")
+      : [];
+    throw new Error(
+      reasons.length > 0
+        ? reasons.join(" ")
+        : "e-Invoice push was rejected (Zoho gave no specific reason)."
+    );
+  }
+
   return {
     irn: raw.inv_ref_num || null,
     status: raw.status ?? null,
