@@ -1,8 +1,9 @@
 name: Deploy to production
 
 # Runs the exact same steps that were previously done by hand over SSH:
-# pull the new commit, rebuild the app image, restart it. Triggers on any
-# push to main, and can also be run manually from the Actions tab.
+# pull the new commit, apply any new SQL migration files, rebuild the app
+# image, restart it. Triggers on any push to main, and can also be run
+# manually from the Actions tab.
 on:
   push:
     branches: [main]
@@ -12,7 +13,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH
+      - name: Pull latest code
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: 187.127.216.26
@@ -23,4 +24,30 @@ jobs:
             cd /root/skywin-bill
             git fetch origin
             git reset --hard origin/main
+
+      # Runs before the app rebuild, on purpose: new app code that expects
+      # a new column must never start before that column exists. See
+      # scripts/run-migrations.sh — applies any db/manual-migrations/*.sql
+      # not yet recorded in the schema_migrations table (tracked in
+      # production Postgres itself), in filename order.
+      - name: Apply pending SQL migrations
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 187.127.216.26
+          username: root
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          script: |
+            set -e
+            cd /root/skywin-bill
+            bash scripts/run-migrations.sh
+
+      - name: Rebuild and restart the app
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 187.127.216.26
+          username: root
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          script: |
+            set -e
+            cd /root/skywin-bill
             docker compose up -d --build
