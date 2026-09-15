@@ -224,7 +224,7 @@ export function PurchaseBillTemplate({
               <span className="font-semibold">Amount Chargeable (in words):</span>
             </p>
             <p className="mt-1 break-words font-medium capitalize">
-              {amountInIndianWords(toNumber(purchase.grandTotal))} Only
+              {amountInIndianWords(toNumber(purchase.grandTotal))}
             </p>
             {purchase.notes ? (
               <p className="mt-2 break-words text-slate-600">Notes: {purchase.notes}</p>
