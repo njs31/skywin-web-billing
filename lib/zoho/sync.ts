@@ -361,6 +361,12 @@ export async function upsertInvoice(input: {
     return {
       item_id: genericItemId,
       name: item.productName.slice(0, 100),
+      // Override per line — without this, Zoho falls back to printing the
+      // shared catalog item's own description ("Generic line used for
+      // invoices imported from skywin-bill...") on every line of every
+      // invoice, which reads as an internal note on a customer-facing
+      // document. An explicit blank suppresses it.
+      description: "",
       hsn_or_sac: item.hsnCode || "",
       product_type: "goods",
       unit: (item.unit || "pcs").slice(0, 20),
