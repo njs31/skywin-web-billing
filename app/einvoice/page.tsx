@@ -1,9 +1,12 @@
+import Link from "next/link";
 import { FileCheck2 } from "lucide-react";
 import {
   getEinvoiceCandidates,
+  einvoiceMissingFields,
   EINVOICE_REPORTING_WINDOW_DAYS,
 } from "@/lib/queries/einvoice";
 import { formatCurrency, formatDateIST } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -14,14 +17,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PushEinvoiceButton } from "@/components/einvoice/push-einvoice-button";
-
-const STATUS_LABEL: Record<string, string> = {
-  none: "Not pushed",
-  pending: "Pending",
-  pushed: "Pushed",
-  failed: "Failed",
-  cancelled: "Cancelled",
-};
 
 export default async function EinvoicePage() {
   const rows = await getEinvoiceCandidates();
@@ -62,42 +57,59 @@ export default async function EinvoicePage() {
                   <TableHead>Customer</TableHead>
                   <TableHead>GSTIN</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Readiness</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {needsPush.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.invoiceNo}</TableCell>
-                    <TableCell>{formatDateIST(row.date)}</TableCell>
-                    <TableCell>{row.customerName}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {row.customerGstin}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(row.grandTotal)}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs text-slate-500">
-                        {STATUS_LABEL[row.einvoiceStatus] ?? row.einvoiceStatus}
-                      </span>
-                      {row.einvoiceError && (
-                        <p className="max-w-[240px] text-[11px] text-red-600">
-                          {row.einvoiceError}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <PushEinvoiceButton
-                        saleId={row.id}
-                        irn={row.irn}
-                        einvoiceStatus={row.einvoiceStatus}
-                        einvoiceError={row.einvoiceError}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {needsPush.map((row) => {
+                  const missing = einvoiceMissingFields(row);
+                  return (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium">{row.invoiceNo}</TableCell>
+                      <TableCell>{formatDateIST(row.date)}</TableCell>
+                      <TableCell>{row.customerName}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {row.customerGstin}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(row.grandTotal)}
+                      </TableCell>
+                      <TableCell>
+                        {missing.length === 0 ? (
+                          <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            Ready to push
+                          </span>
+                        ) : (
+                          <span className="text-xs text-amber-700">
+                            Missing: {missing.join(", ")}
+                          </span>
+                        )}
+                        {row.einvoiceStatus === "failed" && row.einvoiceError && (
+                          <p className="max-w-[240px] text-[11px] text-red-600">
+                            {row.einvoiceError}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {missing.length > 0 ? (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link href={`/customers/${row.customerId}`}>
+                              Fix customer details
+                            </Link>
+                          </Button>
+                        ) : (
+                          <PushEinvoiceButton
+                            saleId={row.id}
+                            irn={row.irn}
+                            einvoiceStatus={row.einvoiceStatus}
+                            einvoiceError={row.einvoiceError}
+                          />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

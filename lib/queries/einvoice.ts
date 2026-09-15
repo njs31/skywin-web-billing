@@ -17,8 +17,12 @@ export type EinvoiceRow = {
   date: Date;
   grandTotal: string;
   igst: string;
+  customerId: number | null;
   customerName: string | null;
   customerGstin: string | null;
+  customerAddress: string | null;
+  customerDistrict: string | null;
+  customerPinCode: string | null;
   zohoInvoiceId: string | null;
   einvoiceStatus: string;
   irn: string | null;
@@ -48,8 +52,12 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
       date: sales.date,
       grandTotal: sales.grandTotal,
       igst: sales.igst,
+      customerId: sales.customerId,
       customerName: customers.name,
       customerGstin: customers.gstin,
+      customerAddress: customers.address,
+      customerDistrict: customers.district,
+      customerPinCode: customers.pinCode,
       zohoInvoiceId: sales.zohoInvoiceId,
       einvoiceStatus: sales.einvoiceStatus,
       irn: sales.irn,
@@ -74,4 +82,41 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
       )
     )
     .orderBy(sales.date);
+}
+
+/**
+ * Fields the government's e-invoice schema requires for the buyer's
+ * address that we don't already guarantee (GSTIN is guaranteed by the
+ * candidate query itself). All three live on the *customer* record, not
+ * the sale — so fixing them means editing the customer, not the invoice.
+ * Empty array = ready to push.
+ */
+export function einvoiceMissingFields(row: {
+  customerAddress: string | null;
+  customerDistrict: string | null;
+  customerPinCode: string | null;
+}): string[] {
+  const missing: string[] = [];
+  if (!row.customerAddress?.trim()) missing.push("Customer address");
+  if (!row.customerDistrict?.trim()) missing.push("Customer city");
+  if (!row.customerPinCode?.trim()) missing.push("Customer PIN code");
+  return missing;
+}
+
+/**
+ * Dispatch details the e-way bill push needs. These live on the *sale*
+ * (entered at billing time, or fixable afterward) — transporter GSTIN is
+ * left optional since a transporter may not be GST-registered.
+ * Empty array = ready to push.
+ */
+export function ewayBillMissingFields(row: {
+  vehicleNo: string | null;
+  transporterName: string | null;
+  distanceKm: string | null;
+}): string[] {
+  const missing: string[] = [];
+  if (!row.vehicleNo?.trim()) missing.push("Vehicle number");
+  if (!row.transporterName?.trim()) missing.push("Transporter name");
+  if (row.distanceKm == null) missing.push("Distance");
+  return missing;
 }

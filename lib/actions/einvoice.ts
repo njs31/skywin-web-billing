@@ -134,6 +134,20 @@ export async function generateEwb(
     transportMode: dispatch.transportMode,
   };
 
+  // Persist whatever was entered before attempting the push — otherwise a
+  // failed push (Zoho down, IRN not yet generated, etc.) would silently
+  // discard details someone just typed in to fix a "missing" invoice.
+  await db
+    .update(sales)
+    .set({
+      vehicleNo: resolved.vehicleNumber ?? null,
+      transporterName: resolved.transporterName ?? null,
+      transporterGstin: resolved.transporterGstin ?? null,
+      transportMode: resolved.transportMode ?? null,
+      distanceKm: resolved.distanceKm != null ? String(resolved.distanceKm) : null,
+    })
+    .where(eq(sales.id, saleId));
+
   let zohoInvoiceId = sale.zohoInvoiceId;
   if (!zohoInvoiceId) {
     const synced = await syncSaleToZoho(saleId);
@@ -152,9 +166,6 @@ export async function generateEwb(
           : null,
         ewbRaw: JSON.stringify(ewb),
         ewbError: null,
-        transporterGstin: resolved.transporterGstin ?? null,
-        transportMode: resolved.transportMode ?? null,
-        distanceKm: resolved.distanceKm != null ? String(resolved.distanceKm) : null,
       })
       .where(eq(sales.id, saleId));
     return ewb;
@@ -166,4 +177,27 @@ export async function generateEwb(
       .where(eq(sales.id, saleId));
     throw err;
   }
+}
+
+/**
+ * Saves dispatch details on a sale WITHOUT attempting to push an e-way
+ * bill — for fixing a "missing details" invoice ahead of time, separately
+ * from actually pushing it. Narrowly scoped: only touches these four
+ * fields, never items, amounts, or anything already reported to Zoho/IRP.
+ */
+export async function updateDispatchDetails(
+  saleId: number,
+  dispatch: DispatchDetails
+) {
+  await requireNonDealer();
+  await db
+    .update(sales)
+    .set({
+      vehicleNo: dispatch.vehicleNumber?.trim() || null,
+      transporterName: dispatch.transporterName?.trim() || null,
+      transporterGstin: dispatch.transporterGstin?.trim() || null,
+      transportMode: dispatch.transportMode ?? null,
+      distanceKm: dispatch.distanceKm != null ? String(dispatch.distanceKm) : null,
+    })
+    .where(eq(sales.id, saleId));
 }

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { generateEwb } from "@/lib/actions/einvoice";
+import { generateEwb, updateDispatchDetails } from "@/lib/actions/einvoice";
 import { Button } from "@/components/ui/button";
 
 export function GenerateEwbButton({
@@ -60,12 +60,28 @@ export function GenerateEwbButton({
     });
   };
 
-  const submitForm = () =>
-    push({
-      vehicleNumber: vehicleNumber.trim() || undefined,
-      transporterName: transporterName.trim() || undefined,
-      distanceKm: distanceKm.trim() ? Number(distanceKm) : undefined,
+  const formDispatch = {
+    vehicleNumber: vehicleNumber.trim() || undefined,
+    transporterName: transporterName.trim() || undefined,
+    distanceKm: distanceKm.trim() ? Number(distanceKm) : undefined,
+  };
+  const submitForm = () => push(formDispatch);
+
+  /** Save the entered details without pushing — for fixing a "missing
+   *  details" invoice ahead of time, e.g. at the end of a shift, without
+   *  necessarily pushing to the government right away. */
+  const saveOnly = () => {
+    setError("");
+    startTransition(async () => {
+      try {
+        await updateDispatchDetails(saleId, formDispatch);
+        setOpen(false);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to save details");
+      }
     });
+  };
 
   if (ewbNo && ewbStatus !== "cancelled") {
     return (
@@ -134,6 +150,9 @@ export function GenerateEwbButton({
       <div className="flex justify-end gap-1">
         <Button size="sm" variant="ghost" onClick={() => setOpen(false)} disabled={isPending}>
           Cancel
+        </Button>
+        <Button size="sm" variant="outline" onClick={saveOnly} disabled={isPending}>
+          {isPending ? "…" : "Save"}
         </Button>
         <Button size="sm" onClick={submitForm} disabled={isPending}>
           {isPending ? "…" : "Generate"}

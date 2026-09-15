@@ -1,5 +1,5 @@
 import { Truck } from "lucide-react";
-import { getEinvoiceCandidates } from "@/lib/queries/einvoice";
+import { getEinvoiceCandidates, ewayBillMissingFields } from "@/lib/queries/einvoice";
 import { requiresEwayBill } from "@/lib/gst";
 import { formatCurrency, formatDateIST, toNumber } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,14 +12,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { GenerateEwbButton } from "@/components/einvoice/generate-ewb-button";
-
-const STATUS_LABEL: Record<string, string> = {
-  none: "Not generated",
-  pending: "Pending",
-  generated: "Generated",
-  failed: "Failed",
-  cancelled: "Cancelled",
-};
 
 export default async function EwayBillPage() {
   // Same candidate list as the e-Invoice page (it already carries ewb*
@@ -75,12 +67,14 @@ export default async function EwayBillPage() {
                   <TableHead>Date</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Readiness</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {needsEwb.map((row) => (
+                {needsEwb.map((row) => {
+                  const missing = ewayBillMissingFields(row);
+                  return (
                   <TableRow key={row.id}>
                     <TableCell className="font-medium">{row.invoiceNo}</TableCell>
                     <TableCell>{formatDateIST(row.date)}</TableCell>
@@ -89,10 +83,16 @@ export default async function EwayBillPage() {
                       {formatCurrency(row.grandTotal)}
                     </TableCell>
                     <TableCell>
-                      <span className="text-xs text-slate-500">
-                        {STATUS_LABEL[row.ewbStatus] ?? row.ewbStatus}
-                      </span>
-                      {row.ewbError && (
+                      {missing.length === 0 ? (
+                        <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          Ready to push
+                        </span>
+                      ) : (
+                        <span className="text-xs text-amber-700">
+                          Missing: {missing.join(", ")}
+                        </span>
+                      )}
+                      {row.ewbStatus === "failed" && row.ewbError && (
                         <p className="max-w-[240px] text-[11px] text-red-600">
                           {row.ewbError}
                         </p>
@@ -115,7 +115,8 @@ export default async function EwayBillPage() {
                       />
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           )}
