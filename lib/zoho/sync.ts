@@ -212,9 +212,55 @@ export async function ensureContact(customer: SyncCustomer): Promise<string> {
     "/contacts",
     { query: { gst_no: customer.gstin } }
   );
-  if (search.contacts?.length) return search.contacts[0]!.contact_id;
 
+  // Two different "state code" formats are in play here: `stateCode` is
+  // the numeric GST state code (e.g. "33"), which is what Zoho's address
+  // `state_code` field wants; `placeOfContact` is Zoho's own 2-letter
+  // abbreviation (e.g. "TN"), which is what `place_of_contact` wants.
+  // Conflating them silently mistags the contact's state.
   const stateCode = gstStateCode(customer.gstin);
+  const placeOfContact = zohoStateCode(customer.gstin);
+  const billingAddress = {
+    address: customer.address ?? "",
+    city: customer.district ?? "",
+    state: stateNameFromGstin(customer.gstin, ""),
+    state_code: stateCode,
+    zip: customer.pinCode ?? "",
+    country: "India",
+  };
+
+  if (search.contacts?.length) {
+    const contactId = search.contacts[0]!.contact_id;
+    // Refresh the existing contact's address/name on every sync, rather
+    // than reusing it untouched. Without this, fixing an incomplete
+    // customer address in our own software (e.g. from the e-Invoice
+    // page's "Fix customer details" link) would never reach a Zoho
+    // contact that was already created — every later e-invoice push
+    // would keep failing on the same stale address.
+    try {
+      await zohoRequest("PUT", `/contacts/${contactId}`, {
+        body: {
+          contact_name: customer.name,
+          company_name: customer.name,
+          gst_treatment: "business_gst",
+          gst_no: customer.gstin,
+          place_of_contact: placeOfContact,
+          billing_address: billingAddress,
+        },
+      });
+    } catch (err) {
+      // Non-fatal: worst case a push downstream fails with the same
+      // "missing/invalid address" error it would have without this
+      // refresh — no worse off than before.
+      console.error(
+        "[Zoho] Failed to refresh contact",
+        contactId,
+        err instanceof Error ? err.message : err
+      );
+    }
+    return contactId;
+  }
+
   const created = await zohoRequest<{ contact: { contact_id: string } }>(
     "POST",
     "/contacts",
@@ -226,16 +272,9 @@ export async function ensureContact(customer: SyncCustomer): Promise<string> {
         customer_sub_type: "business",
         gst_treatment: "business_gst",
         gst_no: customer.gstin,
-        place_of_contact: zohoStateCode(customer.gstin),
+        place_of_contact: placeOfContact,
         is_taxable: true,
-        billing_address: {
-          address: customer.address ?? "",
-          city: customer.district ?? "",
-          state: stateNameFromGstin(customer.gstin, ""),
-          state_code: stateCode,
-          zip: customer.pinCode ?? "",
-          country: "India",
-        },
+        billing_address: billingAddress,
         contact_persons: customer.phone
           ? [{ first_name: "Accounts", phone: customer.phone, is_primary_contact: true }]
           : undefined,
