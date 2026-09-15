@@ -23,7 +23,9 @@ import { generateEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
 
-function toSyncInputs(sale: LoadedSale) {
+/** Exported so scripts/zoho-backfill.ts can build the same payload without
+ *  going through the server-action auth check (no request/session there). */
+export function toSyncInputs(sale: LoadedSale) {
   const syncSale: SyncSale = {
     invoiceNo: sale.invoiceNo,
     date: format(new Date(sale.date), "yyyy-MM-dd"),
