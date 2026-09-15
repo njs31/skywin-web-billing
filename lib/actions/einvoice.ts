@@ -167,12 +167,21 @@ export async function generateEwb(
 
   try {
     const ewb = await generateEwayBill(zohoInvoiceId!, resolved);
+    // Prefer Zoho's own generation timestamp; fall back to "now" if it's
+    // missing or doesn't parse — a real e-way bill was still just created
+    // either way, so the cancel-window countdown needs some start point.
+    const parsedGeneratedAt = ewb.ewaybill_date ? new Date(ewb.ewaybill_date) : null;
+    const generatedAt =
+      parsedGeneratedAt && !Number.isNaN(parsedGeneratedAt.getTime())
+        ? parsedGeneratedAt
+        : new Date();
     await db
       .update(sales)
       .set({
         ewbStatus: ewb.ewaybill_number ? "generated" : "pending",
         ewbId: ewb.ewaybill_id || null,
         ewbNo: ewb.ewaybill_number || null,
+        ewbGeneratedAt: ewb.ewaybill_number ? generatedAt : null,
         ewbValidUntil: ewb.ewaybill_expiry_date
           ? new Date(ewb.ewaybill_expiry_date)
           : null,

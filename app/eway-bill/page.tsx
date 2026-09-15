@@ -29,8 +29,15 @@ export default async function EwayBillPage() {
     (r) => !requiresEwayBill(toNumber(r.grandTotal), toNumber(r.igst) > 0)
   );
 
-  const needsEwb = required.filter((r) => !r.ewbNo || r.ewbStatus === "failed");
-  const done = required.filter((r) => r.ewbNo && r.ewbStatus !== "failed");
+  // A cancelled e-way bill (unlike a cancelled IRN) can legally get a fresh
+  // one, so it belongs back in "Pending" — not stuck looking valid forever
+  // in "Generated" just because ewbNo is still set from before it was cancelled.
+  const needsEwb = required.filter(
+    (r) => !r.ewbNo || r.ewbStatus === "failed" || r.ewbStatus === "cancelled"
+  );
+  const done = required.filter(
+    (r) => r.ewbNo && r.ewbStatus !== "failed" && r.ewbStatus !== "cancelled"
+  );
 
   return (
     <div className="space-y-6 p-6">
@@ -115,6 +122,7 @@ export default async function EwayBillPage() {
                             : null
                         }
                         ewbValidUntilIso={row.ewbValidUntil?.toISOString() ?? null}
+                        ewbGeneratedAtIso={row.ewbGeneratedAt?.toISOString() ?? null}
                         ewbError={row.ewbError}
                         vehicleNo={row.vehicleNo}
                         transporterName={row.transporterName}
@@ -167,6 +175,7 @@ export default async function EwayBillPage() {
                             : null
                         }
                         ewbValidUntilIso={row.ewbValidUntil?.toISOString() ?? null}
+                        ewbGeneratedAtIso={row.ewbGeneratedAt?.toISOString() ?? null}
                         ewbError={row.ewbError}
                         vehicleNo={row.vehicleNo}
                         transporterName={row.transporterName}

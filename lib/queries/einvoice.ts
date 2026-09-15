@@ -35,6 +35,7 @@ export type EinvoiceRow = {
   ewbStatus: string;
   ewbId: string | null;
   ewbNo: string | null;
+  ewbGeneratedAt: Date | null;
   ewbValidUntil: Date | null;
   ewbError: string | null;
   /** Dispatch details, if already entered at billing time — when all three
@@ -73,6 +74,7 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
       ewbStatus: sales.ewbStatus,
       ewbId: sales.ewbId,
       ewbNo: sales.ewbNo,
+      ewbGeneratedAt: sales.ewbGeneratedAt,
       ewbValidUntil: sales.ewbValidUntil,
       ewbError: sales.ewbError,
       vehicleNo: sales.vehicleNo,

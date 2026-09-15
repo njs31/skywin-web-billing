@@ -63,9 +63,13 @@ export default async function InvoiceDetailPage({
 
   // Once a real IRN exists, print the IRP-signed QR Zoho gives back
   // instead of the self-drawn placeholder — the signed one is what the
-  // government (and a scanning customer) actually recognizes.
+  // government (and a scanning customer) actually recognizes. Not if the
+  // IRN itself was cancelled, though — printing a cancelled e-invoice's
+  // QR as if it were still valid would be actively misleading.
+  const hasLiveIrn =
+    sale.irn && sale.signedQr && sale.einvoiceStatus !== "cancelled";
   const einvoiceQrUrl =
-    sale.irn && sale.signedQr
+    hasLiveIrn
       ? sale.signedQr
       : sale.eInvoiceRequested
         ? await invoiceQrDataUrl(
@@ -98,7 +102,7 @@ export default async function InvoiceDetailPage({
       </div>
       <InvoiceTemplate
         business={business}
-        sale={sale}
+        sale={{ ...sale, irn: hasLiveIrn ? sale.irn : null }}
         items={sale.items}
         einvoiceQrUrl={einvoiceQrUrl}
       />

@@ -300,6 +300,10 @@ export const sales = pgTable(
      *  Distinct from ewbNo, the government-issued e-way bill number. */
     ewbId: text("ewb_id"),
     ewbNo: text("ewb_no"),
+    /** When the e-way bill was generated — distinct from ewbValidUntil
+     *  (transport validity, which can be days out). The 24h cancellation
+     *  window is measured from this, not from validity. */
+    ewbGeneratedAt: timestamp("ewb_generated_at"),
     ewbValidUntil: timestamp("ewb_valid_until"),
     ewbError: text("ewb_error"),
     /** Full e-way bill object Zoho returns (ewaybill_id, transporter/vehicle

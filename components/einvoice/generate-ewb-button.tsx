@@ -13,6 +13,20 @@ function hoursUntilExpiry(validUntilIso: string | null): number | null {
   return (ms - Date.now()) / (60 * 60 * 1000);
 }
 
+const CANCEL_WINDOW_HOURS = 24;
+
+/** Hours left in the e-way bill's cancellation window (24h from
+ *  generation — distinct from transport validity), or null once it's
+ *  closed or there's no generation timestamp to measure from. */
+function cancelWindowHoursLeft(generatedAtIso: string | null): number | null {
+  if (!generatedAtIso) return null;
+  const ms = new Date(generatedAtIso).getTime();
+  if (Number.isNaN(ms)) return null;
+  const deadlineMs = ms + CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
+  const hoursLeft = (deadlineMs - Date.now()) / (60 * 60 * 1000);
+  return hoursLeft > 0 ? hoursLeft : null;
+}
+
 export function GenerateEwbButton({
   saleId,
   ewbId,
@@ -20,6 +34,7 @@ export function GenerateEwbButton({
   ewbStatus,
   ewbValidUntil,
   ewbValidUntilIso,
+  ewbGeneratedAtIso,
   ewbError,
   vehicleNo,
   transporterName: prefilledTransporterName,
@@ -36,6 +51,9 @@ export function GenerateEwbButton({
   /** Same date as ewbValidUntil, but as an ISO string, for the expiry
    *  countdown — kept separate so the display formatting stays server-side. */
   ewbValidUntilIso?: string | null;
+  /** When the e-way bill was generated, as an ISO string — for the 24h
+   *  cancellation-window countdown, distinct from transport validity. */
+  ewbGeneratedAtIso?: string | null;
   ewbError: string | null;
   /** Dispatch details already captured at billing time, if any — when
    *  vehicle, transporter and distance are all present, this button skips
@@ -119,6 +137,8 @@ export function GenerateEwbButton({
     const hoursLeft = hoursUntilExpiry(ewbValidUntilIso ?? null);
     const expired = hoursLeft != null && hoursLeft <= 0;
     const expiringSoon = hoursLeft != null && hoursLeft > 0 && hoursLeft <= 24;
+    const cancelHoursLeft = cancelWindowHoursLeft(ewbGeneratedAtIso ?? null);
+    const cancelWindowClosed = Boolean(ewbGeneratedAtIso) && cancelHoursLeft === null;
 
     return (
       <div className="flex flex-col items-end gap-0.5">
@@ -143,14 +163,22 @@ export function GenerateEwbButton({
           </span>
         )}
         {!cancelling ? (
-          <button
-            className="text-[10px] text-red-600 underline"
-            onClick={() => setCancelling(true)}
-            disabled={!ewbId}
-            title={!ewbId ? "No Zoho e-way bill id on file for this invoice" : undefined}
-          >
-            Cancel
-          </button>
+          cancelWindowClosed ? (
+            <span className="text-[10px] text-slate-400">
+              Cancel window closed (24h)
+            </span>
+          ) : (
+            <button
+              className="text-[10px] text-red-600 underline"
+              onClick={() => setCancelling(true)}
+              disabled={!ewbId}
+              title={!ewbId ? "No Zoho e-way bill id on file for this invoice" : undefined}
+            >
+              {cancelHoursLeft != null
+                ? `Cancel (${cancelHoursLeft.toFixed(1)}h left)`
+                : "Cancel"}
+            </button>
+          )
         ) : (
           <div className="flex flex-col items-end gap-1">
             <input

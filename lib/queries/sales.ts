@@ -138,6 +138,8 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     ewbStatus: (row.ewb_status as string | null) ?? "none",
     ewbId: (row.ewb_id as string | null) ?? null,
     ewbNo: (row.ewb_no as string | null) ?? null,
+    ewbGeneratedAt:
+      row.ewb_generated_at == null ? null : new Date(String(row.ewb_generated_at)),
     ewbValidUntil:
       row.ewb_valid_until == null ? null : new Date(String(row.ewb_valid_until)),
     ewbError: (row.ewb_error as string | null) ?? null,
@@ -950,6 +952,7 @@ export async function getSaleById(id: number) {
       ewbStatus: sales.ewbStatus,
       ewbId: sales.ewbId,
       ewbNo: sales.ewbNo,
+      ewbGeneratedAt: sales.ewbGeneratedAt,
       ewbValidUntil: sales.ewbValidUntil,
       ewbError: sales.ewbError,
       customerRecordName: customers.name,
