@@ -29,8 +29,7 @@ import { eq, and, isNull, isNotNull, ne, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { sales, customers } from "@/db/schema";
 import { getSaleById } from "@/lib/queries/sales";
-import { toSyncInputs } from "@/lib/actions/einvoice";
-import { upsertInvoice } from "@/lib/zoho/sync";
+import { upsertInvoice, toSyncInputs } from "@/lib/zoho/sync";
 import { zohoRequest } from "@/lib/zoho/client";
 
 const LINK_INVOICE_NUMBERS = [

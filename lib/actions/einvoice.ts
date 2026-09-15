@@ -5,52 +5,16 @@
  * e-Way Bill for them. See lib/zoho/* for the API layer this wires up.
  */
 import { eq } from "drizzle-orm";
-import { format } from "date-fns";
 import { db } from "@/db";
 import { sales } from "@/db/schema";
 import { getSaleById } from "@/lib/queries/sales";
 import { EINVOICE_REPORTING_WINDOW_DAYS } from "@/lib/queries/einvoice";
 import { requireNonDealer } from "@/lib/actions/auth";
-import { toNumber } from "@/lib/utils";
-import {
-  upsertInvoice,
-  type SyncCustomer,
-  type SyncSale,
-  type SyncSaleItem,
-} from "@/lib/zoho/sync";
+import { upsertInvoice, toSyncInputs } from "@/lib/zoho/sync";
 import { pushEInvoice, cancelEInvoice } from "@/lib/zoho/einvoice";
 import { generateEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
-
-/** Exported so scripts/zoho-backfill.ts can build the same payload without
- *  going through the server-action auth check (no request/session there). */
-export function toSyncInputs(sale: LoadedSale) {
-  const syncSale: SyncSale = {
-    invoiceNo: sale.invoiceNo,
-    date: format(new Date(sale.date), "yyyy-MM-dd"),
-    grandTotal: toNumber(sale.grandTotal),
-    igst: toNumber(sale.igst),
-  };
-  const customer: SyncCustomer = {
-    name: sale.customerRecordName || sale.customerName || "Customer",
-    gstin: (sale.customerGstin || "").trim(),
-    phone: sale.customerPhone,
-    address: sale.customerAddress,
-    district: sale.customerDistrict,
-    pinCode: sale.customerPinCode,
-  };
-  const items: SyncSaleItem[] = sale.items.map((item) => ({
-    productName: String(item.productName || item.customName || "Item"),
-    hsnCode: item.hsnCode || "",
-    unit: item.unit || "pcs",
-    qty: toNumber(item.qty),
-    rate: toNumber(item.rate),
-    amount: toNumber(item.amount),
-    gstRate: toNumber(item.gstRate),
-  }));
-  return { syncSale, customer, items };
-}
 
 async function loadActiveB2bSale(saleId: number): Promise<LoadedSale> {
   const sale = await getSaleById(saleId);

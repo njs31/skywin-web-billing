@@ -7,6 +7,7 @@
  * makes it a reusable, idempotent function instead of one-off MCP calls.
  */
 import { eq } from "drizzle-orm";
+import { format } from "date-fns";
 import { db } from "@/db";
 import { settings } from "@/db/schema";
 import { stateNameFromGstin } from "@/lib/gst-states";
@@ -43,6 +44,73 @@ export type SyncSale = {
   /** >0 means this sale was billed interstate (IGST, not CGST+SGST). */
   igst: number;
 };
+
+/**
+ * Shared shape for a sale plus its line items, loose enough to cover both
+ * `getSaleById`'s return type and the plain rows scripts/zoho-backfill.ts
+ * builds itself.
+ */
+type SyncableSale = {
+  invoiceNo: string;
+  date: string | Date;
+  grandTotal: unknown;
+  igst: unknown;
+  customerRecordName: string | null;
+  customerName: string | null;
+  customerGstin: string | null;
+  customerPhone: string | null;
+  customerAddress: string | null;
+  customerDistrict: string | null;
+  customerPinCode: string | null;
+  items: {
+    productName: string | null;
+    customName: string | null;
+    hsnCode: string | null;
+    unit: string | null;
+    qty: unknown;
+    rate: unknown;
+    amount: unknown;
+    gstRate: unknown;
+  }[];
+};
+
+function num(value: unknown): number {
+  return typeof value === "number" ? value : Number(value ?? 0);
+}
+
+/** Builds the `upsertInvoice` payload from a loaded sale. Lives here (a
+ *  plain module, not a "use server" file) so both the e-Invoice server
+ *  actions and scripts/zoho-backfill.ts (no request context) can share it. */
+export function toSyncInputs(sale: SyncableSale): {
+  syncSale: SyncSale;
+  customer: SyncCustomer;
+  items: SyncSaleItem[];
+} {
+  const syncSale: SyncSale = {
+    invoiceNo: sale.invoiceNo,
+    date: format(new Date(sale.date), "yyyy-MM-dd"),
+    grandTotal: num(sale.grandTotal),
+    igst: num(sale.igst),
+  };
+  const customer: SyncCustomer = {
+    name: sale.customerRecordName || sale.customerName || "Customer",
+    gstin: (sale.customerGstin || "").trim(),
+    phone: sale.customerPhone,
+    address: sale.customerAddress,
+    district: sale.customerDistrict,
+    pinCode: sale.customerPinCode,
+  };
+  const items: SyncSaleItem[] = sale.items.map((item) => ({
+    productName: String(item.productName || item.customName || "Item"),
+    hsnCode: item.hsnCode || "",
+    unit: item.unit || "pcs",
+    qty: num(item.qty),
+    rate: num(item.rate),
+    amount: num(item.amount),
+    gstRate: num(item.gstRate),
+  }));
+  return { syncSale, customer, items };
+}
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
