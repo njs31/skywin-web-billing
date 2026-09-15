@@ -117,6 +117,20 @@ function round2(n: number): number {
 }
 
 /**
+ * Zoho's `invoice_number` field caps at 16 characters. Most skywin-bill
+ * invoices fit (`SKYA/0407/26-27` = 15), but the `INV-YYYYMMDD-####` format
+ * used for most of 2026 is 17 — one over. Stripping the redundant "INV-"
+ * prefix (the date already says it's an invoice) gets those under the cap
+ * while staying unique and still traceable back to the source number, which
+ * is also kept in full in the invoice's `notes`.
+ */
+function zohoInvoiceNumber(invoiceNo: string): string {
+  if (invoiceNo.length <= 16) return invoiceNo;
+  const stripped = invoiceNo.replace(/^INV-/, "");
+  return stripped.length <= 16 ? stripped : stripped.slice(0, 16);
+}
+
+/**
  * Predicts what Zoho's tax total will come out to, so the invoice-level
  * `adjustment` can be solved for in one shot instead of create-then-patch.
  * Zoho rounds each tax component (CGST, SGST) per rate group independently;
@@ -297,7 +311,7 @@ export async function upsertInvoice(input: {
       query: { ignore_auto_number_generation: true, send: false },
       body: {
         customer_id: zohoContactId,
-        invoice_number: sale.invoiceNo,
+        invoice_number: zohoInvoiceNumber(sale.invoiceNo),
         date: sale.date,
         gst_treatment: "business_gst",
         gst_no: customer.gstin,
