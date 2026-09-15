@@ -1,6 +1,7 @@
 import { Truck } from "lucide-react";
 import { getEinvoiceCandidates } from "@/lib/queries/einvoice";
-import { formatCurrency, formatDateIST } from "@/lib/utils";
+import { requiresEwayBill } from "@/lib/gst";
+import { formatCurrency, formatDateIST, toNumber } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -25,8 +26,19 @@ export default async function EwayBillPage() {
   // fields) — in practice an e-way bill is generated close to dispatch
   // time, so it's fine that this is scoped to the same recent window.
   const rows = await getEinvoiceCandidates();
-  const needsEwb = rows.filter((r) => !r.ewbNo || r.ewbStatus === "failed");
-  const done = rows.filter((r) => r.ewbNo && r.ewbStatus !== "failed");
+
+  // Not every invoice legally needs an e-way bill — only ones above the
+  // value threshold, which differs for interstate vs. within-Tamil-Nadu
+  // dispatches. See requiresEwayBill's comment for the exact figures.
+  const required = rows.filter((r) =>
+    requiresEwayBill(toNumber(r.grandTotal), toNumber(r.igst) > 0)
+  );
+  const belowThreshold = rows.filter(
+    (r) => !requiresEwayBill(toNumber(r.grandTotal), toNumber(r.igst) > 0)
+  );
+
+  const needsEwb = required.filter((r) => !r.ewbNo || r.ewbStatus === "failed");
+  const done = required.filter((r) => r.ewbNo && r.ewbStatus !== "failed");
 
   return (
     <div className="space-y-6 p-6">
@@ -37,7 +49,10 @@ export default async function EwayBillPage() {
           <p className="text-sm text-slate-500">
             Generate an e-way bill for a dispatched consignment — vehicle
             number, transporter and approximate distance are entered per
-            invoice when you generate it.
+            invoice when you generate it. Only invoices above the legal
+            value threshold are listed here as needing one: over ₹50,000
+            for an interstate sale, over ₹1,00,000 for a sale delivered
+            within Tamil Nadu.
           </p>
         </div>
       </div>
@@ -148,6 +163,36 @@ export default async function EwayBillPage() {
             </Table>
           </CardContent>
         </Card>
+      )}
+
+      {belowThreshold.length > 0 && (
+        <details className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-slate-600">
+            Below threshold — no e-way bill required ({belowThreshold.length})
+          </summary>
+          <Table className="mt-3">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invoice #</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {belowThreshold.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium">{row.invoiceNo}</TableCell>
+                  <TableCell>{formatDateIST(row.date)}</TableCell>
+                  <TableCell>{row.customerName}</TableCell>
+                  <TableCell className="text-right">
+                    {formatCurrency(row.grandTotal)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </details>
       )}
     </div>
   );

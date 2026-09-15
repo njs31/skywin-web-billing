@@ -179,6 +179,29 @@ export function isInterstateGst(
 }
 
 /**
+ * GST e-way bill value thresholds. The national rule (all interstate
+ * movement, and any state that hasn't relaxed its own intrastate limit) is
+ * ₹50,000. Tamil Nadu has notified a higher ₹1,00,000 threshold for
+ * movement wholly within the state — this business is TN-registered, so
+ * that's the intrastate figure used here. Revisit if billing ever expands
+ * to dispatches from outside Tamil Nadu.
+ */
+export const EWAY_BILL_THRESHOLD_INTERSTATE = 50000;
+export const EWAY_BILL_THRESHOLD_INTRASTATE_TN = 100000;
+
+/** Whether a sale legally requires an e-way bill, by value and whether the
+ *  sale was interstate (igst > 0) or intrastate. */
+export function requiresEwayBill(
+  grandTotal: number,
+  interstate: boolean
+): boolean {
+  const threshold = interstate
+    ? EWAY_BILL_THRESHOLD_INTERSTATE
+    : EWAY_BILL_THRESHOLD_INTRASTATE_TN;
+  return grandTotal > threshold;
+}
+
+/**
  * One selling price for every customer.
  *
  * Retail and wholesale bills now charge the same rate — the product sale rate.

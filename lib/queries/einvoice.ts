@@ -16,6 +16,7 @@ export type EinvoiceRow = {
   invoiceNo: string;
   date: Date;
   grandTotal: string;
+  igst: string;
   customerName: string | null;
   customerGstin: string | null;
   zohoInvoiceId: string | null;
@@ -39,6 +40,7 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
       invoiceNo: sales.invoiceNo,
       date: sales.date,
       grandTotal: sales.grandTotal,
+      igst: sales.igst,
       customerName: customers.name,
       customerGstin: customers.gstin,
       zohoInvoiceId: sales.zohoInvoiceId,
