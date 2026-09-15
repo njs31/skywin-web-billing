@@ -285,7 +285,39 @@ export async function upsertInvoice(input: {
   const genericItemId = await ensureGenericItem();
   const zohoContactId = await ensureContact(customer);
 
-  const line_items = items.map((item) => {
+  // The invoice-level `adjustment` becomes the e-invoice schema's "Other
+  // Charges" once pushed to the IRP, and the IRP rejects a negative value
+  // there (confirmed against a real push — see git history). Our own
+  // rounding can land on either side of zero, so when it would be negative,
+  // absorb the shortfall into the highest-value line's discount instead
+  // (this is exactly what the line-level discount already represents) and
+  // let the resulting adjustment land at zero or a small positive residual.
+  let syncedItems = items;
+  let subtotal = round2(items.reduce((sum, i) => sum + i.amount, 0));
+  let tax = predictZohoTax(items, interstate);
+  let adjustment = round2(sale.grandTotal - subtotal - tax);
+
+  if (adjustment < 0) {
+    const shortfall = -adjustment;
+    const idx = items.reduce(
+      (best, item, i) => (item.amount > items[best]!.amount ? i : best),
+      0
+    );
+    const target = items[idx]!;
+    if (target.amount - shortfall >= 0) {
+      syncedItems = items.map((item, i) =>
+        i === idx ? { ...item, amount: round2(item.amount - shortfall) } : item
+      );
+      subtotal = round2(syncedItems.reduce((sum, i) => sum + i.amount, 0));
+      tax = predictZohoTax(syncedItems, interstate);
+      adjustment = round2(sale.grandTotal - subtotal - tax);
+    }
+    // Still negative (or the target line was too small to absorb it) —
+    // clamp to zero. Off by a few paise on Zoho's own total, never on ours.
+    adjustment = Math.max(0, adjustment);
+  }
+
+  const line_items = syncedItems.map((item) => {
     const discount = round2(item.rate * item.qty - item.amount);
     return {
       item_id: genericItemId,
@@ -299,10 +331,6 @@ export async function upsertInvoice(input: {
       tax_id: taxIdByRate.get(item.gstRate),
     };
   });
-
-  const subtotal = round2(items.reduce((sum, i) => sum + i.amount, 0));
-  const tax = predictZohoTax(items, interstate);
-  const adjustment = round2(sale.grandTotal - subtotal - tax);
 
   const created = await zohoRequest<{ invoice: { invoice_id: string } }>(
     "POST",
