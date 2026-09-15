@@ -29,6 +29,10 @@ export default async function EditPurchasePage({
         date: purchase.date,
         paymentType: purchase.paymentType as "credit" | "cash",
         handlingCharges: purchase.handlingCharges ?? "0",
+        handlingChargeType:
+          purchase.handlingChargeType === "percent" ? "percent" : "value",
+        handlingChargeValue: purchase.handlingChargeValue ?? "0",
+        handlingGstRate: purchase.handlingGstRate ?? "0",
         paidAmount: purchase.paidAmount ?? "0",
         notes: purchase.notes,
         items: purchase.items.map((row) => ({

@@ -81,6 +81,7 @@ export function PurchaseReport() {
       Subtotal: b.subtotal,
       GST: b.gstTotal,
       Handling: b.handlingCharges,
+      "Round Off": b.roundOff,
       "Grand Total": b.grandTotal,
       Paid: b.paidAmount,
     }));
@@ -93,6 +94,7 @@ export function PurchaseReport() {
       Subtotal: data.summary.subtotal,
       GST: data.summary.gstTotal,
       Handling: data.summary.handlingCharges,
+      "Round Off": "" as unknown as number,
       "Grand Total": data.summary.grandTotal,
       Paid: data.summary.paidAmount,
     });
