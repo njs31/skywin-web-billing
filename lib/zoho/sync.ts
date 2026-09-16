@@ -255,6 +255,23 @@ async function ensureUnregisteredContact(customer: SyncCustomer): Promise<string
     if (row?.zohoContactId) return row.zohoContactId;
   }
 
+  // Zoho's e-way bill push needs a Ship-To address with its own PIN code —
+  // confirmed as a real, live blocker: "Please ensure that you have
+  // entered the appropriate values for the below mandatory fields.
+  // Receiver Pin code." A contact with only billing_address set leaves
+  // Ship-To (and its PIN code) blank in Zoho's UI, even though Bill-To's
+  // own PIN code is filled in right next to it. Since skywin-bill only
+  // ever has one address per customer, using it for both is correct —
+  // there's no separate delivery address to distinguish it from.
+  const address = {
+    address: zohoStreetAddress(customer.address),
+    city: customer.district ?? "",
+    state: BUSINESS.state,
+    state_code: BUSINESS.stateCode,
+    zip: customer.pinCode ?? "",
+    country: "India",
+  };
+
   const created = await zohoRequest<{ contact: { contact_id: string } }>(
     "POST",
     "/contacts",
@@ -266,14 +283,8 @@ async function ensureUnregisteredContact(customer: SyncCustomer): Promise<string
         gst_treatment: "consumer",
         place_of_contact: zohoStateCode(BUSINESS.stateCode),
         is_taxable: true,
-        billing_address: {
-          address: zohoStreetAddress(customer.address),
-          city: customer.district ?? "",
-          state: BUSINESS.state,
-          state_code: BUSINESS.stateCode,
-          zip: customer.pinCode ?? "",
-          country: "India",
-        },
+        billing_address: address,
+        shipping_address: address,
         contact_persons: customer.phone
           ? [{ first_name: "Accounts", phone: customer.phone, is_primary_contact: true }]
           : undefined,
@@ -339,6 +350,10 @@ export async function ensureContact(customer: SyncCustomer): Promise<string> {
           gst_no: customer.gstin,
           place_of_contact: placeOfContact,
           billing_address: billingAddress,
+          // Zoho's e-way bill push needs Ship-To's own PIN code — a
+          // contact with only billing_address leaves it blank. One
+          // address on file here, so it's correct to use it for both.
+          shipping_address: billingAddress,
         },
       });
     } catch (err) {
@@ -368,6 +383,7 @@ export async function ensureContact(customer: SyncCustomer): Promise<string> {
         place_of_contact: placeOfContact,
         is_taxable: true,
         billing_address: billingAddress,
+        shipping_address: billingAddress,
         contact_persons: customer.phone
           ? [{ first_name: "Accounts", phone: customer.phone, is_primary_contact: true }]
           : undefined,
