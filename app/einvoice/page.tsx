@@ -3,6 +3,7 @@ import { FileCheck2 } from "lucide-react";
 import {
   getEinvoiceCandidates,
   einvoiceMissingFields,
+  isValidGstin,
   EINVOICE_REPORTING_WINDOW_DAYS,
 } from "@/lib/queries/einvoice";
 import { formatCurrency, formatDateIST } from "@/lib/utils";
@@ -20,8 +21,13 @@ import { PushEinvoiceButton } from "@/components/einvoice/push-einvoice-button";
 
 export default async function EinvoicePage() {
   const rows = await getEinvoiceCandidates();
-  const needsPush = rows.filter((r) => !r.irn || r.einvoiceStatus === "failed");
-  const done = rows.filter((r) => r.irn && r.einvoiceStatus !== "failed");
+  // Unlike the e-Way Bill page, this one only ever concerns GST-registered
+  // (B2B) customers — e-Invoicing doesn't apply to an unregistered
+  // customer no matter what else is true, so they're excluded here
+  // entirely rather than shown as permanently "not ready."
+  const eligible = rows.filter((r) => isValidGstin(r.customerGstin));
+  const needsPush = eligible.filter((r) => !r.irn || r.einvoiceStatus === "failed");
+  const done = eligible.filter((r) => r.irn && r.einvoiceStatus !== "failed");
 
   return (
     <div className="space-y-6 p-6">

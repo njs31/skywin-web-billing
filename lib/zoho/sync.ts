@@ -9,9 +9,10 @@
 import { eq } from "drizzle-orm";
 import { format } from "date-fns";
 import { db } from "@/db";
-import { sales, settings } from "@/db/schema";
+import { sales, settings, customers } from "@/db/schema";
 import { stateNameFromGstin } from "@/lib/gst-states";
 import { isValidGstin } from "@/lib/gst";
+import { BUSINESS } from "@/lib/business";
 import { zohoRequest } from "./client";
 import { resolveTaxId, zohoStateCode, gstStateCode } from "./gst";
 
@@ -29,6 +30,11 @@ export type SyncSaleItem = {
 };
 
 export type SyncCustomer = {
+  /** Our own customer id, if this sale has one on file — used to cache
+   *  the Zoho contact id for an unregistered customer, who can't be
+   *  re-found by gst_no like a B2B contact. Null for a walk-in sale with
+   *  no customer record. */
+  customerId: number | null;
   name: string;
   gstin: string;
   phone: string | null;
@@ -56,6 +62,7 @@ type SyncableSale = {
   date: string | Date;
   grandTotal: unknown;
   igst: unknown;
+  customerId?: number | null;
   customerRecordName: string | null;
   customerName: string | null;
   customerGstin: string | null;
@@ -94,6 +101,7 @@ export function toSyncInputs(sale: SyncableSale): {
     igst: num(sale.igst),
   };
   const customer: SyncCustomer = {
+    customerId: sale.customerId ?? null,
     name: sale.customerRecordName || sale.customerName || "Customer",
     gstin: (sale.customerGstin || "").trim(),
     phone: sale.customerPhone,
@@ -206,8 +214,74 @@ export async function ensureGenericItem(): Promise<string> {
   return itemId;
 }
 
-/** Finds the Zoho contact by GSTIN, creating one if none exists yet. */
+/**
+ * Contact for a customer with no valid GSTIN — an unregistered ("URP")
+ * customer, legitimate for e-way bill purposes (goods movement doesn't
+ * care about registration) even though e-Invoicing itself doesn't apply
+ * to them. Created once as a "consumer"-treatment Zoho contact and cached
+ * on customers.zohoContactId, since — unlike a B2B contact — there's no
+ * GSTIN to re-find it by afterward.
+ *
+ * Place of supply defaults to our own business's state: skywin-bill can't
+ * detect an unregistered customer's actual state without a GSTIN, and its
+ * own GST calculation already assumes intrastate for exactly that reason
+ * (see isInterstateGst in lib/gst.ts) — this stays consistent with that.
+ */
+async function ensureUnregisteredContact(customer: SyncCustomer): Promise<string> {
+  if (customer.customerId != null) {
+    const [row] = await db
+      .select({ zohoContactId: customers.zohoContactId })
+      .from(customers)
+      .where(eq(customers.id, customer.customerId))
+      .limit(1);
+    if (row?.zohoContactId) return row.zohoContactId;
+  }
+
+  const created = await zohoRequest<{ contact: { contact_id: string } }>(
+    "POST",
+    "/contacts",
+    {
+      body: {
+        contact_name: customer.name,
+        contact_type: "customer",
+        customer_sub_type: "individual",
+        gst_treatment: "consumer",
+        place_of_contact: zohoStateCode(BUSINESS.stateCode),
+        is_taxable: true,
+        billing_address: {
+          address: customer.address ?? "",
+          city: customer.district ?? "",
+          state: BUSINESS.state,
+          state_code: BUSINESS.stateCode,
+          zip: customer.pinCode ?? "",
+          country: "India",
+        },
+        contact_persons: customer.phone
+          ? [{ first_name: "Accounts", phone: customer.phone, is_primary_contact: true }]
+          : undefined,
+      },
+    }
+  );
+  const contactId = created.contact.contact_id;
+
+  if (customer.customerId != null) {
+    await db
+      .update(customers)
+      .set({ zohoContactId: contactId })
+      .where(eq(customers.id, customer.customerId));
+  }
+
+  return contactId;
+}
+
+/** Finds the Zoho contact by GSTIN, creating one if none exists yet — or,
+ *  for a customer with no valid GSTIN, the unregistered-contact path
+ *  above (still needed for e-way bill, just not for e-Invoicing). */
 export async function ensureContact(customer: SyncCustomer): Promise<string> {
+  if (!isValidGstin(customer.gstin)) {
+    return ensureUnregisteredContact(customer);
+  }
+
   const search = await zohoRequest<{ contacts: { contact_id: string }[] }>(
     "GET",
     "/contacts",
@@ -305,14 +379,11 @@ export async function upsertInvoice(input: {
   customer: SyncCustomer;
 }): Promise<UpsertResult> {
   const { sale, items, customer } = input;
-  if (!isValidGstin(customer.gstin)) {
-    throw new Error(
-      `${sale.invoiceNo}: customer has no valid GSTIN — only B2B sales to a ` +
-        `GST-registered customer sync to Zoho. ("${customer.gstin}" isn't a ` +
-        `real GSTIN — a placeholder like "URP" for an unregistered customer ` +
-        `doesn't count.)`
-    );
-  }
+  // A sale to an unregistered customer still syncs — needed for e-way
+  // bill, which applies regardless of registration. e-Invoicing itself
+  // stays gated separately, in lib/actions/einvoice.ts's loadActiveB2bSale
+  // — that's the actual legal boundary (B2B/export only), not this sync.
+  const registered = isValidGstin(customer.gstin);
   if (items.length === 0) {
     throw new Error(`${sale.invoiceNo}: no line items to sync.`);
   }
@@ -390,9 +461,11 @@ export async function upsertInvoice(input: {
         customer_id: zohoContactId,
         invoice_number: zohoInvoiceNumber(sale.invoiceNo),
         date: sale.date,
-        gst_treatment: "business_gst",
-        gst_no: customer.gstin,
-        place_of_supply: zohoStateCode(customer.gstin),
+        gst_treatment: registered ? "business_gst" : "consumer",
+        gst_no: registered ? customer.gstin : undefined,
+        place_of_supply: registered
+          ? zohoStateCode(customer.gstin)
+          : zohoStateCode(BUSINESS.stateCode),
         is_inclusive_tax: false,
         is_discount_before_tax: true,
         discount_type: "item_level",

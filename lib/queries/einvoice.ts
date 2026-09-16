@@ -1,15 +1,20 @@
 /**
- * Reads for the e-Invoice / e-Way Bill page: which active, GSTIN-bearing
- * sales still need pushing, bucketed the same way the page renders them.
+ * Reads for the e-Invoice / e-Way Bill page: which active sales still need
+ * pushing, bucketed the same way the page renders them. Deliberately NOT
+ * filtered to GST-registered customers at this level — an e-way bill
+ * applies to goods movement above the value threshold regardless of the
+ * buyer's registration, so an unregistered ("URP") customer's sale is a
+ * legitimate e-way bill candidate even though it's never an e-Invoice
+ * candidate. The e-Invoice page filters with isValidGstin itself; see
+ * einvoiceMissingFields for how it also surfaces "not GST-registered" as
+ * a reason, not just missing address fields.
  */
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { sales, customers } from "@/db/schema";
+import { isValidGstin } from "@/lib/gst";
 
-/** Postgres regex match for a real 15-character GSTIN — see isValidGstin
- *  in lib/gst.ts for why a plain non-empty check isn't enough (a
- *  placeholder like "URP" for an unregistered customer would pass that). */
-const GSTIN_SQL_PATTERN = "^[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}[1-9A-Za-z]{1}Z[0-9A-Za-z]{1}$";
+export { isValidGstin };
 
 /** The IRP's reporting window — an invoice older than this can no longer
  *  be pushed for an IRN at all. Matches the 30-day rule checked against the
@@ -89,28 +94,29 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
     })
     .from(sales)
     .innerJoin(customers, eq(sales.customerId, customers.id))
-    .where(
-      and(
-        eq(sales.status, "active"),
-        sql`${customers.gstin} ~ ${GSTIN_SQL_PATTERN}`,
-        gte(sales.date, windowStart)
-      )
-    )
+    .where(and(eq(sales.status, "active"), gte(sales.date, windowStart)))
     .orderBy(sales.date);
 }
 
 /**
  * Fields the government's e-invoice schema requires for the buyer's
- * address that we don't already guarantee (GSTIN is guaranteed by the
- * candidate query itself). All three live on the *customer* record, not
- * the sale — so fixing them means editing the customer, not the invoice.
- * Empty array = ready to push.
+ * address, plus the one requirement that isn't fixable by editing
+ * anything: e-Invoicing only applies to a GST-registered (B2B) customer
+ * at all — a "URP" placeholder or a genuinely unregistered customer
+ * never becomes eligible no matter what else is filled in. All the
+ * address fields live on the *customer* record, not the sale — so fixing
+ * those means editing the customer, not the invoice. Empty array = ready
+ * to push.
  */
 export function einvoiceMissingFields(row: {
+  customerGstin: string | null;
   customerAddress: string | null;
   customerDistrict: string | null;
   customerPinCode: string | null;
 }): string[] {
+  if (!isValidGstin(row.customerGstin)) {
+    return ["Not GST-registered — e-Invoicing doesn't apply"];
+  }
   const missing: string[] = [];
   if (!row.customerAddress?.trim()) missing.push("Customer address");
   if (!row.customerDistrict?.trim()) missing.push("Customer city");

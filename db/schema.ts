@@ -87,6 +87,13 @@ export const customers = pgTable(
       "0"
     ),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    /** Zoho Books contact id for this customer, cached once created as an
+     *  unregistered ("consumer") contact — a customer with no valid GSTIN
+     *  can't be found again by gst_no like a B2B contact can, so this is
+     *  what avoids creating a duplicate Zoho contact on every sync. Only
+     *  used for that path; a GST-registered customer's contact is still
+     *  looked up fresh by GSTIN each time (lib/zoho/sync.ts). */
+    zohoContactId: text("zoho_contact_id"),
   },
   (table) => ({
     gstinUnique: uniqueIndex("customers_gstin_unique").on(table.gstin),

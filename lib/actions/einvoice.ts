@@ -17,25 +17,46 @@ import { generateEwayBill, cancelEwayBill, type DispatchDetails } from "@/lib/zo
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
 
-async function loadActiveB2bSale(saleId: number): Promise<LoadedSale> {
+/**
+ * Any active sale with a customer on file — GSTIN not required. This is
+ * as far as "sync to Zoho" needs to go: an e-way bill applies to goods
+ * movement regardless of the buyer's GST registration, so the underlying
+ * Zoho invoice has to exist for an unregistered customer too. Only
+ * e-Invoicing itself (loadActiveB2bSale, below) is legally gated by GSTIN.
+ */
+async function loadActiveSale(saleId: number): Promise<LoadedSale> {
   const sale = await getSaleById(saleId);
   if (!sale) throw new Error("Sale not found.");
   if (sale.status !== "active") {
     throw new Error(`${sale.invoiceNo} is ${sale.status}, not active — can't sync.`);
   }
+  if (!sale.customerId) {
+    throw new Error(`${sale.invoiceNo} has no customer on file — can't sync to Zoho.`);
+  }
+  return sale;
+}
+
+/**
+ * Active sale to a GST-registered customer — the actual legal boundary
+ * for e-Invoicing (B2B/export only; a placeholder like "URP" for an
+ * unregistered customer doesn't count, however real their purchase was).
+ */
+async function loadActiveB2bSale(saleId: number): Promise<LoadedSale> {
+  const sale = await loadActiveSale(saleId);
   if (!isValidGstin(sale.customerGstin)) {
     throw new Error(
-      `${sale.invoiceNo} has no valid customer GSTIN — B2B only (a placeholder ` +
-        `like "URP" for an unregistered customer doesn't count).`
+      `${sale.invoiceNo}: e-Invoicing applies to GST-registered B2B customers ` +
+        `only — this customer has no valid GSTIN on file.`
     );
   }
   return sale;
 }
 
-/** Pushes a sale to Zoho Books as an invoice, if it isn't there already. */
+/** Pushes a sale to Zoho Books as an invoice, if it isn't there already.
+ *  Works for any customer, registered or not — see loadActiveSale. */
 export async function syncSaleToZoho(saleId: number) {
   await requireNonDealer();
-  const sale = await loadActiveB2bSale(saleId);
+  const sale = await loadActiveSale(saleId);
 
   if (sale.zohoInvoiceId) {
     return { zohoInvoiceId: sale.zohoInvoiceId, alreadySynced: true as const };
@@ -137,7 +158,10 @@ export async function generateEwb(
   dispatch: DispatchDetails = {}
 ) {
   await requireNonDealer();
-  const sale = await loadActiveB2bSale(saleId);
+  // Deliberately loadActiveSale, not loadActiveB2bSale — an e-way bill
+  // applies to goods movement above the value threshold regardless of
+  // whether the buyer is GST-registered (see requiresEwayBill/lib/gst.ts).
+  const sale = await loadActiveSale(saleId);
 
   const resolved: DispatchDetails = {
     vehicleNumber: dispatch.vehicleNumber ?? sale.vehicleNo ?? undefined,
