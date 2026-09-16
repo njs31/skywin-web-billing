@@ -486,6 +486,22 @@ export async function upsertInvoice(input: {
     };
   });
 
+  // Confirmed a real, live gap: unlike billing_address, Zoho does NOT
+  // copy a contact's shipping_address onto a newly created invoice — an
+  // invoice created without this explicitly set has a completely blank
+  // shipping_address regardless of what's on the contact, and an e-way
+  // bill push needs the receiver's (Ship-To) PIN code specifically. One
+  // address on file per customer, so it's the same address used for
+  // billing above.
+  const shippingAddress = {
+    address: zohoStreetAddress(customer.address),
+    city: customer.district ?? "",
+    state: registered ? stateNameFromGstin(customer.gstin, "") : BUSINESS.state,
+    state_code: registered ? gstStateCode(customer.gstin) : BUSINESS.stateCode,
+    zip: customer.pinCode ?? "",
+    country: "India",
+  };
+
   const created = await zohoRequest<{ invoice: { invoice_id: string } }>(
     "POST",
     "/invoices",
@@ -500,6 +516,7 @@ export async function upsertInvoice(input: {
         place_of_supply: registered
           ? zohoStateCode(customer.gstin)
           : zohoStateCode(BUSINESS.stateCode),
+        shipping_address: shippingAddress,
         is_inclusive_tax: false,
         is_discount_before_tax: true,
         discount_type: "item_level",
