@@ -36,6 +36,14 @@ export type DispatchDetails = {
   /** "road" | "rail" | "air" | "ship" — Zoho's exact enum unconfirmed;
    *  omit rather than guess wrong if not supplied. */
   transportMode?: string;
+  /** Destination state, as Zoho's 2-letter code (e.g. "TN") — Zoho's
+   *  e-Way Bill UI shows this as a required "Place of Delivery" field
+   *  that ISN'T auto-filled from the invoice's ship-to/bill-to address
+   *  when there's no separate shipping address on the contact. Confirmed
+   *  as a real, live cause of a silent government-side rejection
+   *  (is_vehicle_details_push_failed) — the shell created fine without
+   *  it, but never actually reached NIC. */
+  placeOfDeliveryStateCode?: string;
 };
 
 /**
@@ -58,6 +66,9 @@ export async function generateEwayBill(
   if (dispatch.transporterGstin) body.transporter_id = dispatch.transporterGstin;
   if (dispatch.distanceKm !== undefined) body.distance = dispatch.distanceKm;
   if (dispatch.transportMode) body.transportation_mode = dispatch.transportMode;
+  if (dispatch.placeOfDeliveryStateCode) {
+    body.place_of_delivery = dispatch.placeOfDeliveryStateCode;
+  }
 
   const res = await zohoRequest<{ ewaybill: EwayBill }>("POST", "/ewaybills", { body });
   return res.ewaybill;
