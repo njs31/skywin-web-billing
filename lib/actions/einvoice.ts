@@ -18,12 +18,6 @@ import { pushEInvoice, cancelEInvoice, einvoiceUpdateFields } from "@/lib/zoho/e
 import { generateEwayBill, cancelEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
-
-/** Not exported — "use server" files may only export async functions.
- *  Marks an error whose sales-row update already happened, so the
- *  generic catch block in generateEwb doesn't redundantly repeat it. */
-class AlreadyRecordedError extends Error {}
-
 /**
  * Any active sale with a customer on file — GSTIN not required. This is
  * as far as "sync to Zoho" needs to go: an e-way bill applies to goods
@@ -213,55 +207,10 @@ export async function generateEwb(
     zohoInvoiceId = synced.zohoInvoiceId;
   }
 
+  let ewb: Awaited<ReturnType<typeof generateEwayBill>>;
   try {
-    const ewb = await generateEwayBill(zohoInvoiceId!, resolved);
-    // Prefer Zoho's own generation timestamp; fall back to "now" if it's
-    // missing or doesn't parse — a real e-way bill was still just created
-    // either way, so the cancel-window countdown needs some start point.
-    const parsedGeneratedAt = ewb.ewaybill_date ? new Date(ewb.ewaybill_date) : null;
-    const generatedAt =
-      parsedGeneratedAt && !Number.isNaN(parsedGeneratedAt.getTime())
-        ? parsedGeneratedAt
-        : new Date();
-    // Confirmed a real, silent failure mode: Zoho's POST succeeds (HTTP
-    // 200, a shell record created) even when the actual government
-    // submission is rejected — the only signal is this flag, with no
-    // error text anywhere in the response. Treating it as "pending" with
-    // no explanation left the UI showing nothing had gone wrong when it
-    // plainly had.
-    const vehicleDetailsPushFailed = ewb.is_vehicle_details_push_failed === true;
-    const ewbStatus = ewb.ewaybill_number
-      ? "generated"
-      : vehicleDetailsPushFailed
-        ? "failed"
-        : "pending";
-    const ewbError = vehicleDetailsPushFailed
-      ? "Zoho created the e-way bill locally but the government submission " +
-        "failed (Zoho gives no specific reason via the API for this one — " +
-        "check this e-way bill directly in Zoho Books for a fuller message)."
-      : null;
-    await db
-      .update(sales)
-      .set({
-        ewbStatus,
-        ewbId: ewb.ewaybill_id || null,
-        ewbNo: ewb.ewaybill_number || null,
-        ewbGeneratedAt: ewb.ewaybill_number ? generatedAt : null,
-        ewbValidUntil: ewb.ewaybill_expiry_date
-          ? new Date(ewb.ewaybill_expiry_date)
-          : null,
-        ewbRaw: JSON.stringify(ewb),
-        ewbError,
-      })
-      .where(eq(sales.id, saleId));
-    if (vehicleDetailsPushFailed) {
-      // Already recorded above — mark so the catch block below doesn't
-      // redundantly overwrite the same row with the same values.
-      throw new AlreadyRecordedError(ewbError!);
-    }
-    return ewb;
+    ewb = await generateEwayBill(zohoInvoiceId!, resolved);
   } catch (err) {
-    if (err instanceof AlreadyRecordedError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     await db
       .update(sales)
@@ -269,6 +218,58 @@ export async function generateEwb(
       .where(eq(sales.id, saleId));
     throw err;
   }
+
+  // Prefer Zoho's own generation timestamp; fall back to "now" if it's
+  // missing or doesn't parse — a real e-way bill was still just created
+  // either way, so the cancel-window countdown needs some start point.
+  const parsedGeneratedAt = ewb.ewaybill_date ? new Date(ewb.ewaybill_date) : null;
+  const generatedAt =
+    parsedGeneratedAt && !Number.isNaN(parsedGeneratedAt.getTime())
+      ? parsedGeneratedAt
+      : new Date();
+  // Confirmed a real, silent failure mode: Zoho's POST succeeds (HTTP 200,
+  // a shell record created) even when the actual government submission is
+  // rejected — the only signal is this flag, with no error text anywhere
+  // in the response. Treating it as "pending" with no explanation left
+  // the UI showing nothing had gone wrong when it plainly had. Handled
+  // outside the try/catch above (not a thrown exception from the API
+  // call) so there's exactly one DB write and one plain Error thrown for
+  // this case, not two — a custom Error subclass thrown across the
+  // Server Action boundary here previously didn't survive Next.js's
+  // serialization back to the client and surfaced as an opaque generic
+  // message instead of this one.
+  const vehicleDetailsPushFailed = ewb.is_vehicle_details_push_failed === true;
+  const ewbStatus = ewb.ewaybill_number
+    ? "generated"
+    : vehicleDetailsPushFailed
+      ? "failed"
+      : "pending";
+  const ewbError = vehicleDetailsPushFailed
+    ? "Zoho created the e-way bill locally but the government submission " +
+      "failed (Zoho gives no specific reason via the API for this one — " +
+      "check this e-way bill directly in Zoho Books for a fuller message)."
+    : null;
+  await db
+    .update(sales)
+    .set({
+      ewbStatus,
+      ewbId: ewb.ewaybill_id || null,
+      ewbNo: ewb.ewaybill_number || null,
+      ewbGeneratedAt: ewb.ewaybill_number ? generatedAt : null,
+      ewbValidUntil: ewb.ewaybill_expiry_date ? new Date(ewb.ewaybill_expiry_date) : null,
+      ewbRaw: JSON.stringify(ewb),
+      ewbError,
+    })
+    .where(eq(sales.id, saleId));
+
+  // Deliberately not thrown: this is a known, already-recorded outcome,
+  // not an exception. Next.js redacts a thrown Server Action error's
+  // message in production regardless of what's thrown (confirmed — see
+  // this function's earlier revision, and generateIrn's genuine
+  // exceptions have the same exposure), so the caller refreshing the
+  // page and reading the persisted ewbStatus/ewbError back is the
+  // reliable channel, not an inline exception message.
+  return ewb;
 }
 
 /**

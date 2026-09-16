@@ -46,7 +46,13 @@ export function PushEinvoiceButton({
         await generateIrn(saleId);
         router.refresh();
       } catch (e) {
+        // Next.js redacts a thrown Server Action error's real message in
+        // production regardless of what's thrown — refreshing here too
+        // means the actual reason (already persisted to einvoiceError
+        // before the throw) shows via this row's status instead of being
+        // silently lost behind whatever generic text reaches this catch.
         setError(e instanceof Error ? e.message : "Failed to push e-Invoice");
+        router.refresh();
       }
     });
   };
@@ -60,6 +66,7 @@ export function PushEinvoiceButton({
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to cancel IRN");
+        router.refresh();
       }
     });
   };

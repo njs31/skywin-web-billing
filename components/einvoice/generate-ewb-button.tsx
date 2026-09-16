@@ -92,7 +92,15 @@ export function GenerateEwbButton({
         setOpen(false);
         router.refresh();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to generate e-Way Bill");
+        // Next.js redacts a thrown Server Action error's real message in
+        // production regardless of what's thrown — refreshing here too
+        // means the actual reason (if one got persisted before the
+        // throw) shows via this row's Readiness column instead of being
+        // silently lost behind this generic fallback text.
+        setError(
+          e instanceof Error ? e.message : "Failed to generate e-Way Bill — refreshing…"
+        );
+        router.refresh();
       }
     });
   };
@@ -116,6 +124,7 @@ export function GenerateEwbButton({
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to save details");
+        router.refresh();
       }
     });
   };
@@ -129,6 +138,7 @@ export function GenerateEwbButton({
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to cancel e-Way Bill");
+        router.refresh();
       }
     });
   };
