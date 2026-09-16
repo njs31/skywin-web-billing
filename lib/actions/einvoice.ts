@@ -13,7 +13,7 @@ import { requireNonDealer } from "@/lib/actions/auth";
 import { isValidGstin } from "@/lib/gst";
 import { BUSINESS } from "@/lib/business";
 import { zohoStateCode } from "@/lib/zoho/gst";
-import { upsertInvoice, toSyncInputs } from "@/lib/zoho/sync";
+import { upsertInvoice, toSyncInputs, ensureContact } from "@/lib/zoho/sync";
 import { pushEInvoice, cancelEInvoice, einvoiceUpdateFields } from "@/lib/zoho/einvoice";
 import { generateEwayBill, cancelEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
 
@@ -111,6 +111,17 @@ export async function generateIrn(saleId: number) {
   }
 
   try {
+    if (sale.zohoInvoiceId) {
+      // Invoice already existed from an earlier sync — but ensureContact's
+      // refresh-on-every-call behavior only runs when ensureContact itself
+      // is called, which an already-synced invoice otherwise skips.
+      // Without this, a contact created before a data fix (e.g. an
+      // address that used to be too long for Zoho) stays stale forever,
+      // and every push keeps failing on the same already-fixed-on-our-side
+      // problem. Confirmed as a real, live case, not theoretical.
+      const { customer } = toSyncInputs(sale);
+      await ensureContact(customer);
+    }
     const pushed = await pushEInvoice(zohoInvoiceId!);
     await db
       .update(sales)
@@ -209,6 +220,14 @@ export async function generateEwb(
 
   let ewb: Awaited<ReturnType<typeof generateEwayBill>>;
   try {
+    if (sale.zohoInvoiceId) {
+      // Same reasoning as generateIrn: refresh the contact so a data fix
+      // made after the invoice was first synced (e.g. a too-long
+      // address) actually reaches Zoho instead of the push repeating the
+      // same already-fixed-on-our-side failure forever.
+      const { customer } = toSyncInputs(sale);
+      await ensureContact(customer);
+    }
     ewb = await generateEwayBill(zohoInvoiceId!, resolved);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
