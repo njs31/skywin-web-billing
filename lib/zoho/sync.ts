@@ -126,6 +126,24 @@ function round2(n: number): number {
 }
 
 /**
+ * Zoho's billing_address `address` (Street) field requires 3-100
+ * characters. Confirmed as a real, live rejection — a genuine, correct
+ * customer address (113 characters) was too long and blocked an
+ * e-Invoice push entirely. Truncating for Zoho specifically is the right
+ * fix, not asking anyone to shorten a real address: our own database
+ * keeps the full address regardless, this only shortens what's sent to
+ * Zoho's Street field.
+ */
+function zohoStreetAddress(address: string | null | undefined): string {
+  const trimmed = (address ?? "").trim();
+  if (trimmed.length === 0) return "";
+  if (trimmed.length > 100) return trimmed.slice(0, 100);
+  // Zoho also rejects under 3 characters; pad rather than fail outright
+  // for a genuinely short (but real) address fragment.
+  return trimmed.length < 3 ? trimmed.padEnd(3, ".") : trimmed;
+}
+
+/**
  * Zoho's `invoice_number` field caps at 16 characters. Most skywin-bill
  * invoices fit (`SKYA/0407/26-27` = 15), but the `INV-YYYYMMDD-####` format
  * used for most of 2026 is 17 — one over. Stripping the redundant "INV-"
@@ -249,7 +267,7 @@ async function ensureUnregisteredContact(customer: SyncCustomer): Promise<string
         place_of_contact: zohoStateCode(BUSINESS.stateCode),
         is_taxable: true,
         billing_address: {
-          address: customer.address ?? "",
+          address: zohoStreetAddress(customer.address),
           city: customer.district ?? "",
           state: BUSINESS.state,
           state_code: BUSINESS.stateCode,
@@ -296,7 +314,7 @@ export async function ensureContact(customer: SyncCustomer): Promise<string> {
   const stateCode = gstStateCode(customer.gstin);
   const placeOfContact = zohoStateCode(customer.gstin);
   const billingAddress = {
-    address: customer.address ?? "",
+    address: zohoStreetAddress(customer.address),
     city: customer.district ?? "",
     state: stateNameFromGstin(customer.gstin, ""),
     state_code: stateCode,
