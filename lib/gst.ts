@@ -172,7 +172,12 @@ export function isInterstateGst(
   businessStateCode: string
 ): boolean {
   const gstin = customerGstin?.trim().toUpperCase() || "";
-  if (gstin.length < 2) return false;
+  // A GSTIN's first two characters are only a real state code if they're
+  // actually digits — a length check alone let a placeholder like "URP"
+  // (for an unregistered customer) get its "UR" read as if it were a
+  // genuine, different state's code, wrongly billing IGST on a same-state
+  // sale. Confirmed as a real bug against a live invoice, not theoretical.
+  if (!/^[0-9]{2}/.test(gstin)) return false;
   const customerState = gstin.slice(0, 2);
   const businessState = businessStateCode.trim().padStart(2, "0");
   return customerState !== businessState;
