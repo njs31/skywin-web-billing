@@ -21,6 +21,7 @@ import {
   getIndianFinancialYearBounds,
   formatSaleReturnNo,
 } from "@/lib/financial-year";
+import { isValidGstin } from "@/lib/gst";
 
 type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -45,10 +46,6 @@ const createReturnSchema = z.object({
 function normalizeGstin(value?: string | null) {
   const cleaned = value?.trim().toUpperCase() || "";
   return cleaned || null;
-}
-
-function isValidGstin(gstin: string) {
-  return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gstin);
 }
 
 /**

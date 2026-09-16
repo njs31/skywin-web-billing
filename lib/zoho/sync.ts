@@ -11,6 +11,7 @@ import { format } from "date-fns";
 import { db } from "@/db";
 import { sales, settings } from "@/db/schema";
 import { stateNameFromGstin } from "@/lib/gst-states";
+import { isValidGstin } from "@/lib/gst";
 import { zohoRequest } from "./client";
 import { resolveTaxId, zohoStateCode, gstStateCode } from "./gst";
 
@@ -304,9 +305,12 @@ export async function upsertInvoice(input: {
   customer: SyncCustomer;
 }): Promise<UpsertResult> {
   const { sale, items, customer } = input;
-  if (!customer.gstin) {
+  if (!isValidGstin(customer.gstin)) {
     throw new Error(
-      `${sale.invoiceNo}: customer has no GSTIN — only B2B sales sync to Zoho.`
+      `${sale.invoiceNo}: customer has no valid GSTIN — only B2B sales to a ` +
+        `GST-registered customer sync to Zoho. ("${customer.gstin}" isn't a ` +
+        `real GSTIN — a placeholder like "URP" for an unregistered customer ` +
+        `doesn't count.)`
     );
   }
   if (items.length === 0) {
@@ -443,7 +447,8 @@ async function autoSyncSaleToZoho(saleId: number): Promise<void> {
   if (!sale) return;
   if (sale.status !== "active") return;
   if (sale.zohoInvoiceId) return;
-  if (!sale.customerGstin?.trim()) return; // B2C — nothing to push.
+  // B2C, or an unregistered-customer placeholder like "URP" — nothing to push.
+  if (!isValidGstin(sale.customerGstin)) return;
 
   const { syncSale, customer, items } = toSyncInputs(sale);
   const result = await upsertInvoice({ sale: syncSale, items, customer });

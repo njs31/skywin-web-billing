@@ -2,9 +2,14 @@
  * Reads for the e-Invoice / e-Way Bill page: which active, GSTIN-bearing
  * sales still need pushing, bucketed the same way the page renders them.
  */
-import { and, eq, gte, isNotNull, ne } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { sales, customers } from "@/db/schema";
+
+/** Postgres regex match for a real 15-character GSTIN — see isValidGstin
+ *  in lib/gst.ts for why a plain non-empty check isn't enough (a
+ *  placeholder like "URP" for an unregistered customer would pass that). */
+const GSTIN_SQL_PATTERN = "^[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}[1-9A-Za-z]{1}Z[0-9A-Za-z]{1}$";
 
 /** The IRP's reporting window — an invoice older than this can no longer
  *  be pushed for an IRN at all. Matches the 30-day rule checked against the
@@ -87,8 +92,7 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
     .where(
       and(
         eq(sales.status, "active"),
-        isNotNull(customers.gstin),
-        ne(customers.gstin, ""),
+        sql`${customers.gstin} ~ ${GSTIN_SQL_PATTERN}`,
         gte(sales.date, windowStart)
       )
     )

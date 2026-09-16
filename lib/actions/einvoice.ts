@@ -10,6 +10,7 @@ import { sales } from "@/db/schema";
 import { getSaleById } from "@/lib/queries/sales";
 import { EINVOICE_REPORTING_WINDOW_DAYS } from "@/lib/queries/einvoice";
 import { requireNonDealer } from "@/lib/actions/auth";
+import { isValidGstin } from "@/lib/gst";
 import { upsertInvoice, toSyncInputs } from "@/lib/zoho/sync";
 import { pushEInvoice, cancelEInvoice, einvoiceUpdateFields } from "@/lib/zoho/einvoice";
 import { generateEwayBill, cancelEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
@@ -22,8 +23,11 @@ async function loadActiveB2bSale(saleId: number): Promise<LoadedSale> {
   if (sale.status !== "active") {
     throw new Error(`${sale.invoiceNo} is ${sale.status}, not active — can't sync.`);
   }
-  if (!sale.customerGstin?.trim()) {
-    throw new Error(`${sale.invoiceNo} has no customer GSTIN — B2B only.`);
+  if (!isValidGstin(sale.customerGstin)) {
+    throw new Error(
+      `${sale.invoiceNo} has no valid customer GSTIN — B2B only (a placeholder ` +
+        `like "URP" for an unregistered customer doesn't count).`
+    );
   }
   return sale;
 }
