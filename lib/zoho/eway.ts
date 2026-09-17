@@ -75,7 +75,14 @@ export async function generateEwayBill(
   if (dispatch.transporterName) body.transporter_name = dispatch.transporterName;
   if (dispatch.transporterGstin) body.transporter_id = dispatch.transporterGstin;
   if (dispatch.distanceKm !== undefined) body.distance = dispatch.distanceKm;
-  if (dispatch.transportMode) body.transportation_mode = dispatch.transportMode;
+  // Confirmed required, not optional: omitting this (the previous
+  // behavior, on the theory that guessing wrong beats guessing at all)
+  // produced "Please provide a valid transportation mode / transit type
+  // for the e-Way Bill" once action:"save_generate" actually triggered
+  // real validation. "road" is the only mode this business has ever
+  // needed — Zoho's own shell responses defaulted to displaying "road"
+  // even when we sent nothing, which is what led here.
+  body.transportation_mode = dispatch.transportMode || "road";
   if (dispatch.placeOfDeliveryStateCode) {
     body.place_of_delivery = dispatch.placeOfDeliveryStateCode;
   }
