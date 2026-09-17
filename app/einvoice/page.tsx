@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PushEinvoiceButton } from "@/components/einvoice/push-einvoice-button";
+import { SyncFromZohoButton } from "@/components/einvoice/sync-from-zoho-button";
 
 export default async function EinvoicePage() {
   const rows = await getEinvoiceCandidates();
@@ -103,21 +104,24 @@ export default async function EinvoicePage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {missing.length > 0 ? (
-                          <Button size="sm" variant="outline" asChild>
-                            <Link href={`/customers/${row.customerId}`}>
-                              Fix customer details
-                            </Link>
-                          </Button>
-                        ) : (
-                          <PushEinvoiceButton
-                            saleId={row.id}
-                            irn={row.irn}
-                            einvoiceStatus={row.einvoiceStatus}
-                            einvoiceError={row.einvoiceError}
-                            ackDate={row.ackDate?.toISOString() ?? null}
-                          />
-                        )}
+                        <div className="flex flex-col items-end gap-1">
+                          {missing.length > 0 ? (
+                            <Button size="sm" variant="outline" asChild>
+                              <Link href={`/customers/${row.customerId}`}>
+                                Fix customer details
+                              </Link>
+                            </Button>
+                          ) : (
+                            <PushEinvoiceButton
+                              saleId={row.id}
+                              irn={row.irn}
+                              einvoiceStatus={row.einvoiceStatus}
+                              einvoiceError={row.einvoiceError}
+                              ackDate={row.ackDate?.toISOString() ?? null}
+                            />
+                          )}
+                          {row.zohoInvoiceId && <SyncFromZohoButton saleId={row.id} />}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -156,13 +160,16 @@ export default async function EinvoicePage() {
                       {formatCurrency(row.grandTotal)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <PushEinvoiceButton
-                        saleId={row.id}
-                        irn={row.irn}
-                        einvoiceStatus={row.einvoiceStatus}
-                        einvoiceError={row.einvoiceError}
-                        ackDate={row.ackDate?.toISOString() ?? null}
-                      />
+                      <div className="flex flex-col items-end gap-1">
+                        <PushEinvoiceButton
+                          saleId={row.id}
+                          irn={row.irn}
+                          einvoiceStatus={row.einvoiceStatus}
+                          einvoiceError={row.einvoiceError}
+                          ackDate={row.ackDate?.toISOString() ?? null}
+                        />
+                        {row.zohoInvoiceId && <SyncFromZohoButton saleId={row.id} />}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

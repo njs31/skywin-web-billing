@@ -91,8 +91,19 @@ export async function pushEInvoice(zohoInvoiceId: string): Promise<PushResult> {
 /** Shared shape for the `sales` row update after a push — used by both the
  *  generateIrn server action and the zoho-push-einvoice.ts one-off script. */
 export function einvoiceUpdateFields(pushed: PushResult) {
+  // pushEInvoice's own "failed" case throws before this is ever called, so
+  // this branch only fires for getEinvoiceStatus's passive read — but a
+  // passive read can just as well find a genuinely failed status (e.g.
+  // Zoho finished processing an earlier attempt after our synchronous
+  // check gave up), so it needs to be reported as such here too, not
+  // silently folded into "pending".
+  const failed = !pushed.irn && pushed.status === "failed";
   return {
-    einvoiceStatus: pushed.irn ? ("pushed" as const) : ("pending" as const),
+    einvoiceStatus: pushed.irn
+      ? ("pushed" as const)
+      : failed
+        ? ("failed" as const)
+        : ("pending" as const),
     irn: pushed.irn,
     ackNo: pushed.ackNumber,
     ackDate: pushed.ackDate ? new Date(pushed.ackDate) : null,
@@ -101,7 +112,32 @@ export function einvoiceUpdateFields(pushed: PushResult) {
     // Zoho's API actually gives back, so it's what's stored here.
     signedQr: pushed.qrLink,
     einvoiceRaw: JSON.stringify(pushed.raw),
-    einvoiceError: null,
+    einvoiceError: failed
+      ? (Array.isArray(pushed.raw.failure_list) ? pushed.raw.failure_list.join(" ") : null)
+      : null,
+  };
+}
+
+/**
+ * Read-only: what Zoho currently has on file for this invoice's
+ * e-invoice, without pushing anything. For reconciling a status that
+ * changed on Zoho's side without going through our own push — e.g.
+ * someone used Zoho's own UI, or a push's real outcome only became
+ * visible in Zoho after our synchronous check already gave up.
+ */
+export async function getEinvoiceStatus(zohoInvoiceId: string): Promise<PushResult> {
+  const detail = await zohoRequest<{ invoice: { einvoice_details?: EinvoiceDetails } }>(
+    "GET",
+    `/invoices/${zohoInvoiceId}`
+  );
+  const raw = detail.invoice.einvoice_details ?? {};
+  return {
+    irn: raw.inv_ref_num || null,
+    status: raw.status ?? null,
+    ackNumber: raw.ack_number || null,
+    ackDate: raw.ack_date || null,
+    qrLink: raw.qr_link || null,
+    raw,
   };
 }
 

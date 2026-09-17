@@ -14,8 +14,18 @@ import { isValidGstin } from "@/lib/gst";
 import { BUSINESS } from "@/lib/business";
 import { zohoStateCode } from "@/lib/zoho/gst";
 import { upsertInvoice, toSyncInputs, ensureContact } from "@/lib/zoho/sync";
-import { pushEInvoice, cancelEInvoice, einvoiceUpdateFields } from "@/lib/zoho/einvoice";
-import { generateEwayBill, cancelEwayBill, type DispatchDetails } from "@/lib/zoho/eway";
+import {
+  pushEInvoice,
+  cancelEInvoice,
+  einvoiceUpdateFields,
+  getEinvoiceStatus,
+} from "@/lib/zoho/einvoice";
+import {
+  generateEwayBill,
+  cancelEwayBill,
+  getEwayBillStatus,
+  type DispatchDetails,
+} from "@/lib/zoho/eway";
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
 /**
@@ -334,4 +344,52 @@ export async function updateDispatchDetails(
       distanceKm: dispatch.distanceKm != null ? String(dispatch.distanceKm) : null,
     })
     .where(eq(sales.id, saleId));
+}
+
+/**
+ * Pulls the current e-Invoice and e-Way Bill status from Zoho and saves
+ * whatever's there — without pushing anything. For reconciling a case
+ * our own push flow never sees: a real government e-way bill generated
+ * by someone directly on the government portal (Mode: WEB) and then
+ * associated to the invoice in Zoho via its own "Fetch From Portal", or
+ * any other change made straight in Zoho's UI. Confirmed necessary from
+ * a real, live case, not theoretical — see the "URP e-way bill" work.
+ */
+export async function syncStatusFromZoho(saleId: number) {
+  await requireNonDealer();
+  const sale = await getSaleById(saleId);
+  if (!sale) throw new Error("Sale not found.");
+  if (!sale.zohoInvoiceId) {
+    throw new Error(`${sale.invoiceNo} hasn't been synced to Zoho yet — nothing to check.`);
+  }
+
+  const [einvoice, ewb] = await Promise.all([
+    getEinvoiceStatus(sale.zohoInvoiceId),
+    getEwayBillStatus(sale.zohoInvoiceId),
+  ]);
+
+  await db
+    .update(sales)
+    .set(einvoiceUpdateFields(einvoice))
+    .where(eq(sales.id, saleId));
+
+  if (ewb) {
+    await db
+      .update(sales)
+      .set({
+        ewbStatus: ewb.ewaybill_number ? "generated" : "pending",
+        ewbId: ewb.ewaybill_id || null,
+        ewbNo: ewb.ewaybill_number || null,
+        ewbGeneratedAt: ewb.ewaybill_date ? new Date(ewb.ewaybill_date) : null,
+        ewbValidUntil: ewb.ewaybill_expiry_date ? new Date(ewb.ewaybill_expiry_date) : null,
+        ewbRaw: JSON.stringify(ewb),
+        ewbError: null,
+      })
+      .where(eq(sales.id, saleId));
+  }
+
+  return {
+    einvoiceFound: Boolean(einvoice.irn),
+    ewbFound: Boolean(ewb?.ewaybill_number),
+  };
 }

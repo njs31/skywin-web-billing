@@ -74,6 +74,27 @@ export async function generateEwayBill(
   return res.ewaybill;
 }
 
+/**
+ * Read-only: the current e-way bill for an invoice, if Zoho has one on
+ * file — via the invoice's own `ewaybill_id`, then the dedicated detail
+ * endpoint (confirmed reliable throughout this build). Returns null if
+ * the invoice has never had an e-way bill shell created for it at all.
+ * For reconciling a status that changed on Zoho's side without going
+ * through our own push — e.g. someone associated a manually-generated,
+ * real government e-way bill via Zoho's own "Fetch From Portal".
+ */
+export async function getEwayBillStatus(zohoInvoiceId: string): Promise<EwayBill | null> {
+  const invoiceDetail = await zohoRequest<{ invoice: { ewaybill_id?: string } }>(
+    "GET",
+    `/invoices/${zohoInvoiceId}`
+  );
+  const ewaybillId = invoiceDetail.invoice.ewaybill_id;
+  if (!ewaybillId) return null;
+
+  const res = await zohoRequest<{ ewaybill: EwayBill }>("GET", `/ewaybills/${ewaybillId}`);
+  return res.ewaybill;
+}
+
 /** UNVERIFIED — see file header. */
 export async function cancelEwayBill(ewaybillId: string, reason: string): Promise<void> {
   await zohoRequest("POST", `/ewaybills/${ewaybillId}/cancel`, {

@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { GenerateEwbButton } from "@/components/einvoice/generate-ewb-button";
+import { SyncFromZohoButton } from "@/components/einvoice/sync-from-zoho-button";
 
 export default async function EwayBillPage() {
   // Same candidate list as the e-Invoice page (it already carries ewb*
@@ -111,23 +112,26 @@ export default async function EwayBillPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <GenerateEwbButton
-                        saleId={row.id}
-                        ewbId={row.ewbId}
-                        ewbNo={row.ewbNo}
-                        ewbStatus={row.ewbStatus}
-                        ewbValidUntil={
-                          row.ewbValidUntil
-                            ? formatDateIST(row.ewbValidUntil)
-                            : null
-                        }
-                        ewbValidUntilIso={row.ewbValidUntil?.toISOString() ?? null}
-                        ewbGeneratedAtIso={row.ewbGeneratedAt?.toISOString() ?? null}
-                        ewbError={row.ewbError}
-                        vehicleNo={row.vehicleNo}
-                        transporterName={row.transporterName}
-                        distanceKm={row.distanceKm}
-                      />
+                      <div className="flex flex-col items-end gap-1">
+                        <GenerateEwbButton
+                          saleId={row.id}
+                          ewbId={row.ewbId}
+                          ewbNo={row.ewbNo}
+                          ewbStatus={row.ewbStatus}
+                          ewbValidUntil={
+                            row.ewbValidUntil
+                              ? formatDateIST(row.ewbValidUntil)
+                              : null
+                          }
+                          ewbValidUntilIso={row.ewbValidUntil?.toISOString() ?? null}
+                          ewbGeneratedAtIso={row.ewbGeneratedAt?.toISOString() ?? null}
+                          ewbError={row.ewbError}
+                          vehicleNo={row.vehicleNo}
+                          transporterName={row.transporterName}
+                          distanceKm={row.distanceKm}
+                        />
+                        {row.zohoInvoiceId && <SyncFromZohoButton saleId={row.id} />}
+                      </div>
                     </TableCell>
                   </TableRow>
                   );
@@ -164,23 +168,26 @@ export default async function EwayBillPage() {
                       {formatCurrency(row.grandTotal)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <GenerateEwbButton
-                        saleId={row.id}
-                        ewbId={row.ewbId}
-                        ewbNo={row.ewbNo}
-                        ewbStatus={row.ewbStatus}
-                        ewbValidUntil={
-                          row.ewbValidUntil
-                            ? formatDateIST(row.ewbValidUntil)
-                            : null
-                        }
-                        ewbValidUntilIso={row.ewbValidUntil?.toISOString() ?? null}
-                        ewbGeneratedAtIso={row.ewbGeneratedAt?.toISOString() ?? null}
-                        ewbError={row.ewbError}
-                        vehicleNo={row.vehicleNo}
-                        transporterName={row.transporterName}
-                        distanceKm={row.distanceKm}
-                      />
+                      <div className="flex flex-col items-end gap-1">
+                        <GenerateEwbButton
+                          saleId={row.id}
+                          ewbId={row.ewbId}
+                          ewbNo={row.ewbNo}
+                          ewbStatus={row.ewbStatus}
+                          ewbValidUntil={
+                            row.ewbValidUntil
+                              ? formatDateIST(row.ewbValidUntil)
+                              : null
+                          }
+                          ewbValidUntilIso={row.ewbValidUntil?.toISOString() ?? null}
+                          ewbGeneratedAtIso={row.ewbGeneratedAt?.toISOString() ?? null}
+                          ewbError={row.ewbError}
+                          vehicleNo={row.vehicleNo}
+                          transporterName={row.transporterName}
+                          distanceKm={row.distanceKm}
+                        />
+                        {row.zohoInvoiceId && <SyncFromZohoButton saleId={row.id} />}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
