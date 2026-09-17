@@ -60,6 +60,16 @@ export async function generateEwayBill(
   const body: Record<string, unknown> = {
     entity_type: "invoice",
     entity_id: zohoInvoiceId,
+    // Found in Zoho's own documented example, never sent by this code
+    // before: without `action: "save_generate"`, every prior real test
+    // (four of them, across this whole build) created a correct-looking
+    // local shell — vehicle number, distance, place of delivery all
+    // saved fine — but is_vehicle_details_push_failed stayed true on
+    // every one, meaning Zoho likely only *saved* it locally and never
+    // actually told the government to generate it. `transaction_type`
+    // is from the same documented example.
+    transaction_type: "regular",
+    action: "save_generate",
   };
   if (dispatch.vehicleNumber) body.vehicle_number = dispatch.vehicleNumber;
   if (dispatch.transporterName) body.transporter_name = dispatch.transporterName;
