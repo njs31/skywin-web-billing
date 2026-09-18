@@ -87,7 +87,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [paymentMode, setPaymentMode] = useState<
-    "cash" | "upi" | "credit" | "card" | "cheque"
+    "cash" | "upi" | "credit" | "card" | "cheque" | "neft"
   >("cash");
   const [splitCashUpi, setSplitCashUpi] = useState(false);
   const [cashAmountInput, setCashAmountInput] = useState("");
@@ -1237,6 +1237,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                       <SelectItem value="upi">UPI</SelectItem>
                       <SelectItem value="card">Card</SelectItem>
                       <SelectItem value="cheque">Cheque</SelectItem>
+                      <SelectItem value="neft">NEFT</SelectItem>
                       <SelectItem value="credit" disabled={customerId === "none"}>
                         Credit (Registered Only)
                       </SelectItem>

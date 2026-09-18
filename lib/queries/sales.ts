@@ -47,7 +47,7 @@ const createSaleSchema = z.object({
   customerId: z.number().optional(),
   customerName: z.string().optional(),
   customerPhone: z.string().optional(),
-  paymentMode: z.enum(["cash", "upi", "credit", "card", "cheque"]),
+  paymentMode: z.enum(["cash", "upi", "credit", "card", "cheque", "neft"]),
   operatorName: z.string().optional(),
   discountAmount: z.number().min(0).optional(),
   paidAmount: z.number().min(0).optional(),

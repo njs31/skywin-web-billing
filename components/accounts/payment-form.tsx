@@ -34,7 +34,9 @@ export function PaymentForm({ suppliers }: { suppliers: Supplier[] }) {
   const [isPending, startTransition] = useTransition();
   const [supplierId, setSupplierId] = useState("");
   const [amount, setAmount] = useState("");
-  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "cheque">("cash");
+  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "cheque" | "neft">(
+    "cash"
+  );
   const [referenceNo, setReferenceNo] = useState("");
   const [notes, setNotes] = useState("");
   const [bills, setBills] = useState<OutstandingPurchase[]>([]);
@@ -175,7 +177,7 @@ export function PaymentForm({ suppliers }: { suppliers: Supplier[] }) {
           <Label>Payment Mode</Label>
           <Select
             value={paymentMode}
-            onValueChange={(v) => setPaymentMode(v as "cash" | "upi" | "cheque")}
+            onValueChange={(v) => setPaymentMode(v as "cash" | "upi" | "cheque" | "neft")}
           >
             <SelectTrigger>
               <SelectValue />
@@ -184,6 +186,7 @@ export function PaymentForm({ suppliers }: { suppliers: Supplier[] }) {
               <SelectItem value="cash">Cash</SelectItem>
               <SelectItem value="upi">UPI</SelectItem>
               <SelectItem value="cheque">Cheque</SelectItem>
+              <SelectItem value="neft">NEFT</SelectItem>
             </SelectContent>
           </Select>
         </div>

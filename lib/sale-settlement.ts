@@ -1,9 +1,9 @@
 /** Helpers for cash/card/UPI settlement and auto credit (receipt) entries. */
 
-export type CounterPaymentMode = "cash" | "upi" | "credit" | "card" | "cheque";
+export type CounterPaymentMode = "cash" | "upi" | "credit" | "card" | "cheque" | "neft";
 
 export type AutoReceiptPart = {
-  paymentMode: "cash" | "upi" | "card" | "cheque";
+  paymentMode: "cash" | "upi" | "card" | "cheque" | "neft";
   amount: number;
 };
 

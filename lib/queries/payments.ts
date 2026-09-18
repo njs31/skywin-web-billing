@@ -21,7 +21,7 @@ const paymentSchema = z.object({
   customerId: z.number().optional(),
   supplierId: z.number().optional(),
   amount: z.number().positive(),
-  paymentMode: z.enum(["cash", "upi", "credit", "card", "cheque"]),
+  paymentMode: z.enum(["cash", "upi", "credit", "card", "cheque", "neft"]),
   referenceNo: z.string().optional(),
   notes: z.string().optional(),
   allocations: z.array(allocationSchema).optional(),

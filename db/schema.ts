@@ -20,6 +20,7 @@ export const paymentModeEnum = pgEnum("payment_mode", [
   "credit",
   "card",
   "cheque",
+  "neft",
 ]);
 export const billTypeEnum = pgEnum("bill_type", ["retail", "wholesale", "others"]);
 export const customerTypeEnum = pgEnum("customer_type", [

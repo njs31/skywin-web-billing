@@ -34,9 +34,9 @@ export function ReceiptForm({ customers }: { customers: Customer[] }) {
   const [isPending, startTransition] = useTransition();
   const [customerId, setCustomerId] = useState("");
   const [amount, setAmount] = useState("");
-  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card" | "cheque">(
-    "cash"
-  );
+  const [paymentMode, setPaymentMode] = useState<
+    "cash" | "upi" | "card" | "cheque" | "neft"
+  >("cash");
   const [referenceNo, setReferenceNo] = useState("");
   const [notes, setNotes] = useState("");
   const [bills, setBills] = useState<OutstandingSale[]>([]);
@@ -178,7 +178,7 @@ export function ReceiptForm({ customers }: { customers: Customer[] }) {
           <Select
             value={paymentMode}
             onValueChange={(v) =>
-              setPaymentMode(v as "cash" | "upi" | "card" | "cheque")
+              setPaymentMode(v as "cash" | "upi" | "card" | "cheque" | "neft")
             }
           >
             <SelectTrigger>
@@ -189,6 +189,7 @@ export function ReceiptForm({ customers }: { customers: Customer[] }) {
               <SelectItem value="upi">UPI</SelectItem>
               <SelectItem value="card">Card</SelectItem>
               <SelectItem value="cheque">Cheque</SelectItem>
+              <SelectItem value="neft">NEFT</SelectItem>
             </SelectContent>
           </Select>
         </div>
