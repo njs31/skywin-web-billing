@@ -500,21 +500,12 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
           poNumber: poNumber.trim() || undefined,
           quotationNumber: quotationNumber.trim() || undefined,
           ewayBillNo: needsEway ? ewayBillNo.trim() || undefined : undefined,
-          vehicleNo:
-            needsEway || billType === "retail"
-              ? vehicleNo.trim() || undefined
-              : undefined,
-          dispatchedThrough:
-            needsEway || billType === "retail"
-              ? dispatchedThrough.trim() || undefined
-              : undefined,
+          vehicleNo: vehicleNo.trim() || undefined,
+          dispatchedThrough: dispatchedThrough.trim() || undefined,
           destination: needsEway ? destination.trim() || undefined : undefined,
           deliveryNote: deliveryNote.trim() || undefined,
           paymentTerms: paymentTerms.trim() || undefined,
-          transporterName:
-            needsEway || billType === "retail"
-              ? transporterName.trim() || undefined
-              : undefined,
+          transporterName: transporterName.trim() || undefined,
           transporterGstin: needsEway
             ? transporterGstin.trim() || undefined
             : undefined,
@@ -1176,45 +1167,43 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                   />
                 </div>
               )}
-              {billType === "retail" && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-xs">Dispatched Through</Label>
-                    <Select
-                      value={dispatchedThrough || undefined}
-                      onValueChange={setDispatchedThrough}
-                    >
-                      <SelectTrigger className="mt-1 h-9">
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Road">Road</SelectItem>
-                        <SelectItem value="Rail">Rail</SelectItem>
-                        <SelectItem value="Air">Air</SelectItem>
-                        <SelectItem value="Sea">Sea</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs">Motor Vehicle No.</Label>
-                    <Input
-                      className="mt-1 h-9"
-                      value={vehicleNo}
-                      onChange={(e) => setVehicleNo(e.target.value)}
-                      placeholder="e.g. TN01AB1234"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-xs">Transporter Details</Label>
-                    <Input
-                      className="mt-1 h-9"
-                      value={transporterName}
-                      onChange={(e) => setTransporterName(e.target.value)}
-                      placeholder="Transporter name"
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Dispatched Through</Label>
+                  <Select
+                    value={dispatchedThrough || undefined}
+                    onValueChange={setDispatchedThrough}
+                  >
+                    <SelectTrigger className="mt-1 h-9">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Road">Road</SelectItem>
+                      <SelectItem value="Rail">Rail</SelectItem>
+                      <SelectItem value="Air">Air</SelectItem>
+                      <SelectItem value="Sea">Sea</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
+                <div>
+                  <Label className="text-xs">Motor Vehicle No.</Label>
+                  <Input
+                    className="mt-1 h-9"
+                    value={vehicleNo}
+                    onChange={(e) => setVehicleNo(e.target.value)}
+                    placeholder="e.g. TN01AB1234"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-xs">Transporter Details</Label>
+                  <Input
+                    className="mt-1 h-9"
+                    value={transporterName}
+                    onChange={(e) => setTransporterName(e.target.value)}
+                    placeholder="Transporter name"
+                  />
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs text-slate-600 font-medium">Payment</Label>
