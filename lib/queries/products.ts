@@ -103,34 +103,15 @@ export type ProductBatchSearchResult = {
   batchExpiry: string | null;
 };
 
-/** Search products and return one row per batch (with stock). */
-export async function searchProductBatches(
-  query: string,
-  limit = 30,
-  options?: { onlyInStock?: boolean }
+/**
+ * Shared by searchProductBatches and getProductBatchesById — one row per
+ * batch (with stock), given a caller-supplied match on `products`.
+ */
+async function queryProductBatchRows(
+  productMatch: ReturnType<typeof and>,
+  limit: number,
+  onlyInStock: boolean
 ): Promise<ProductBatchSearchResult[]> {
-  const q = query.trim();
-  if (!q) return [];
-  const onlyInStock = options?.onlyInStock ?? true;
-
-  // Batch-number matches resolve to product ids via an indexed subquery so
-  // the planner can use the trigram indexes instead of scanning the join.
-  const batchNumberMatch = db
-    .select({ productId: productBatches.productId })
-    .from(productBatches)
-    .where(ilike(productBatches.batchNumber, `%${q}%`));
-
-  const productMatch = and(
-    eq(products.isActive, true),
-    or(
-      ilike(products.name, `%${q}%`),
-      ilike(products.sku, `%${q}%`),
-      ilike(products.barcode, `%${q}%`),
-      eq(products.barcode, q),
-      inArray(products.id, batchNumberMatch)
-    )
-  );
-
   const rows = await db
     .select({
       productId: products.id,
@@ -198,6 +179,56 @@ export async function searchProductBatches(
     batchSaleRate: row.batchSaleRate,
     batchExpiry: row.batchExpiry,
   }));
+}
+
+/** Search products and return one row per batch (with stock). */
+export async function searchProductBatches(
+  query: string,
+  limit = 30,
+  options?: { onlyInStock?: boolean }
+): Promise<ProductBatchSearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const onlyInStock = options?.onlyInStock ?? true;
+
+  // Batch-number matches resolve to product ids via an indexed subquery so
+  // the planner can use the trigram indexes instead of scanning the join.
+  const batchNumberMatch = db
+    .select({ productId: productBatches.productId })
+    .from(productBatches)
+    .where(ilike(productBatches.batchNumber, `%${q}%`));
+
+  const productMatch = and(
+    eq(products.isActive, true),
+    or(
+      ilike(products.name, `%${q}%`),
+      ilike(products.sku, `%${q}%`),
+      ilike(products.barcode, `%${q}%`),
+      eq(products.barcode, q),
+      inArray(products.id, batchNumberMatch)
+    )
+  );
+
+  return queryProductBatchRows(productMatch, limit, onlyInStock);
+}
+
+/**
+ * All in-stock batches for one product, in the same per-batch shape as
+ * searchProductBatches — for the POS barcode-scan path, where a scan
+ * resolves unambiguously to a product id (not a text query) but that
+ * product may still have several batches to choose between. Without this,
+ * a scan had no way to surface more than one batch, so it silently billed
+ * whichever batch happened to be sitting in the product's own mirrored
+ * rate/stock fields (the most recently touched one) instead of asking.
+ */
+export async function getProductBatchesById(
+  productId: number
+): Promise<ProductBatchSearchResult[]> {
+  const productMatch = and(
+    eq(products.isActive, true),
+    eq(products.id, productId)
+  );
+  return queryProductBatchRows(productMatch, 50, true);
 }
 
 export const getProducts = unstable_cache(

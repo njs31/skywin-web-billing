@@ -20,7 +20,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { InlineLoader } from "@/components/ui/page-loader";
-import { searchProductBatches } from "@/lib/actions/products";
+import { searchProductBatches, getProductBatchesForScan } from "@/lib/actions/products";
 import { createSale } from "@/lib/actions/sales";
 import {
   calculateGstBreakdown,
@@ -80,6 +80,12 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
+  // A scanned barcode resolves to a single product, but that product can
+  // still have several batches — this holds them while the cashier picks
+  // one, instead of silently billing whatever the product's own mirrored
+  // rate/stock fields happened to show (the most recently touched batch).
+  const [scanBatchChoices, setScanBatchChoices] = useState<ProductBatchSearchResult[]>([]);
+  const [scanBatchQty, setScanBatchQty] = useState(1);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [billType, setBillType] = useState<"retail" | "wholesale" | "others">("retail");
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
@@ -282,6 +288,38 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
       });
     },
     [addToCart]
+  );
+
+  /**
+   * A barcode scan resolves unambiguously to a product, but not to which
+   * batch — so before adding anything, look up that product's batches. One
+   * batch (or none, for a product never put through batch tracking): add
+   * it immediately, same as before. More than one: hold the scan open and
+   * let the cashier pick, via scanBatchChoices below.
+   */
+  const handleProductScanned = useCallback(
+    async (product: Product, qty: number) => {
+      const batches = await getProductBatchesForScan(product.id);
+      if (batches.length <= 1) {
+        if (batches.length === 1) {
+          addBatchToCart(batches[0]!, qty);
+        } else {
+          addToCart(product, qty);
+        }
+        return;
+      }
+      setScanBatchQty(qty);
+      setScanBatchChoices(batches);
+    },
+    [addBatchToCart, addToCart]
+  );
+
+  const pickScanBatch = useCallback(
+    (row: ProductBatchSearchResult) => {
+      addBatchToCart(row, scanBatchQty);
+      setScanBatchChoices([]);
+    },
+    [addBatchToCart, scanBatchQty]
   );
 
   const addCustomItem = () => {
@@ -579,9 +617,30 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
         </div>
 
         <ProductScanBar
-          onProductScanned={(product, qty) => addToCart(product, qty)}
+          onProductScanned={handleProductScanned}
           placeholder="Scan barcode — adds to cart instantly"
         />
+
+        {scanBatchChoices.length > 0 && (
+          <div className="space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-2">
+            <p className="px-1 text-xs font-medium text-amber-800">
+              {scanBatchChoices[0]!.name} has {scanBatchChoices.length} batches —
+              pick one to bill:
+            </p>
+            <ProductBatchSearchResults
+              results={scanBatchChoices}
+              rateMode={billType === "wholesale" ? "wholesale" : "sale"}
+              onSelect={pickScanBatch}
+            />
+            <button
+              type="button"
+              className="px-1 text-xs text-slate-500 underline"
+              onClick={() => setScanBatchChoices([])}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
 
         <div className="relative">
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />

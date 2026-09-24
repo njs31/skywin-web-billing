@@ -3,6 +3,7 @@
 import {
   searchProducts as searchProductsQuery,
   searchProductBatches as searchProductBatchesQuery,
+  getProductBatchesById as getProductBatchesByIdQuery,
   updateProduct as updateProductQuery,
   deleteProduct as deleteProductQuery,
   getProductBatches as getProductBatchesQuery,
@@ -39,6 +40,13 @@ export async function searchProductBatches(
 ) {
   await requireUser();
   return searchProductBatchesQuery(query, limit, options);
+}
+
+/** Batches for one product, for the POS scan flow to offer a choice when
+ *  a scanned barcode's product has more than one. */
+export async function getProductBatchesForScan(productId: number) {
+  await requireUser();
+  return getProductBatchesByIdQuery(productId);
 }
 
 export async function getProductByScanCode(code: string) {
