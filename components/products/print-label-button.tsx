@@ -8,7 +8,7 @@ import type { LabelProduct } from "@/lib/label-render";
 import {
   isSerialPrintSupported,
   isUsbPrintSupported,
-  printLabelsVia,
+  printCopiesVia,
   resolveTransport,
   type Transport,
 } from "@/lib/thermal-usb-print";
@@ -134,7 +134,7 @@ export function PrintLabelButton({
     setBusy(true);
     const count = Math.max(1, Math.round(parseFloat(qty)) || 1);
     try {
-      await printLabelsVia(transport, Array(count).fill(product), { presentDots });
+      await printCopiesVia(transport, product, count, { presentDots });
       setQtyPromptOpen(false);
     } catch (error) {
       // Dismissing the device chooser is a decision, not a failure.

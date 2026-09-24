@@ -452,6 +452,45 @@ export async function printLabelsVia(
   rememberTransport(transport);
 }
 
+/**
+ * Gap between one copy's job finishing and the next one's starting, when
+ * printing several copies as separate jobs (see printCopiesVia below).
+ * Generous on purpose: this only has to beat how long the printer takes to
+ * finish burning + feeding one label, and a wrong guess there costs a
+ * couple of extra seconds — a wrong guess *inside* a job is what corrupts
+ * the run instead.
+ */
+const COPY_GAP_MS = 1500;
+
+/**
+ * Print N copies of one label as N separate single-label jobs, not one job
+ * with N rasters. A single label always printed correctly; a multi-label
+ * job sent as one continuous byte stream sometimes came out corrupted from
+ * the second label on (see git history, 2026-09-24) — the pacing inside
+ * one job is a guess about the printer's real burn/feed speed, and a wrong
+ * guess compounds across a run. This sidesteps that guess entirely by
+ * only ever asking the printer to do the one thing already proven to work,
+ * with a real pause — not a byte-count heuristic — between repetitions.
+ *
+ * Slower than one big job (an extra ~1.5s per copy), which is the trade
+ * this makes on purpose: reliability over speed for something printed a
+ * handful of times, not hundreds.
+ */
+export async function printCopiesVia(
+  transport: Transport,
+  product: LabelProduct,
+  count: number,
+  options: PrintJobOptions = {}
+) {
+  const copies = Math.max(1, Math.min(99, Math.round(count) || 1));
+  for (let i = 0; i < copies; i++) {
+    await printLabelsVia(transport, [product], options);
+    if (i < copies - 1) {
+      await new Promise((resolve) => setTimeout(resolve, COPY_GAP_MS));
+    }
+  }
+}
+
 /** Print the diagnostic label over a named wire. */
 export async function printTestLabelVia(
   transport: Transport,
