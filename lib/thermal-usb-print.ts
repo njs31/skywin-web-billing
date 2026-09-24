@@ -32,13 +32,22 @@ export type PrintJobOptions = EscPosOptions;
  * third label onward bytes were dropped mid-raster. That is why single labels
  * were fine and runs came out wrong.
  *
- * 300 ms puts the sender at 2048 / 0.3 ≈ 6.8 KB/s, comfortably under what the
- * head consumes, so the buffer drains as fast as it fills however long the run.
- * A single label costs about 0.9 s more; a run now sends in roughly the time it
- * takes to print, which is the point.
+ * That "10 KB/s" was measured on the 24.5 mm-pitch stock (~7.9 mm of blind
+ * feed past the 20 mm band). On the current 50 × 30 mm stock the same band
+ * has to feed roughly 13 mm past it instead — more mechanical travel per
+ * label, so more time per label, so the true consumption rate is lower than
+ * 10 KB/s now. 300 ms (2048 / 0.3 ≈ 6.8 KB/s) had healthy margin against the
+ * old rate but not necessarily against this one — and this is exactly the
+ * failure this comment already describes: a multi-label run corrupted from
+ * partway through while a single label kept printing fine, first seen on
+ * the qty-print feature's first real use after the stock changed (2026-09-24).
+ * Raised to 450 ms (2048 / 0.45 ≈ 4.6 KB/s) to rebuild that margin — an
+ * estimate, not a remeasurement, so if runs still corrupt, raise it further
+ * before suspecting anything else; a run now costs more real time, which is
+ * the trade this makes on purpose.
  */
 const PACE_BYTES = 2048;
-const PACE_MS = 300;
+const PACE_MS = 450;
 
 const pause = () => new Promise((resolve) => setTimeout(resolve, PACE_MS));
 
