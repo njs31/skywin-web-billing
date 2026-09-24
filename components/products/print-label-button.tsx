@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { LabelProduct } from "@/lib/label-render";
@@ -29,6 +30,88 @@ import {
  */
 const QTY_PRESETS = [1, 6, 10];
 
+/**
+ * Renders its children into document.body at a fixed position anchored to
+ * `anchorRef`, instead of as a normally-positioned absolute child. The
+ * products table wraps its rows in an `overflow-auto` scroll container
+ * (components/ui/table.tsx) — an absolutely-positioned popover is clipped
+ * to that box, so on any row not near the top it was rendering mostly (or
+ * entirely) off the visible area. Escaping to a portal + fixed coordinates
+ * is the only way out of an ancestor's overflow clipping.
+ */
+function FloatingPanel({
+  anchorRef,
+  onClose,
+  children,
+}: {
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const PANEL_WIDTH = 224; // w-56
+    const MARGIN = 8;
+    function place() {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const left = Math.min(
+        Math.max(MARGIN, rect.right - PANEL_WIDTH),
+        window.innerWidth - PANEL_WIDTH - MARGIN
+      );
+      // Flip above the button when there isn't room below, so it never
+      // renders partly off the bottom of the viewport either.
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const top =
+        spaceBelow > 220 || spaceBelow > rect.top
+          ? rect.bottom + 4
+          : Math.max(MARGIN, rect.top - 4 - (panelRef.current?.offsetHeight ?? 200));
+      setPos({ top, left });
+    }
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [anchorRef]);
+
+  useEffect(() => {
+    function handlePointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target)) return;
+      if (anchorRef.current?.contains(target)) return;
+      onClose();
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [anchorRef, onClose]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      className="fixed z-50 w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+      style={pos ? { top: pos.top, left: pos.left } : { visibility: "hidden" }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 export function PrintLabelButton({
   product,
   presentDots,
@@ -37,6 +120,7 @@ export function PrintLabelButton({
   /** Tear-off feed from Settings, so the label clears the tear bar. */
   presentDots?: number;
 }) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
   const [choosing, setChoosing] = useState(false);
   // Opened by the print button itself, before the transport is even
@@ -85,9 +169,15 @@ export function PrintLabelButton({
     setQtyPromptOpen(true);
   }
 
+  function closeAll() {
+    setQtyPromptOpen(false);
+    setChoosing(false);
+  }
+
   return (
     <span className="relative inline-flex">
       <Button
+        ref={buttonRef}
         size="icon"
         variant="ghost"
         className="h-7 w-7 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -103,7 +193,7 @@ export function PrintLabelButton({
       </Button>
 
       {qtyPromptOpen && !choosing && (
-        <div className="absolute right-0 top-8 z-20 w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+        <FloatingPanel anchorRef={buttonRef} onClose={closeAll}>
           <p className="mb-2 text-xs text-slate-600">How many labels?</p>
           <div className="mb-2 flex gap-1.5">
             {QTY_PRESETS.map((n) => (
@@ -135,11 +225,11 @@ export function PrintLabelButton({
               Cancel
             </Button>
           </div>
-        </div>
+        </FloatingPanel>
       )}
 
       {choosing && (
-        <div className="absolute right-0 top-8 z-20 w-56 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+        <FloatingPanel anchorRef={buttonRef} onClose={closeAll}>
           <p className="mb-2 text-xs text-slate-600">
             Connect the printer. Bluetooth is the only option on Windows.
           </p>
@@ -158,7 +248,7 @@ export function PrintLabelButton({
               Cancel
             </Button>
           </div>
-        </div>
+        </FloatingPanel>
       )}
     </span>
   );
