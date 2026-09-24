@@ -60,14 +60,15 @@ const GAP_SEEK = Uint8Array.from([0x1d, 0x0c]);
  *
  * Only used when `endOfLabel` is "feed" — a roll with no gap for the sensor to
  * find, or a printer that lacks one. image + feed must equal the sticker pitch
- * exactly: the raster is PRINT_BAND_H_MM (17 mm) tall and the pitch is
- * LABEL_PITCH_MM (27.9 mm), so this is the remaining ~10.9 mm. Get it wrong in
+ * exactly: the raster is PRINT_BAND_H_MM (20 mm) tall and the pitch is
+ * LABEL_PITCH_MM (33 mm, unmeasured on the current 50×30 mm stock — see
+ * label-print-config.ts), so this is the remaining ~13 mm. Get it wrong in
  * either direction and the error repeats every label until the artwork straddles
  * a die cut.
  */
 export const DEFAULT_FEED_DOTS = Math.round(
   (LABEL_PITCH_MM - PRINT_BAND_H_MM) * DOTS_PER_MM
-); // 87
+); // 104
 
 export type EscPosOptions = {
   /** Copies of each label. */
@@ -190,9 +191,12 @@ function feedCommands(dots: number) {
 export const DEFAULT_PRESENT_DOTS = 96; // 12 mm
 
 /**
- * Ceiling for an overridden present feed. On the 24.5 mm / 27.9 mm-pitch stock
- * a feed beyond ~17 mm pushes the paper across the next die cut, and the seek
- * that opens the following job then skips a whole sticker.
+ * Ceiling for an overridden present feed. On the previous 24.5 mm / 27.9 mm-
+ * pitch stock a feed beyond ~17 mm pushed the paper across the next die cut,
+ * and the seek that opens the following job then skipped a whole sticker.
+ * Left unchanged on the current 50 × 30 mm / 33 mm-pitch stock (2026-09-24):
+ * a taller sticker only gives more room before the next die cut, so this
+ * ceiling stays a safe (if now conservative) bound rather than a tight one.
  */
 const MAX_PRESENT_DOTS = 140; // ~17.5 mm
 

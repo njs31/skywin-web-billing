@@ -40,7 +40,7 @@ function textExtent(item: ReturnType<typeof buildLabelPlan>["texts"][number]) {
 }
 
 describe("label plan", () => {
-  it("is exactly one 50 × 24.5 mm sticker", () => {
+  it("is exactly one 50 × 30 mm sticker", () => {
     for (const fields of SAMPLES) {
       const plan = buildLabelPlan(fields);
       assert.equal(plan.widthDots, LABEL_W_DOTS);

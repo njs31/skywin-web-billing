@@ -119,8 +119,8 @@ test("buildEscPosLabel", async (t) => {
     // + feed overshoots the pitch, every label drifts further down the roll
     // than the last; the vendor driver's 80-dot tear-off feed did this.
     const pitch = LABEL_PITCH_MM * DOTS_PER_MM;
-    // The pitch (27.9 mm) is not a whole number of dots, so allow the
-    // rounding slack in DEFAULT_FEED_DOTS.
+    // Allow a dot of rounding slack — exact only when the pitch in mm
+    // happens to be a whole number of dots, which isn't guaranteed.
     assert.ok(Math.abs(PRINT_BAND_H_DOTS + DEFAULT_FEED_DOTS - pitch) <= 1);
   });
 
@@ -184,8 +184,10 @@ test("buildEscPosJob", async (t) => {
   });
 
   await t.test("clamps a nonsense tear-off distance", () => {
-    // Past ~17.5 mm the feed crosses the following die cut on the 27.9 mm-pitch
-    // stock, and the seek opening the next job then skips an extra sticker.
+    // Past ~17.5 mm the feed crossed the following die cut on the previous
+    // 27.9 mm-pitch stock, skipping an extra sticker on the next job's seek.
+    // The ceiling is unchanged on the current, taller stock — still safe,
+    // just more conservative than it strictly needs to be.
     assert.deepEqual([...buildEscPosJob([raster()], { presentDots: 9999 }).subarray(-3)],
       [0x1b, 0x4a, 140]);
     assert.deepEqual([...buildEscPosJob([raster()], { presentDots: -5 }).subarray(-2)],
@@ -259,12 +261,20 @@ test("buildEscPosJob", async (t) => {
 
   await t.test("presents by counted feed when the sensor is not in use", () => {
     // A blind job has no sensor to recover with, so its final feed must be an
-    // exact pitch or every later label is out of step. The 27.9 mm pitch is
-    // 223 dots, under the 255 an ESC J holds, so it is one command — and it
-    // must not lead with a seek.
+    // exact pitch or every later label is out of step. ESC J holds only one
+    // byte (255 dots max), so a pitch beyond that — as the current 33 mm/264
+    // dot pitch is — has to split into more than one command; this reproduces
+    // that chunking rather than assuming a single command like the old,
+    // shorter-pitch stock allowed.
     const job = buildEscPosJob([raster()], { endOfLabel: "feed" });
     const pitch = Math.round(LABEL_PITCH_MM * DOTS_PER_MM);
-    assert.deepEqual([...job.subarray(-3)], [0x1b, 0x4a, pitch]);
+    const expectedFeed: number[] = [];
+    for (let left = pitch; left > 0; ) {
+      const step = Math.min(255, left);
+      expectedFeed.push(0x1b, 0x4a, step);
+      left -= step;
+    }
+    assert.deepEqual([...job.subarray(-expectedFeed.length)], expectedFeed);
     assert.notDeepEqual([...job.subarray(0, 2)], [0x1d, 0x0c]);
   });
 });

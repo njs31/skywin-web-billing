@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * One 50 × 24.5 mm PDF page per product — feed this to the POSiFLOW app's
+ * One 50 × 30 mm PDF page per product — feed this to the POSiFLOW app's
  * "PDF Printing → Label" flow, or any label printer.
  *
  *   ?ids=1,2,3   just those products, in that order
@@ -44,7 +44,7 @@ export async function GET(req: Request) {
   return new Response(pdf as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="skywin-labels-50x24.5-${count}-${date}.pdf"`,
+      "Content-Disposition": `attachment; filename="skywin-labels-50x30-${count}-${date}.pdf"`,
       "Cache-Control": "no-store",
     },
   });
