@@ -13,7 +13,12 @@ import { requireNonDealer } from "@/lib/actions/auth";
 import { isValidGstin } from "@/lib/gst";
 import { BUSINESS } from "@/lib/business";
 import { zohoStateCode } from "@/lib/zoho/gst";
-import { upsertInvoice, toSyncInputs, ensureContact } from "@/lib/zoho/sync";
+import {
+  upsertInvoice,
+  toSyncInputs,
+  ensureContact,
+  refreshInvoiceAddresses,
+} from "@/lib/zoho/sync";
 import {
   pushEInvoice,
   cancelEInvoice,
@@ -131,6 +136,10 @@ export async function generateIrn(saleId: number) {
       // problem. Confirmed as a real, live case, not theoretical.
       const { customer } = toSyncInputs(sale);
       await ensureContact(customer);
+      // The contact refresh above is not enough on its own: an invoice
+      // carries its own frozen copy of Bill-To/Ship-To, and Zoho never
+      // re-derives it from the contact. See refreshInvoiceAddresses.
+      await refreshInvoiceAddresses(zohoInvoiceId!, customer);
     }
     const pushed = await pushEInvoice(zohoInvoiceId!);
     await db
@@ -231,12 +240,14 @@ export async function generateEwb(
   let ewb: Awaited<ReturnType<typeof generateEwayBill>>;
   try {
     if (sale.zohoInvoiceId) {
-      // Same reasoning as generateIrn: refresh the contact so a data fix
-      // made after the invoice was first synced (e.g. a too-long
-      // address) actually reaches Zoho instead of the push repeating the
-      // same already-fixed-on-our-side failure forever.
+      // Same reasoning as generateIrn: refresh the contact *and* the
+      // invoice's own frozen address copy, so a data fix made after the
+      // invoice was first synced (e.g. a too-long address) actually
+      // reaches Zoho instead of the push repeating the same
+      // already-fixed-on-our-side failure forever.
       const { customer } = toSyncInputs(sale);
       await ensureContact(customer);
+      await refreshInvoiceAddresses(zohoInvoiceId!, customer);
     }
     ewb = await generateEwayBill(zohoInvoiceId!, resolved);
   } catch (err) {

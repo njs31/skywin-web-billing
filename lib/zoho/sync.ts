@@ -144,6 +144,20 @@ function zohoStreetAddress(address: string | null | undefined): string {
 }
 
 /**
+ * Strips stray leading/trailing commas and spaces off an address part.
+ *
+ * Hand-typed customer records carry them ("614804," / "Viluppuram,"), and
+ * Zoho validates the zip strictly: a PIN code with a trailing comma is
+ * rejected outright with "Provide the valid zip code for this transaction's
+ * Billing address", which blocks the whole e-Invoice push. Cleaned at the
+ * Zoho boundary only, like zohoStreetAddress above — our own database keeps
+ * whatever was actually typed.
+ */
+function zohoAddressPart(value: string | null | undefined): string {
+  return (value ?? "").trim().replace(/^[,\s]+|[,\s]+$/g, "");
+}
+
+/**
  * Zoho's `invoice_number` field caps at 16 characters. Most skywin-bill
  * invoices fit (`SKYA/0407/26-27` = 15), but the `INV-YYYYMMDD-####` format
  * used for most of 2026 is 17 — one over. Stripping the redundant "INV-"
@@ -265,10 +279,10 @@ async function ensureUnregisteredContact(customer: SyncCustomer): Promise<string
   // there's no separate delivery address to distinguish it from.
   const address = {
     address: zohoStreetAddress(customer.address),
-    city: customer.district ?? "",
+    city: zohoAddressPart(customer.district),
     state: BUSINESS.state,
     state_code: BUSINESS.stateCode,
-    zip: customer.pinCode ?? "",
+    zip: zohoAddressPart(customer.pinCode),
     country: "India",
   };
 
@@ -326,10 +340,10 @@ export async function ensureContact(customer: SyncCustomer): Promise<string> {
   const placeOfContact = zohoStateCode(customer.gstin);
   const billingAddress = {
     address: zohoStreetAddress(customer.address),
-    city: customer.district ?? "",
+    city: zohoAddressPart(customer.district),
     state: stateNameFromGstin(customer.gstin, ""),
     state_code: stateCode,
-    zip: customer.pinCode ?? "",
+    zip: zohoAddressPart(customer.pinCode),
     country: "India",
   };
 
@@ -391,6 +405,60 @@ export async function ensureContact(customer: SyncCustomer): Promise<string> {
     }
   );
   return created.contact.contact_id;
+}
+
+/** The address block an invoice carries, for both Bill-To and Ship-To. */
+function invoiceAddressFor(customer: SyncCustomer) {
+  const registered = isValidGstin(customer.gstin);
+  return {
+    address: zohoStreetAddress(customer.address),
+    city: zohoAddressPart(customer.district),
+    state: registered ? stateNameFromGstin(customer.gstin, "") : BUSINESS.state,
+    state_code: registered ? gstStateCode(customer.gstin) : BUSINESS.stateCode,
+    zip: zohoAddressPart(customer.pinCode),
+    country: "India",
+  };
+}
+
+/**
+ * Rewrites an existing Zoho invoice's own Bill-To / Ship-To from the
+ * customer record as it stands now.
+ *
+ * An invoice keeps its own copy of both addresses, frozen at creation.
+ * Refreshing the *contact* — which ensureContact already does on every
+ * push — never touches it, so an invoice created with a blank or stale
+ * address stays broken through every retry. Any invoice created between
+ * 2026-09-17 and 2026-09-25 has a blank billing_address for exactly that
+ * reason, and so does any invoice synced before someone finished filling
+ * in the customer's address. This is what makes "Retry" able to fix
+ * either, instead of failing on the same frozen copy forever.
+ *
+ * Non-fatal: if it fails, the push behind it fails with the same message
+ * it would have anyway.
+ */
+export async function refreshInvoiceAddresses(
+  zohoInvoiceId: string,
+  customer: SyncCustomer
+): Promise<void> {
+  const address = invoiceAddressFor(customer);
+  // The dedicated address endpoints, deliberately — not a plain
+  // `PUT /invoices/{id}`. These touch only the address, so there is no way
+  // for an address repair to disturb line items, totals or status on a real
+  // accounting record. Verified against a live invoice: billing address
+  // filled in, total/line count/status unchanged.
+  for (const kind of ["billing", "shipping"] as const) {
+    try {
+      await zohoRequest("PUT", `/invoices/${zohoInvoiceId}/address/${kind}`, {
+        body: address,
+      });
+    } catch (err) {
+      console.error(
+        `[Zoho] Failed to refresh invoice ${kind} address`,
+        zohoInvoiceId,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
 }
 
 export type UpsertResult = {
@@ -486,21 +554,23 @@ export async function upsertInvoice(input: {
     };
   });
 
-  // Confirmed a real, live gap: unlike billing_address, Zoho does NOT
-  // copy a contact's shipping_address onto a newly created invoice — an
-  // invoice created without this explicitly set has a completely blank
-  // shipping_address regardless of what's on the contact, and an e-way
-  // bill push needs the receiver's (Ship-To) PIN code specifically. One
-  // address on file per customer, so it's the same address used for
-  // billing above.
-  const shippingAddress = {
-    address: zohoStreetAddress(customer.address),
-    city: customer.district ?? "",
-    state: registered ? stateNameFromGstin(customer.gstin, "") : BUSINESS.state,
-    state_code: registered ? gstStateCode(customer.gstin) : BUSINESS.stateCode,
-    zip: customer.pinCode ?? "",
-    country: "India",
-  };
+  // BOTH addresses go on the invoice explicitly, and that is load-bearing.
+  //
+  // Zoho only auto-fills an invoice's billing_address from the contact when
+  // the create call supplies no address block at all. The moment
+  // shipping_address is sent (added 2026-09-17 to carry the Ship-To PIN an
+  // e-way bill needs), Zoho stops auto-filling and every invoice is created
+  // with a completely blank billing_address — which then fails the
+  // e-Invoice push with "Provide the street name / city / state / zip code
+  // / country for this transaction's Billing address", forever, because
+  // refreshing the *contact* afterwards never rewrites an invoice's own
+  // stored copy. Verified against live data: contacts held a perfect
+  // billing_address while invoices created after that date held all-empty
+  // strings, and invoices created before it were fine.
+  //
+  // One address on file per customer here, so Bill-To and Ship-To are the
+  // same address — but each must be sent in its own right.
+  const invoiceAddress = invoiceAddressFor(customer);
 
   const created = await zohoRequest<{ invoice: { invoice_id: string } }>(
     "POST",
@@ -516,7 +586,8 @@ export async function upsertInvoice(input: {
         place_of_supply: registered
           ? zohoStateCode(customer.gstin)
           : zohoStateCode(BUSINESS.stateCode),
-        shipping_address: shippingAddress,
+        billing_address: invoiceAddress,
+        shipping_address: invoiceAddress,
         is_inclusive_tax: false,
         is_discount_before_tax: true,
         discount_type: "item_level",
