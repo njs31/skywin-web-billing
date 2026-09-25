@@ -17,37 +17,26 @@ import { buildEscPosJob, type EscPosOptions } from "@/lib/escpos-print";
 export type PrintJobOptions = EscPosOptions;
 
 /**
- * Flow control. The P58D has roughly an 8 KB input buffer and does not apply
- * backpressure: fed a label faster than the head can burn it, it stalls its USB
- * pipe and silently drops the rest of the job. macOS's own CUPS backend writes
- * in 8 KB blocks and hits this — a label then prints about three quarters of
- * the way down and the trailing feed command never arrives, so the sticker
- * never advances out.
+ * Flow control for the *raster* bytes of a single label. The P58D has
+ * roughly an 8 KB input buffer and does not apply backpressure: fed data
+ * faster than the head can burn it, it stalls its USB pipe and silently
+ * drops the rest — a label then prints about three quarters of the way
+ * down and the trailing feed command never arrives.
  *
- * The pause is what keeps the send slower than the print, and it has to be
- * sized against the printer rather than picked. A label is about 7 KB, and the
- * head takes roughly 0.7 s to burn 18 mm and seek the next gap — call it
- * 10 KB/s. At 60 ms the sender ran at 33 KB/s, three times faster, so it gained
- * half a second on every label; the 8 KB buffer holds barely one, and from the
- * third label onward bytes were dropped mid-raster. That is why single labels
- * were fine and runs came out wrong.
- *
- * That "10 KB/s" was measured on the 24.5 mm-pitch stock (~7.9 mm of blind
- * feed past the 20 mm band). On the current 50 × 30 mm stock the same band
- * has to feed roughly 13 mm past it instead — more mechanical travel per
- * label, so more time per label, so the true consumption rate is lower than
- * 10 KB/s now. 300 ms (2048 / 0.3 ≈ 6.8 KB/s) had healthy margin against the
- * old rate but not necessarily against this one — and this is exactly the
- * failure this comment already describes: a multi-label run corrupted from
- * partway through while a single label kept printing fine, first seen on
- * the qty-print feature's first real use after the stock changed (2026-09-24).
- * Raised to 450 ms (2048 / 0.45 ≈ 4.6 KB/s) to rebuild that margin — an
- * estimate, not a remeasurement, so if runs still corrupt, raise it further
- * before suspecting anything else; a run now costs more real time, which is
- * the trade this makes on purpose.
+ * A label is about 7 KB, and the head consumes it at roughly 10 KB/s while
+ * burning. 300 ms per 2048 bytes (≈6.8 KB/s) stays comfortably under that —
+ * this governs the ink actually being laid down, which happens at a fixed
+ * rate regardless of sticker size, so it does not need to change with the
+ * stock. (Briefly raised to 450 ms on 2026-09-24 on the theory that a taller
+ * sticker's longer post-print feed made this pacing too fast — wrong
+ * diagnosis: the feed-to-the-next-gap happens *after* the last raster byte
+ * is sent, so it's governed by the gap between jobs, not by this. See
+ * COPY_GAP_MS below and printCopiesVia, which is the actual fix for that:
+ * multi-label runs corrupting partway through, first seen on the qty-print
+ * feature's first real use, 2026-09-24.)
  */
 const PACE_BYTES = 2048;
-const PACE_MS = 450;
+const PACE_MS = 300;
 
 const pause = () => new Promise((resolve) => setTimeout(resolve, PACE_MS));
 
@@ -454,13 +443,20 @@ export async function printLabelsVia(
 
 /**
  * Gap between one copy's job finishing and the next one's starting, when
- * printing several copies as separate jobs (see printCopiesVia below).
- * Generous on purpose: this only has to beat how long the printer takes to
- * finish burning + feeding one label, and a wrong guess there costs a
- * couple of extra seconds — a wrong guess *inside* a job is what corrupts
- * the run instead.
+ * printing several copies as separate jobs (see printCopiesVia below). The
+ * USB/serial call resolving only means the bytes were handed off — it says
+ * nothing about whether the printer has finished the *mechanical* part
+ * (burn the 20 mm band, then feed on to the next gap), and starting the
+ * next job's lead-in before that's done is what this gap exists to avoid.
+ *
+ * Estimated at roughly 0.9–1.0 s for one label on the current 50×30 mm
+ * stock (burn time roughly fixed + a longer feed than the old 24.5 mm
+ * stock — see the PACE_MS comment above for that history). 1000 ms keeps a
+ * real but no longer oversized margin above that estimate; raise it back
+ * toward 1500+ if a multi-copy run ever corrupts again — that would mean
+ * this margin, not the byte pacing, was cut too close.
  */
-const COPY_GAP_MS = 1500;
+const COPY_GAP_MS = 1000;
 
 /**
  * Print N copies of one label as N separate single-label jobs, not one job
@@ -472,9 +468,9 @@ const COPY_GAP_MS = 1500;
  * only ever asking the printer to do the one thing already proven to work,
  * with a real pause — not a byte-count heuristic — between repetitions.
  *
- * Slower than one big job (an extra ~1.5s per copy), which is the trade
- * this makes on purpose: reliability over speed for something printed a
- * handful of times, not hundreds.
+ * Slower than one big job (an extra ~1s per copy), which is the trade this
+ * makes on purpose: reliability over speed for something printed a handful
+ * of times, not hundreds.
  */
 export async function printCopiesVia(
   transport: Transport,
