@@ -407,6 +407,27 @@ export async function ensureContact(customer: SyncCustomer): Promise<string> {
   return created.contact.contact_id;
 }
 
+/**
+ * Takes an invoice out of Draft.
+ *
+ * Both government filings need this first: a draft is not a finalised
+ * document, and Zoho/NIC reject a filing made against one. Confirmed by
+ * comparing two real e-way bills — the one that generated sat on an
+ * invoice Zoho had marked sent, the one rejected with "Please ensure that
+ * you have entered the appropriate values for the below mandatory fields"
+ * sat on a draft, with every transport field identical between them.
+ *
+ * Harmless when the invoice is already sent, paid or overdue: Zoho errors
+ * on a no-op status change, and that error is deliberately swallowed.
+ */
+export async function markInvoiceSent(zohoInvoiceId: string): Promise<void> {
+  try {
+    await zohoRequest("POST", `/invoices/${zohoInvoiceId}/status/sent`);
+  } catch {
+    // Already sent/paid — not fatal, and not worth a log line per push.
+  }
+}
+
 /** The address block an invoice carries, for both Bill-To and Ship-To. */
 function invoiceAddressFor(customer: SyncCustomer) {
   const registered = isValidGstin(customer.gstin);

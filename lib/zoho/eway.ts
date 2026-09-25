@@ -10,6 +10,7 @@
  * which hasn't happened yet. Test those deliberately before relying on them.
  */
 import { zohoRequest } from "./client";
+import { markInvoiceSent } from "./sync";
 
 export type EwayBill = {
   ewaybill_id: string;
@@ -57,6 +58,13 @@ export async function generateEwayBill(
   zohoInvoiceId: string,
   dispatch: DispatchDetails = {}
 ): Promise<EwayBill> {
+  // A draft invoice is not a document you can file against — see
+  // markInvoiceSent. The e-Invoice path has always done this; this one
+  // did not, and a real ₹3.3L e-way bill (INV-20260924-1056) was rejected
+  // for it while an otherwise field-for-field identical one on a sent
+  // invoice generated fine.
+  await markInvoiceSent(zohoInvoiceId);
+
   const body: Record<string, unknown> = {
     entity_type: "invoice",
     entity_id: zohoInvoiceId,

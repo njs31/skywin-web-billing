@@ -19,6 +19,7 @@
  * (or at least a genuinely necessary) cancellation before relying on it.
  */
 import { zohoRequest } from "./client";
+import { markInvoiceSent } from "./sync";
 
 type EinvoiceDetails = {
   status?: string; // "yet_to_be_pushed" | "generated" | "pushed" | "failed" | ...
@@ -42,18 +43,8 @@ export type PushResult = {
   raw: EinvoiceDetails;
 };
 
-/** Marks the invoice Sent — some Zoho flows require this before an
- *  e-invoice push; harmless if it's already not a draft. */
-async function markSent(zohoInvoiceId: string): Promise<void> {
-  try {
-    await zohoRequest("POST", `/invoices/${zohoInvoiceId}/status/sent`);
-  } catch {
-    // Already sent/paid — Zoho errors on a no-op status change. Not fatal.
-  }
-}
-
 export async function pushEInvoice(zohoInvoiceId: string): Promise<PushResult> {
-  await markSent(zohoInvoiceId);
+  await markInvoiceSent(zohoInvoiceId);
   await zohoRequest("POST", `/invoices/${zohoInvoiceId}/einvoice/push`);
 
   const detail = await zohoRequest<{ invoice: { einvoice_details?: EinvoiceDetails } }>(
