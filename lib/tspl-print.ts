@@ -149,49 +149,62 @@ export function isUsbPrintSupported() {
   );
 }
 
-async function acquirePrinter() {
-  const granted = await navigator.usb!.getDevices();
-  const remembered = granted.find((device) =>
-    device.configurations.some((config) =>
-      config.interfaces.some((iface) =>
-        iface.alternates.some((alt) => alt.interfaceClass === 7)
-      )
+function isPrinterClassDevice(device: USBDevice) {
+  return device.configurations.some((config) =>
+    config.interfaces.some((iface) =>
+      iface.alternates.some((alt) => alt.interfaceClass === 7)
     )
   );
-  return remembered ?? (await navigator.usb!.requestDevice({ filters: [] }));
 }
 
-function releaseInstructions() {
-  const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
-  if (/Windows/i.test(ua)) {
-    return (
-      "On Windows: Settings → Bluetooth & devices → Printers & scanners → " +
-      "remove this printer's queue. Then unplug the USB cable and plug it back in."
-    );
+/**
+ * Get a device and have it open and ready, one way or another.
+ *
+ * A device Chrome remembers granting isn't necessarily one it can still
+ * open — on Windows especially, installing (or reinstalling) a printer's
+ * driver hands its USB interface to `usbprint.sys` after the grant was
+ * made, and every open attempt on the remembered device then fails the
+ * same way forever with no way for the person printing to do anything
+ * about it themselves. Confirmed as a real, live case: a TSC TE244 with
+ * its official Windows driver installed, where "Connect over USB"
+ * produced a wall of troubleshooting text instead of the picker, on
+ * every single click.
+ *
+ * So: try the remembered device first (the fast, silent path for the
+ * common case where it's genuinely fine). The moment opening it fails
+ * for *any* reason, forget instructions and force Chrome's own device
+ * picker instead — every click gets another real chance to pick
+ * whatever's currently visible, rather than the same dead end.
+ */
+async function openAndClaim(device: USBDevice): Promise<UsbEndpoints> {
+  await device.open();
+  if (device.configuration === null) {
+    await device.selectConfiguration(1);
   }
-  if (/Mac OS X|Macintosh/i.test(ua)) {
-    return (
-      "On Mac: System Settings → Printers & Scanners → remove this printer's " +
-      "queue. Then unplug the USB cable and plug it back in."
-    );
-  }
-  if (/Linux|X11/i.test(ua)) {
-    return "On Linux: remove the printer from CUPS, or add a udev rule granting access.";
-  }
-  return "Remove the printer from your computer's printer list, then replug the cable.";
+  const endpoints = findEndpoints(device);
+  await device.claimInterface(endpoints.interfaceNumber);
+  await device.selectAlternateInterface(endpoints.interfaceNumber, endpoints.alternateSetting);
+  return endpoints;
 }
 
-async function openDevice(device: USBDevice) {
-  try {
-    await device.open();
-  } catch {
-    throw new Error(
-      "Your computer's printing system is holding the printer, so the browser " +
-        "cannot talk to it directly.\n\n" +
-        releaseInstructions() +
-        "\n\nAlso close any other tab or app printing to it."
-    );
+async function acquireOpenPrinter(): Promise<{ device: USBDevice; endpoints: UsbEndpoints }> {
+  const granted = await navigator.usb!.getDevices();
+  const remembered = granted.find(isPrinterClassDevice);
+  if (remembered) {
+    try {
+      const endpoints = await openAndClaim(remembered);
+      return { device: remembered, endpoints };
+    } catch {
+      // Whatever stage failed — open, claim, or select — forget it and
+      // force the picker below instead. Best-effort: a device this
+      // failed on may still be half-open; closing errors here are not
+      // worth surfacing over the real problem.
+      await remembered.close().catch(() => {});
+    }
   }
+  const chosen = await navigator.usb!.requestDevice({ filters: [] });
+  const endpoints = await openAndClaim(chosen);
+  return { device: chosen, endpoints };
 }
 
 type UsbEndpoints = {
@@ -287,37 +300,20 @@ async function usbQueryStatus(
 }
 
 async function sendToPrinter(payload: Uint8Array, settleMs: number) {
-  const device = await acquirePrinter();
-  await openDevice(device);
+  const { device, endpoints } = await acquireOpenPrinter();
   try {
-    const endpoints = findEndpoints(device);
-    try {
-      await device.claimInterface(endpoints.interfaceNumber);
-    } catch {
-      throw new Error(
-        "The printer opened but is still held by the system print driver.\n\n" +
-          releaseInstructions()
-      );
-    }
-    try {
-      await device.selectAlternateInterface(
-        endpoints.interfaceNumber,
-        endpoints.alternateSetting
-      );
-      await writeChunked(
-        (chunk) =>
-          device.transferOut(endpoints.outEndpoint, new Uint8Array(chunk)).then(() => {}),
-        payload
-      );
-      await settleAfterSend(
-        (timeoutMs) => usbQueryStatus(device, endpoints, timeoutMs),
-        settleMs
-      );
-    } finally {
-      await device.releaseInterface(endpoints.interfaceNumber);
-    }
+    await writeChunked(
+      (chunk) =>
+        device.transferOut(endpoints.outEndpoint, new Uint8Array(chunk)).then(() => {}),
+      payload
+    );
+    await settleAfterSend(
+      (timeoutMs) => usbQueryStatus(device, endpoints, timeoutMs),
+      settleMs
+    );
   } finally {
-    await device.close();
+    await device.releaseInterface(endpoints.interfaceNumber).catch(() => {});
+    await device.close().catch(() => {});
   }
 }
 
