@@ -10,8 +10,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyLabelApiKey } from "@/lib/api-auth";
 import { buildEscPosJob, presentDotsFromMm } from "@/lib/escpos-print";
+import { buildTsplJob } from "@/lib/tspl-print";
 import { getSettings } from "@/lib/settings";
 import { renderTestLabelRasterServer } from "@/lib/label-escpos-server";
+import { renderTestLabelRasterTsplServer } from "@/lib/label-tspl-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,10 +23,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const lang = (new URL(req.url).searchParams.get("lang") || "escpos").toLowerCase();
   const settings = await getSettings();
-  const job = buildEscPosJob([await renderTestLabelRasterServer()], {
-    presentDots: presentDotsFromMm(settings.labelTearOffMm),
-  });
+  const job =
+    lang === "tspl"
+      ? buildTsplJob(await renderTestLabelRasterTsplServer(), 1)
+      : buildEscPosJob([await renderTestLabelRasterServer()], {
+          presentDots: presentDotsFromMm(settings.labelTearOffMm),
+        });
 
   return new Response(job as unknown as BodyInit, {
     headers: {

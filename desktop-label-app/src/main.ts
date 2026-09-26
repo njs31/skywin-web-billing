@@ -13,6 +13,7 @@ type AppSettings = {
   server_url: string;
   api_key: string;
   printer_share: string;
+  printer_lang: string;
 };
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -22,6 +23,7 @@ const settingsPanel = el<HTMLElement>("settings-panel");
 const serverUrlInput = el<HTMLInputElement>("server-url");
 const apiKeyInput = el<HTMLInputElement>("api-key");
 const printerShareInput = el<HTMLInputElement>("printer-share");
+const printerLangSelect = el<HTMLSelectElement>("printer-lang");
 const saveSettingsBtn = el<HTMLButtonElement>("save-settings");
 const testPrintBtn = el<HTMLButtonElement>("test-print");
 const settingsStatus = el<HTMLElement>("settings-status");
@@ -59,6 +61,7 @@ async function loadSettings(): Promise<AppSettings> {
   serverUrlInput.value = settings.server_url;
   apiKeyInput.value = settings.api_key;
   printerShareInput.value = settings.printer_share;
+  printerLangSelect.value = settings.printer_lang;
   return settings;
 }
 
@@ -67,6 +70,7 @@ async function saveSettings() {
     server_url: serverUrlInput.value.trim(),
     api_key: apiKeyInput.value.trim(),
     printer_share: printerShareInput.value.trim(),
+    printer_lang: printerLangSelect.value,
   };
   try {
     await invoke("save_settings", { settings });

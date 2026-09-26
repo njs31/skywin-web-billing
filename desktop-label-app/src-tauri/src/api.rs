@@ -72,12 +72,24 @@ pub async fn search_products(settings: &AppSettings, query: &str) -> Result<Vec<
     Ok(parsed.products)
 }
 
+/// "tspl" or "escpos" — never anything else, since it goes straight into
+/// a URL. Anything unrecognised falls back to "escpos" rather than
+/// silently sending a stray value the server doesn't understand.
+fn lang_param(settings: &AppSettings) -> &'static str {
+    if settings.printer_lang.trim().eq_ignore_ascii_case("tspl") {
+        "tspl"
+    } else {
+        "escpos"
+    }
+}
+
 /// Finished printer bytes for the chosen products.
 pub async fn label_bytes(settings: &AppSettings, ids: &[i64], copies: u32) -> Result<Vec<u8>, String> {
     let list = ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
+    let lang = lang_param(settings);
     let bytes = get_bytes(
         settings,
-        &format!("/api/labels/print?ids={list}&copies={copies}"),
+        &format!("/api/labels/print?ids={list}&copies={copies}&lang={lang}"),
     )
     .await?;
     if bytes.is_empty() {
@@ -88,7 +100,8 @@ pub async fn label_bytes(settings: &AppSettings, ids: &[i64], copies: u32) -> Re
 
 /// One diagnostic label: no product, no database row, just the printer.
 pub async fn test_label_bytes(settings: &AppSettings) -> Result<Vec<u8>, String> {
-    let bytes = get_bytes(settings, "/api/labels/test-print").await?;
+    let lang = lang_param(settings);
+    let bytes = get_bytes(settings, &format!("/api/labels/test-print?lang={lang}")).await?;
     if bytes.is_empty() {
         return Err("The server returned an empty print job.".to_string());
     }

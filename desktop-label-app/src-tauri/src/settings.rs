@@ -20,14 +20,24 @@ pub struct AppSettings {
     pub api_key: String,
     /// The *share name* the printer was given under Printer Properties →
     /// Sharing, not its display name in the printer list — see
-    /// printer_windows.rs for why raw printing goes through a share
-    /// rather than the printer's own queue name directly.
+    /// printer.rs for why raw printing goes through a share rather than
+    /// the printer's own queue name directly.
     #[serde(default)]
     pub printer_share: String,
+    /// "tspl" or "escpos" — which job format to ask the server for. See
+    /// lib/label-tspl-server.ts (main repo) for why these are genuinely
+    /// different bytes, not just a label on the same ones. Defaults to
+    /// "tspl": a real TSC TE244 is the printer this app was built for.
+    #[serde(default = "default_printer_lang")]
+    pub printer_lang: String,
 }
 
 fn default_server_url() -> String {
     "http://localhost:3000".to_string()
+}
+
+fn default_printer_lang() -> String {
+    "tspl".to_string()
 }
 
 impl Default for AppSettings {
@@ -36,6 +46,7 @@ impl Default for AppSettings {
             server_url: default_server_url(),
             api_key: String::new(),
             printer_share: String::new(),
+            printer_lang: default_printer_lang(),
         }
     }
 }

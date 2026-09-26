@@ -12,6 +12,7 @@ import { db } from "@/db";
 import { products } from "@/db/schema";
 import { verifyLabelApiKey } from "@/lib/api-auth";
 import { buildEscPosForProducts } from "@/lib/label-escpos-server";
+import { buildTsplForProducts } from "@/lib/label-tspl-server";
 import { presentDotsFromMm } from "@/lib/escpos-print";
 import { getSettings } from "@/lib/settings";
 import { DOTS_PER_MM } from "@/lib/label-print-config";
@@ -59,6 +60,13 @@ export async function GET(req: NextRequest) {
       ? Math.round(gapMm * DOTS_PER_MM)
       : undefined;
 
+  // "escpos" (default, unchanged) is the P58D's language; the Android and
+  // Mac apps never pass this and keep getting exactly what they always
+  // did. "tspl" is for a real TSPL printer (e.g. a TSC TE244) — see
+  // lib/label-tspl-server.ts for why that needs a genuinely different
+  // job, not just a different Content-Type on the same bytes.
+  const lang = (url.searchParams.get("lang") || "escpos").toLowerCase();
+
   if (ids.length === 0) {
     return NextResponse.json({ error: "No product ids given" }, { status: 400 });
   }
@@ -87,10 +95,13 @@ export async function GET(req: NextRequest) {
     .filter((row): row is (typeof rows)[number] => Boolean(row));
 
   const settings = await getSettings();
-  const job = await buildEscPosForProducts(
-    ordered.map((product) => ({ product, copies, feedDots })),
-    { presentDots: presentDotsFromMm(settings.labelTearOffMm) }
-  );
+  const job =
+    lang === "tspl"
+      ? await buildTsplForProducts(ordered.map((product) => ({ product, copies })))
+      : await buildEscPosForProducts(
+          ordered.map((product) => ({ product, copies, feedDots })),
+          { presentDots: presentDotsFromMm(settings.labelTearOffMm) }
+        );
 
   return new Response(job as unknown as BodyInit, {
     headers: {
