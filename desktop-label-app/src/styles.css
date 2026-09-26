@@ -125,6 +125,16 @@ th {
   text-align: right;
 }
 
+.check-col {
+  width: 28px;
+}
+
+.selection-bar {
+  justify-content: space-between;
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
 td.num {
   text-align: right;
   font-variant-numeric: tabular-nums;

@@ -29,6 +29,16 @@ const searchInput = el<HTMLInputElement>("search");
 const productsBody = el<HTMLElement>("products-body");
 const emptyState = el<HTMLElement>("empty-state");
 const toast = el<HTMLElement>("toast");
+const selectAllCheckbox = el<HTMLInputElement>("select-all");
+const selectionCount = el<HTMLElement>("selection-count");
+const printSelectedBtn = el<HTMLButtonElement>("print-selected");
+
+/** One row's product, checkbox and qty input, kept together so
+ *  "Print selected" can read each row's own current quantity — not a
+ *  qty shared across the batch, since a restock run rarely needs the
+ *  same count for every product. */
+type ProductRow = { product: Product; checkbox: HTMLInputElement; qtyInput: HTMLInputElement };
+let currentRows: ProductRow[] = [];
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -84,9 +94,17 @@ let searchSeq = 0;
 function renderProducts(products: Product[]) {
   productsBody.innerHTML = "";
   emptyState.classList.toggle("hidden", products.length > 0);
+  currentRows = [];
 
   for (const product of products) {
     const row = document.createElement("tr");
+
+    const checkCell = document.createElement("td");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.addEventListener("change", updateSelectionState);
+    checkCell.appendChild(checkbox);
+    row.appendChild(checkCell);
 
     const nameCell = document.createElement("td");
     nameCell.textContent = product.name;
@@ -130,8 +148,60 @@ function renderProducts(products: Product[]) {
     row.appendChild(actionCell);
 
     productsBody.appendChild(row);
+    currentRows.push({ product, checkbox, qtyInput });
   }
+  updateSelectionState();
 }
+
+function updateSelectionState() {
+  const selected = currentRows.filter((r) => r.checkbox.checked);
+  selectionCount.textContent = `${selected.length} selected`;
+  printSelectedBtn.disabled = selected.length === 0;
+  selectAllCheckbox.checked = currentRows.length > 0 && selected.length === currentRows.length;
+  selectAllCheckbox.indeterminate = selected.length > 0 && selected.length < currentRows.length;
+}
+
+selectAllCheckbox.addEventListener("change", () => {
+  for (const row of currentRows) row.checkbox.checked = selectAllCheckbox.checked;
+  updateSelectionState();
+});
+
+/**
+ * Print every checked row, each at its own quantity, one job at a time —
+ * not one combined server call. The server's own /api/labels/print takes
+ * one shared `copies` count for every id in a request, which doesn't fit
+ * "3 of this, 1 of that" in a single batch; printing them as separate
+ * jobs in sequence is what actually gives each product its own count, at
+ * the cost of a little time, not correctness.
+ */
+async function printSelected() {
+  const selected = currentRows.filter((r) => r.checkbox.checked);
+  if (selected.length === 0) return;
+
+  printSelectedBtn.disabled = true;
+  let done = 0;
+  let failed = 0;
+  for (const { product, qtyInput } of selected) {
+    const copies = Math.max(1, Math.min(99, Math.round(Number(qtyInput.value)) || 1));
+    showToast(`Printing ${done + failed + 1} of ${selected.length}: ${product.name}…`);
+    try {
+      await invoke("print_labels", { ids: [product.id], copies });
+      done++;
+    } catch (err) {
+      failed++;
+      console.error(`Failed to print ${product.name}:`, err);
+    }
+  }
+
+  if (failed === 0) {
+    showToast(`Printed ${done} product${done === 1 ? "" : "s"}.`, "ok");
+  } else {
+    showToast(`Printed ${done}, failed ${failed} — check the printer/settings and retry.`, "error");
+  }
+  updateSelectionState();
+}
+
+printSelectedBtn.addEventListener("click", printSelected);
 
 async function printProduct(product: Product, qtyInput: HTMLInputElement, button: HTMLButtonElement) {
   const copies = Math.max(1, Math.min(99, Math.round(Number(qtyInput.value)) || 1));

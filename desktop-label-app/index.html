@@ -43,6 +43,7 @@
       <table id="products-table">
         <thead>
           <tr>
+            <th class="check-col"><input id="select-all" type="checkbox" /></th>
             <th>Product</th>
             <th>Code</th>
             <th class="num">MRP</th>
@@ -55,6 +56,12 @@
         <tbody id="products-body"></tbody>
       </table>
       <p id="empty-state" class="hint hidden">No products found.</p>
+      <div class="row selection-bar">
+        <span id="selection-count" class="hint">0 selected</span>
+        <button id="print-selected" class="secondary" type="button" disabled>
+          Print selected
+        </button>
+      </div>
     </section>
 
     <div id="toast" class="toast hidden"></div>
