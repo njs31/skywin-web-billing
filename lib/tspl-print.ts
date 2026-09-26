@@ -203,8 +203,27 @@ async function acquireOpenPrinter(): Promise<{ device: USBDevice; endpoints: Usb
     }
   }
   const chosen = await navigator.usb!.requestDevice({ filters: [] });
-  const endpoints = await openAndClaim(chosen);
-  return { device: chosen, endpoints };
+  try {
+    const endpoints = await openAndClaim(chosen);
+    return { device: chosen, endpoints };
+  } catch (cause) {
+    // Picking the printer in the dialog is not the same as Chrome being
+    // *allowed* to open it — Windows can list a device (it enumerates
+    // fine) while its class driver still refuses any other process a
+    // handle on it, which surfaces here as a plain "Access denied" with
+    // no mention of why. That is worth explaining, unlike the remembered-
+    // device retry above: this already *is* the fresh pick, so there is
+    // nothing left to retry automatically — only removing the driver's
+    // claim on the OS side can fix it.
+    throw new Error(
+      "The printer was picked, but Windows is still refusing the browser " +
+        "access to it — this means its driver is still installed.\n\n" +
+        "Settings → Bluetooth & devices → Printers & scanners → remove " +
+        "this printer, close its status monitor if one is running in the " +
+        "system tray, then unplug the USB cable and plug it back in.\n\n" +
+        `(${cause instanceof Error ? cause.message : String(cause)})`
+    );
+  }
 }
 
 type UsbEndpoints = {
