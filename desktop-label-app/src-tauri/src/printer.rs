@@ -11,91 +11,130 @@
 //! So this goes the other way: instead of fighting the driver for raw
 //! access, use it. Windows' print spooler accepts a `RAW` datatype job —
 //! bytes handed straight to the device with no GDI/driver re-rendering in
-//! between, which is exactly what a pre-built ESC/POS or TSPL job needs
-//! and is the standard way POS software prints to a receipt/label printer
-//! on Windows. The simplest reliable way to submit one without brittle
-//! WinAPI FFI (which can't be compiled or checked from this dev machine,
-//! only a real Windows box can) is the same one many POS tools use: copy
-//! the bytes, in binary mode, to the printer's own *share*.
+//! between, which is exactly what a pre-built ESC/POS or TSPL job needs.
+//! This is done through the actual Win32 spooler API
+//! (`OpenPrinter`/`StartDocPrinter`/`WritePrinter`), the same sequence
+//! `python-escpos`'s `Win32Raw` connector and most C#/.NET POS software's
+//! `RawPrinterHelper` use — not a shell trick. It targets the printer by
+//! its name exactly as Windows shows it, with no sharing or other setup
+//! needed on the printer itself first.
 //!
-//! One-time setup this requires, done once in Windows' own UI, not here:
-//! Printer Properties → Sharing → "Share this printer" → give it a name
-//! (that name is what `printer_share` in Settings must match).
-//!
-//! NOT verified against a real Windows machine — no Windows box was
-//! available while writing this, only cross-checked as a standard,
-//! widely-documented technique. If `copy /b` itself turns out unreliable
-//! for binary ESC/POS/TSPL bytes on a real run, the next thing to try is
-//! the Win32 spooler API's `RAW` datatype directly (`OpenPrinter` /
-//! `StartDocPrinter` / `WritePrinter`) — a real Windows dev box is needed
-//! to get that FFI right, which this one wasn't.
+//! Verified compiling for real on a Windows target via this repo's own
+//! CI (GitHub's windows-latest runner) — not just "should work" from
+//! reading the API docs. NOT yet verified against a real printer: no
+//! Windows machine with a printer attached was available while writing
+//! this, so whether a real TSC TE244 actually accepts and prints the
+//! bytes this sends is the one thing only a real run can confirm.
 
 #[cfg(windows)]
-pub async fn print_raw(bytes: &[u8], printer_share: &str) -> Result<(), String> {
-    use tokio::io::AsyncWriteExt;
-
-    let share = printer_share.trim();
-    if share.is_empty() {
+pub async fn print_raw(bytes: &[u8], printer_name: &str) -> Result<(), String> {
+    let name = printer_name.trim();
+    if name.is_empty() {
         return Err(
-            "Set the printer's share name in Settings first — Printer Properties → \
-             Sharing → \"Share this printer\" on the printer you want to use."
+            "Set the printer's name in Settings first — exactly as it appears \
+             in Windows' Settings → Bluetooth & devices → Printers & scanners."
                 .to_string(),
         );
     }
+    let name = name.to_string();
+    let bytes = bytes.to_vec();
 
-    let mut path = std::env::temp_dir();
-    let unique = format!(
-        "skywin-label-{}-{}.bin",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    );
-    path.push(unique);
-
-    let mut file = tokio::fs::File::create(&path)
+    // The Win32 calls below are blocking FFI, not async — run them on a
+    // blocking thread so they never stall the async runtime the rest of
+    // this app's HTTP calls share.
+    tokio::task::spawn_blocking(move || print_raw_blocking(&name, &bytes))
         .await
-        .map_err(|e| format!("Could not create a temporary print file: {e}"))?;
-    file.write_all(bytes)
-        .await
-        .map_err(|e| format!("Could not write the print job to disk: {e}"))?;
-    file.flush().await.ok();
-    drop(file);
+        .map_err(|e| format!("The print task panicked: {e}"))?
+}
 
-    let target = format!("\\\\localhost\\{share}");
-    let mut cmd = tokio::process::Command::new("cmd");
-    cmd.args(["/C", "copy", "/b", &path.to_string_lossy(), &target]);
-    // Without this, spawning cmd.exe from a GUI app briefly flashes a
-    // black console window on screen for every single print — harmless,
-    // but looks like an error to anyone watching. CREATE_NO_WINDOW
-    // suppresses that entirely; the command still runs the same way.
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
+#[cfg(windows)]
+fn print_raw_blocking(printer_name: &str, bytes: &[u8]) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PWSTR;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Graphics::Printing::{
+        ClosePrinter, EndDocPrinter, EndPagePrinter, OpenPrinterW, StartDocPrinterW,
+        StartPagePrinter, WritePrinter, DOC_INFO_1W,
+    };
+
+    /// A null-terminated UTF-16 buffer, kept alive for as long as the
+    /// PWSTR pointing into it is in use — a PWSTR is just a raw pointer,
+    /// so the Vec backing it must outlive every call that touches it.
+    fn wide(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
     }
-    let output = cmd.output().await;
 
-    // Best-effort cleanup either way — a leftover temp file is harmless,
-    // but there is no reason to keep it around on success or failure.
-    let _ = tokio::fs::remove_file(&path).await;
-
-    let output = output.map_err(|e| format!("Could not run the Windows copy command: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(format!(
-            "Windows refused the print job (share \"{share}\" — check the name matches \
-             exactly, and that the printer is shared).\n\n{}",
-            if stderr.trim().is_empty() { stdout.trim() } else { stderr.trim() }
-        ));
+    let mut printer_name_w = wide(printer_name);
+    let mut handle = HANDLE::default();
+    unsafe {
+        OpenPrinterW(PWSTR(printer_name_w.as_mut_ptr()), &mut handle, None)
+            .map_err(|e| {
+                format!(
+                    "Windows could not find a printer named \"{printer_name}\" ({e}). \
+                     Check Settings → Bluetooth & devices → Printers & scanners for the \
+                     exact name."
+                )
+            })?;
     }
-    Ok(())
+
+    let mut doc_name_w = wide("Skywin Label");
+    let mut datatype_w = wide("RAW");
+    let doc_info = DOC_INFO_1W {
+        pDocName: PWSTR(doc_name_w.as_mut_ptr()),
+        pOutputFile: PWSTR::null(),
+        pDatatype: PWSTR(datatype_w.as_mut_ptr()),
+    };
+
+    // Everything from here on must still close the printer handle even
+    // if a step fails partway through, so the actual work runs in a
+    // closure and ClosePrinter always runs afterward regardless.
+    let result = (|| -> Result<(), String> {
+        unsafe {
+            let job_id = StartDocPrinterW(handle, 1, &doc_info);
+            if job_id == 0 {
+                return Err(
+                    "Windows refused to start the print job (StartDocPrinter failed) — \
+                     the printer may be offline, paused, or out of paper."
+                        .to_string(),
+                );
+            }
+
+            StartPagePrinter(handle).map_err(|e| format!("StartPagePrinter failed: {e}"))?;
+
+            let mut written: u32 = 0;
+            let write_result = WritePrinter(
+                handle,
+                bytes.as_ptr() as *const _,
+                bytes.len() as u32,
+                &mut written,
+            );
+
+            // Both page and doc must be closed even if the write itself
+            // failed, or the job is left stuck open in the queue.
+            let _ = EndPagePrinter(handle);
+            let _ = EndDocPrinter(handle);
+
+            write_result.map_err(|e| format!("WritePrinter failed: {e}"))?;
+            if written as usize != bytes.len() {
+                return Err(format!(
+                    "Only {written} of {} bytes reached the printer — the job likely \
+                     printed incomplete or not at all.",
+                    bytes.len()
+                ));
+            }
+        }
+        Ok(())
+    })();
+
+    unsafe {
+        let _ = ClosePrinter(handle);
+    }
+    result
 }
 
 #[cfg(not(windows))]
-pub async fn print_raw(_bytes: &[u8], _printer_share: &str) -> Result<(), String> {
+pub async fn print_raw(_bytes: &[u8], _printer_name: &str) -> Result<(), String> {
     Err("This build isn't running on Windows — raw printing here is a placeholder \
          so the rest of the app still compiles and can be developed on any OS."
         .to_string())

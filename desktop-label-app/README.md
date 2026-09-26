@@ -16,20 +16,18 @@ native app trying raw USB access both get refused with "Access denied,"
 confirmed against a real TSC TE244 with its official driver installed.
 
 Rather than fight Windows for that raw access, this app uses the printer's
-*own* driver, the way any other Windows software prints to it: it copies
-the finished job bytes, in binary mode, to the printer's **share** —
-`copy /b <job> \\localhost\<ShareName>` — which the Windows print spooler
-delivers to the device as a `RAW` datatype job (no GDI re-rendering, no
-reinterpretation, bytes straight through). This needs the printer shared
-once, in Windows' own UI, not fought over every time the app opens.
+*own* driver, the way real POS software actually does it: through the
+Win32 print spooler's `RAW` datatype (`OpenPrinter` / `StartDocPrinter` /
+`WritePrinter`) — the same sequence `python-escpos`'s `Win32Raw` connector
+and most C#/.NET POS software's `RawPrinterHelper` use. Bytes go straight
+to the device with no GDI re-rendering, no reinterpretation, and no setup
+needed on the printer itself — just its name, exactly as Windows shows it.
 
 ## One-time setup, before first run
 
-1. **Share the printer**: right-click it in *Settings → Bluetooth &
-   devices → Printers & scanners* → *Printer properties* → *Sharing* →
-   check **Share this printer** → give it a short name (e.g. `TSC`).
-2. Get the **label printer API key** from the web app's own Settings page
-   (same key the Android/Mac apps use).
+Get the **label printer API key** from the web app's own Settings page
+(same key the Android/Mac apps use). That's it — no printer sharing, no
+other setup on the printer side.
 
 ## First run
 
@@ -37,9 +35,12 @@ Open the app, click **Settings**, and set:
 
 - **Server address** — e.g. `https://skywin.qwicksapp.com`, or
   `http://localhost:3000` for local development.
-- **Label printer API key** — from step 2 above.
-- **Printer share name** — exactly the name given in step 1 (not the
-  printer's display name in the printer list).
+- **Label printer API key** — from above.
+- **Printer language** — TSPL for a TSC TE244 (or similar), ESC/POS for
+  the older POSiFLOW P58D. Must match what the printer actually speaks,
+  or the label prints as garbage.
+- **Printer name** — exactly as it appears in Windows' Settings →
+  Bluetooth & devices → Printers & scanners.
 
 Click **Save**, then **Test print** — the diagnostic label should come out
 on the printer. If it doesn't, see Troubleshooting below.
@@ -59,18 +60,25 @@ npm run tauri build
 
 The installer lands in `src-tauri/target/release/bundle/msi/` (or `nsis/`,
 depending on the bundler available). `npm run tauri dev` runs it
-unpackaged for quick iteration.
+unpackaged for quick iteration. This repo's own CI
+(`.github/workflows/build-desktop-label-app.yml`) does exactly this on
+GitHub's `windows-latest` runner, so a working installer never actually
+requires setting any of this up by hand.
 
 ## Troubleshooting
 
-**"Windows refused the print job"** — the share name in Settings doesn't
-match what the printer was actually shared as, or the printer isn't
-shared at all. Re-check *Printer properties → Sharing*.
+**"Windows could not find a printer named ..."** — the name in Settings
+doesn't exactly match Windows' own printer list. Copy it character for
+character from *Settings → Bluetooth & devices → Printers & scanners*.
 
-**Printed once, then stopped working** — the printer's driver was
-reinstalled (Windows sometimes does this automatically on replug), which
-can rename or drop the share. Re-share it and re-check the name in
-Settings.
+**"Windows refused to start the print job"** — the printer is offline,
+paused in its queue, or out of paper/ribbon. Check the printer itself and
+its queue (right-click it → "See what's printing").
+
+**Label prints as garbage / random characters** — the **Printer
+language** setting doesn't match what the printer actually speaks (TSPL
+vs ESC/POS). This is the single most common cause of unreadable output —
+check that setting before anything else.
 
 **Test print sends nothing / server errors** — check the server address
 and API key match exactly what the web app's Settings page shows. A 401
@@ -79,20 +87,16 @@ here means the key is wrong; other errors show the server's own message.
 ## What's verified vs. not
 
 Verified against the real, live production server (no mock): searching
-products, the auth-rejection path with a bad key, and fetching a real
-~7.8 KB ESC/POS test-print job — all pass against
+products, the auth-rejection path with a bad key, and fetching real
+ESC/POS and TSPL test-print jobs — all pass against
 `https://skywin.qwicksapp.com` (`src-tauri/tests/live_api.rs`, run with
 `SKYWIN_LABEL_API_KEY=... cargo test --test live_api -- --ignored
---nocapture`). A full release build of the whole app compiled and linked
-successfully (on macOS, validating everything cross-platform).
+--nocapture`). The Win32 printing code compiles cleanly on a real Windows
+target via this repo's own CI — not just "should work" from reading the
+API docs.
 
-**Not verified — no Windows machine was available while building this:**
-the `copy /b` RAW-print mechanism itself. It's a standard, widely-documented
-technique, not a guess, but it has not been run against a real printer
-share. If it doesn't work as expected, that's the first thing to check —
-try the exact command by hand from Command Prompt before assuming the app
-is at fault:
-
-```
-copy /b somefile.bin \\localhost\YourShareName
-```
+**Not verified — no Windows machine with a printer attached was available
+while building this:** whether a real printer actually accepts and prints
+the bytes `WritePrinter` sends. If a test print fails, the error message
+now comes from the real Win32 API (e.g. "the printer may be offline,
+paused, or out of paper") rather than a guess, so start there.

@@ -1,6 +1,6 @@
 //! Where the server is, how to authenticate, and which printer share to
 //! print to. The same three-value shape the Mac app keeps (server_url,
-//! api_key) plus one Windows-specific addition (printer_share) — this app
+//! api_key) plus one Windows-specific addition (printer_name) — this app
 //! renders nothing itself, so without a server it has nothing to print.
 //!
 //! Persisted as plain JSON in the app's own data directory rather than a
@@ -18,12 +18,13 @@ pub struct AppSettings {
     pub server_url: String,
     #[serde(default)]
     pub api_key: String,
-    /// The *share name* the printer was given under Printer Properties →
-    /// Sharing, not its display name in the printer list — see
-    /// printer.rs for why raw printing goes through a share rather than
-    /// the printer's own queue name directly.
+    /// The printer's name exactly as Windows shows it in Settings →
+    /// Bluetooth & devices → Printers & scanners (e.g. "TSC TE244").
+    /// Printed to directly via the Win32 spooler's RAW datatype — see
+    /// printer.rs — so no sharing or special setup on the printer itself
+    /// is needed, just the name.
     #[serde(default)]
-    pub printer_share: String,
+    pub printer_name: String,
     /// "tspl" or "escpos" — which job format to ask the server for. See
     /// lib/label-tspl-server.ts (main repo) for why these are genuinely
     /// different bytes, not just a label on the same ones. Defaults to
@@ -45,7 +46,7 @@ impl Default for AppSettings {
         AppSettings {
             server_url: default_server_url(),
             api_key: String::new(),
-            printer_share: String::new(),
+            printer_name: String::new(),
             printer_lang: default_printer_lang(),
         }
     }

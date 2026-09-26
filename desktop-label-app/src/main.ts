@@ -12,7 +12,7 @@ type Product = {
 type AppSettings = {
   server_url: string;
   api_key: string;
-  printer_share: string;
+  printer_name: string;
   printer_lang: string;
 };
 
@@ -22,7 +22,7 @@ const settingsToggle = el<HTMLButtonElement>("settings-toggle");
 const settingsPanel = el<HTMLElement>("settings-panel");
 const serverUrlInput = el<HTMLInputElement>("server-url");
 const apiKeyInput = el<HTMLInputElement>("api-key");
-const printerShareInput = el<HTMLInputElement>("printer-share");
+const printerNameInput = el<HTMLInputElement>("printer-name");
 const printerLangSelect = el<HTMLSelectElement>("printer-lang");
 const saveSettingsBtn = el<HTMLButtonElement>("save-settings");
 const testPrintBtn = el<HTMLButtonElement>("test-print");
@@ -60,7 +60,7 @@ async function loadSettings(): Promise<AppSettings> {
   const settings = await invoke<AppSettings>("get_settings");
   serverUrlInput.value = settings.server_url;
   apiKeyInput.value = settings.api_key;
-  printerShareInput.value = settings.printer_share;
+  printerNameInput.value = settings.printer_name;
   printerLangSelect.value = settings.printer_lang;
   return settings;
 }
@@ -69,7 +69,7 @@ async function saveSettings() {
   const settings: AppSettings = {
     server_url: serverUrlInput.value.trim(),
     api_key: apiKeyInput.value.trim(),
-    printer_share: printerShareInput.value.trim(),
+    printer_name: printerNameInput.value.trim(),
     printer_lang: printerLangSelect.value,
   };
   try {
@@ -248,7 +248,7 @@ testPrintBtn.addEventListener("click", runTestPrint);
 
 async function init() {
   const settings = await loadSettings();
-  if (!settings.api_key || !settings.printer_share) {
+  if (!settings.api_key || !settings.printer_name) {
     settingsPanel.classList.remove("hidden");
   }
   // An empty query lists the first page of active products, so the list

@@ -28,14 +28,14 @@ async fn search_products(app: AppHandle, query: String) -> Result<Vec<api::Produ
 async fn print_labels(app: AppHandle, ids: Vec<i64>, copies: u32) -> Result<(), String> {
     let settings = settings::load(&app);
     let bytes = api::label_bytes(&settings, &ids, copies).await?;
-    printer::print_raw(&bytes, &settings.printer_share).await
+    printer::print_raw(&bytes, &settings.printer_name).await
 }
 
 #[tauri::command]
 async fn print_test_label(app: AppHandle) -> Result<(), String> {
     let settings = settings::load(&app);
     let bytes = api::test_label_bytes(&settings).await?;
-    printer::print_raw(&bytes, &settings.printer_share).await
+    printer::print_raw(&bytes, &settings.printer_name).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

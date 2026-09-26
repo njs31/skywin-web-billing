@@ -14,7 +14,8 @@ fn live_settings() -> AppSettings {
     AppSettings {
         server_url: "https://skywin.qwicksapp.com".to_string(),
         api_key: std::env::var("SKYWIN_LABEL_API_KEY").expect("set SKYWIN_LABEL_API_KEY"),
-        printer_share: String::new(),
+        printer_name: String::new(),
+        printer_lang: "escpos".to_string(),
     }
 }
 
