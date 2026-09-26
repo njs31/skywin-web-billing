@@ -64,10 +64,18 @@ pub async fn print_raw(bytes: &[u8], printer_share: &str) -> Result<(), String> 
     drop(file);
 
     let target = format!("\\\\localhost\\{share}");
-    let output = tokio::process::Command::new("cmd")
-        .args(["/C", "copy", "/b", &path.to_string_lossy(), &target])
-        .output()
-        .await;
+    let mut cmd = tokio::process::Command::new("cmd");
+    cmd.args(["/C", "copy", "/b", &path.to_string_lossy(), &target]);
+    // Without this, spawning cmd.exe from a GUI app briefly flashes a
+    // black console window on screen for every single print — harmless,
+    // but looks like an error to anyone watching. CREATE_NO_WINDOW
+    // suppresses that entirely; the command still runs the same way.
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd.output().await;
 
     // Best-effort cleanup either way — a leftover temp file is harmless,
     // but there is no reason to keep it around on success or failure.
