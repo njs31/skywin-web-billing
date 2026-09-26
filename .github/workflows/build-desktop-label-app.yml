@@ -1,0 +1,44 @@
+name: Build Skywin Labels (Windows)
+
+# Produces a real Windows installer without anyone needing Rust or Node
+# installed on a Windows machine themselves — GitHub's windows-latest
+# runner already has the full toolchain. Manually triggered, and on a
+# push that actually touches the app, since this is a separate,
+# occasional artifact, not part of the web app's own deploy.
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "desktop-label-app/**"
+      - ".github/workflows/build-desktop-label-app.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop-label-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build the Windows installer
+        run: npm run tauri build
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: skywin-labels-windows
+          path: |
+            desktop-label-app/src-tauri/target/release/bundle/msi/*.msi
+            desktop-label-app/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
