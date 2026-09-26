@@ -32,6 +32,16 @@ interface USBDevice {
     endpointNumber: number,
     data: BufferSource
   ): Promise<USBOutTransferResult>;
+  /** For a printer's bulk-IN endpoint, e.g. reading a TSPL `~HS` reply. */
+  transferIn(
+    endpointNumber: number,
+    length: number
+  ): Promise<USBInTransferResult>;
+}
+
+interface USBInTransferResult {
+  data?: DataView;
+  status: "ok" | "stall" | "babble";
 }
 
 interface USBConfiguration {

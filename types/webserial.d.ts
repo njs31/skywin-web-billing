@@ -25,6 +25,8 @@ interface SerialPort {
   open(options: SerialOptions): Promise<void>;
   close(): Promise<void>;
   readonly writable: WritableStream<Uint8Array> | null;
+  /** For reading a status reply, e.g. a TSPL `~HS` response. */
+  readonly readable: ReadableStream<Uint8Array> | null;
   getInfo(): { usbVendorId?: number; usbProductId?: number };
   /**
    * Revoke this origin's permission for the port. Not in every browser, hence

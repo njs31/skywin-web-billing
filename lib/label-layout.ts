@@ -12,18 +12,7 @@
  */
 import { BUSINESS } from "@/lib/business";
 import { layoutQrDots } from "@/lib/qr-code";
-import {
-  CONTENT_W_DOTS,
-  CONTENT_X_DOTS,
-  LABEL_H_DOTS,
-  LABEL_LAYOUT,
-  LABEL_W_DOTS,
-  DOTS_PER_MM,
-  PRINT_BAND_H_DOTS,
-  PRINT_BAND_TOP_DOTS,
-  PRINT_W_DOTS,
-  PRINT_X_DOTS,
-} from "@/lib/label-print-config";
+import { P58D_GEOMETRY, type LabelGeometry } from "@/lib/label-print-config";
 
 /**
  * Helvetica advance widths in 1/1000 em for ASCII 32..126, taken from the
@@ -118,11 +107,21 @@ function fitToWidth(text: string, size: number, bold: boolean, maxWidth: number)
   return { text: `${clipped}…`, size: fitted };
 }
 
-/** Build the full drawing plan for one label. */
-export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
-  const L = LABEL_LAYOUT;
-  const left = CONTENT_X_DOTS;
-  const right = CONTENT_X_DOTS + CONTENT_W_DOTS;
+/**
+ * Build the full drawing plan for one label.
+ *
+ * `geometry` defaults to the P58D's — every existing caller keeps getting
+ * exactly what it got before. A second printer with different media
+ * (see TSPL_GEOMETRY) passes its own geometry instead of this being
+ * touched at all.
+ */
+export function buildLabelPlan(
+  fields: LabelPlanFields,
+  geometry: LabelGeometry = P58D_GEOMETRY
+): LabelPlan {
+  const L = geometry.layout;
+  const left = geometry.contentXDots;
+  const right = geometry.contentXDots + geometry.contentWDots;
   // Centre the masthead on the content column, not the raw canvas: the head
   // prints left of centre, and the column is placed to compensate.
   const centre = (left + right) / 2;
@@ -139,7 +138,7 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   const columnWidth = Math.max(40, qrLeft - left - 8);
 
   // Masthead: shop name (bold), then the tagline in brackets, both centred.
-  const company = fitToWidth(BUSINESS.name, L.companySize, true, CONTENT_W_DOTS);
+  const company = fitToWidth(BUSINESS.name, L.companySize, true, geometry.contentWDots);
   texts.push({
     text: company.text,
     x: centre,
@@ -152,7 +151,7 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
     `(${BUSINESS.tagline})`,
     L.taglineSize,
     false,
-    CONTENT_W_DOTS
+    geometry.contentWDots
   );
   texts.push({
     text: tagline.text,
@@ -229,8 +228,8 @@ export function buildLabelPlan(fields: LabelPlanFields): LabelPlan {
   });
 
   return {
-    widthDots: LABEL_W_DOTS,
-    heightDots: LABEL_H_DOTS,
+    widthDots: geometry.labelWDots,
+    heightDots: geometry.labelHDots,
     texts,
     bars: qr.bars.map((bar) => ({
       x: qrLeft + bar.x,
@@ -275,13 +274,13 @@ const TEST_BORDER_DOTS = 2;
  * against something of known size in the same photograph. Ticks are 1 mm, with
  * a long tick and a number every 5 mm.
  */
-export function buildTestLabelPlan(): LabelPlan {
-  const plan = buildLabelPlan(TEST_LABEL_FIELDS);
+export function buildTestLabelPlan(geometry: LabelGeometry = P58D_GEOMETRY): LabelPlan {
+  const plan = buildLabelPlan(TEST_LABEL_FIELDS, geometry);
   const t = TEST_BORDER_DOTS;
-  const x = PRINT_X_DOTS;
-  const w = PRINT_W_DOTS;
-  const top = PRINT_BAND_TOP_DOTS;
-  const h = PRINT_BAND_H_DOTS;
+  const x = geometry.printXDots;
+  const w = geometry.printWDots;
+  const top = geometry.printBandTopDots;
+  const h = geometry.printBandHDots;
 
   const bars: LabelBarSpec[] = [
     ...plan.bars,
@@ -292,8 +291,9 @@ export function buildTestLabelPlan(): LabelPlan {
   ];
 
   const texts: LabelTextSpec[] = [...plan.texts];
-  for (let mm = 0; mm * DOTS_PER_MM <= h; mm++) {
-    const y = top + mm * DOTS_PER_MM;
+  const dotsPerMm = geometry.dotsPerMm;
+  for (let mm = 0; mm * dotsPerMm <= h; mm++) {
+    const y = top + mm * dotsPerMm;
     const major = mm % 5 === 0;
     bars.push({ x: x + t, y, width: major ? 12 : 6, height: 1 });
     if (major && mm > 0) {

@@ -15,6 +15,12 @@ import {
   resolveTransport,
 } from "@/lib/thermal-usb-print";
 import { presentDotsFromMm } from "@/lib/escpos-print";
+import { printTestLabelViaTspl } from "@/lib/tspl-print";
+import {
+  getPrinterLanguage,
+  setPrinterLanguage,
+  type PrinterLanguage,
+} from "@/lib/printer-language";
 
 export function SettingsForm({ settings }: { settings: AppSettings }) {
   const router = useRouter();
@@ -206,6 +212,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
                 same feed.
               </p>
               <TestLabelButton />
+              <PrinterLanguageToggle />
             </div>
           </div>
 
@@ -323,10 +330,6 @@ function TestLabelButton() {
     setBusy(true);
     setNote("");
     try {
-      const mm = (document.querySelector('input[name="labelTearOffMm"]') as
-        | HTMLInputElement
-        | null)?.value;
-      const presentDots = presentDotsFromMm(mm);
       if (!isUsbPrintSupported() && !isSerialPrintSupported()) {
         throw new Error("Needs Google Chrome or Edge on a computer with the printer attached.");
       }
@@ -334,7 +337,15 @@ function TestLabelButton() {
       // browser supports it is what made Bluetooth unreachable on Windows.
       const transport =
         (await resolveTransport()) ?? (isUsbPrintSupported() ? "usb" : "bluetooth");
-      await printTestLabelVia(transport, { presentDots });
+      if (getPrinterLanguage() === "tspl") {
+        await printTestLabelViaTspl(transport);
+      } else {
+        const mm = (document.querySelector('input[name="labelTearOffMm"]') as
+          | HTMLInputElement
+          | null)?.value;
+        const presentDots = presentDotsFromMm(mm);
+        await printTestLabelVia(transport, { presentDots });
+      }
       setNote(`Sent over ${transport === "usb" ? "USB" : "Bluetooth"}.`);
     } catch (error) {
       if (error instanceof DOMException && error.name === "NotFoundError") return;
@@ -350,6 +361,54 @@ function TestLabelButton() {
         {busy ? "Printing…" : "Print test label"}
       </Button>
       {note && <span className="text-xs text-slate-500">{note}</span>}
+    </div>
+  );
+}
+
+/**
+ * Which command language this machine's label printer speaks. Lives in
+ * browser storage, not the saved settings form above — see
+ * lib/printer-language.ts for why (it describes hardware plugged into
+ * this computer, not a shop-wide setting).
+ */
+function PrinterLanguageToggle() {
+  // getPrinterLanguage() already falls back to "escpos" on any localStorage
+  // access failure (private windows, SSR), so it's safe to call directly as
+  // the lazy initial state rather than in an effect after mount.
+  const [language, setLanguageState] = useState<PrinterLanguage>(getPrinterLanguage);
+
+  function choose(next: PrinterLanguage) {
+    setPrinterLanguage(next);
+    setLanguageState(next);
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <Label>Label printer on this computer</Label>
+      <div className="mt-1.5 flex gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant={language === "escpos" ? "default" : "outline"}
+          onClick={() => choose("escpos")}
+        >
+          POSiFLOW P58D (ESC/POS)
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={language === "tspl" ? "default" : "outline"}
+          onClick={() => choose("tspl")}
+        >
+          TSPL printer (50 × 25 mm)
+        </Button>
+      </div>
+      <p className="mt-1.5 text-xs text-slate-500">
+        Only affects this computer/browser. A TSPL printer calibrates its
+        own gap sensor from its media size, so it needs none of the P58D&apos;s
+        hand-tuned print position — pick it once here and the print
+        button on the Products page uses it automatically.
+      </p>
     </div>
   );
 }

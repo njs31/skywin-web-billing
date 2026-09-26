@@ -243,3 +243,93 @@ export const THERMAL_LABEL_H_MM = LABEL_H_MM;
 export const THERMAL_LABEL_W_PX = LABEL_W_DOTS;
 export const THERMAL_LABEL_H_PX = LABEL_H_DOTS;
 export const mmToPx = mmToDots;
+
+/**
+ * Everything buildLabelPlan needs to lay a label out, bundled so a second
+ * printer with different media is a second geometry object, not a second
+ * copy of the layout logic. P58D_GEOMETRY below is the P58D config above,
+ * repackaged with no numbers changed — every existing caller keeps working
+ * unmodified, since buildLabelPlan defaults to it.
+ */
+export type LabelGeometry = {
+  dotsPerMm: number;
+  labelWDots: number;
+  labelHDots: number;
+  /** Left inset + width of the raster actually sent to the head. */
+  printXDots: number;
+  printWDots: number;
+  /** The vertical band, in sticker coordinates, the plan's ink must stay
+   *  inside — see PRINT_BAND_TOP_DOTS/PRINT_BAND_H_DOTS above. */
+  printBandTopDots: number;
+  printBandHDots: number;
+  /** Where the text/QR column sits inside printWDots. */
+  contentXDots: number;
+  contentWDots: number;
+  layout: typeof LABEL_LAYOUT;
+};
+
+export const P58D_GEOMETRY: LabelGeometry = {
+  dotsPerMm: DOTS_PER_MM,
+  labelWDots: LABEL_W_DOTS,
+  labelHDots: LABEL_H_DOTS,
+  printXDots: PRINT_X_DOTS,
+  printWDots: PRINT_W_DOTS,
+  printBandTopDots: PRINT_BAND_TOP_DOTS,
+  printBandHDots: PRINT_BAND_H_DOTS,
+  contentXDots: CONTENT_X_DOTS,
+  contentWDots: CONTENT_W_DOTS,
+  layout: LABEL_LAYOUT,
+};
+
+/**
+ * A genuine TSPL printer, 50 × 25 mm die-cut stock — bought specifically to
+ * replace the P58D's undocumented ESC/POS clone firmware with one that
+ * speaks a real, documented protocol. See lib/tspl-print.ts for why that
+ * matters: TSPL printers accept `SIZE`/`GAP` and calibrate their own gap
+ * sensor against them, so none of the P58D's hand-tuned "unknown head
+ * offset" workarounds apply here — this geometry is a straightforward
+ * media description, not a guess.
+ *
+ * 203 DPI (8 dots/mm) assumed as the common default for this printer
+ * class — confirm against the actual model's spec sheet once bought, and
+ * correct TSPL_DOTS_PER_MM if it's a 300 DPI unit instead.
+ *
+ * Margins are deliberately plain (a uniform inset, not an asymmetric
+ * "head prints left of centre" fudge like the P58D needed) because a
+ * calibrated TSPL printer centres correctly on its own — there's nothing
+ * here to compensate for. The content baselines are the exact P58D ones:
+ * the reachable width comes out identical (384 dots either way, since
+ * both are 50 mm wide with a 1 mm margin at 8 dots/mm) and the band is
+ * slightly shorter (168 vs 176 dots) but the P58D layout already proved
+ * it fits in less room than that (it shipped on 24.5 mm stock, a 200-dot
+ * label, with the same band) — so reusing those numbers outright is reuse
+ * of something already exercised, not a new guess.
+ */
+export const TSPL_LABEL_W_MM = 50;
+export const TSPL_LABEL_H_MM = 25;
+export const TSPL_DOTS_PER_MM = 8;
+export const TSPL_LABEL_W_DOTS = TSPL_LABEL_W_MM * TSPL_DOTS_PER_MM; // 400
+export const TSPL_LABEL_H_DOTS = TSPL_LABEL_H_MM * TSPL_DOTS_PER_MM; // 200
+
+/** Gap between die-cut stickers, in mm — for the `GAP` command. TSPL
+ *  calibrates its sensor against this plus a live sensor reading, so an
+ *  approximate value here is far less risky than the P58D's LABEL_GAP_MM:
+ *  worst case, run the printer's own self-test/calibration (see
+ *  tspl-print.ts) if labels drift, rather than re-deriving this by hand. */
+export const TSPL_GAP_MM = 2;
+
+const TSPL_PRINT_X_DOTS = 8; // 1 mm each side, symmetric
+const TSPL_PRINT_TOP_OFFSET_DOTS = 16; // 2 mm
+
+export const TSPL_GEOMETRY: LabelGeometry = {
+  dotsPerMm: TSPL_DOTS_PER_MM,
+  labelWDots: TSPL_LABEL_W_DOTS,
+  labelHDots: TSPL_LABEL_H_DOTS,
+  printXDots: TSPL_PRINT_X_DOTS,
+  printWDots: TSPL_LABEL_W_DOTS - TSPL_PRINT_X_DOTS * 2, // 384
+  printBandTopDots: TSPL_PRINT_TOP_OFFSET_DOTS,
+  printBandHDots: PRINT_BAND_H_DOTS, // 160 — the same, already-proven band
+  contentXDots: CONTENT_X_DOTS,
+  contentWDots: CONTENT_W_DOTS,
+  layout: LABEL_LAYOUT,
+};

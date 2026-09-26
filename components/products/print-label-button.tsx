@@ -12,6 +12,8 @@ import {
   resolveTransport,
   type Transport,
 } from "@/lib/thermal-usb-print";
+import { printLabelViaTspl } from "@/lib/tspl-print";
+import { getPrinterLanguage } from "@/lib/printer-language";
 
 /**
  * Print one product's label straight from the products table.
@@ -134,7 +136,14 @@ export function PrintLabelButton({
     setBusy(true);
     const count = Math.max(1, Math.round(parseFloat(qty)) || 1);
     try {
-      await printCopiesVia(transport, product, count, { presentDots });
+      if (getPrinterLanguage() === "tspl") {
+        // One TSPL job, the printer's own PRINT 1,N repeat — see
+        // tspl-print.ts for why this needs none of the P58D's per-copy
+        // pacing/looping at all.
+        await printLabelViaTspl(transport, product, count);
+      } else {
+        await printCopiesVia(transport, product, count, { presentDots });
+      }
       setQtyPromptOpen(false);
     } catch (error) {
       // Dismissing the device chooser is a decision, not a failure.
