@@ -100,7 +100,12 @@ fn print_raw_blocking(printer_name: &str, bytes: &[u8]) -> Result<(), String> {
                 );
             }
 
-            StartPagePrinter(handle).map_err(|e| format!("StartPagePrinter failed: {e}"))?;
+            // StartPagePrinter/WritePrinter return a raw BOOL, not a
+            // windows::core::Result like OpenPrinterW/StartDocPrinterW do
+            // — `.ok()` converts it to one (via GetLastError on failure).
+            StartPagePrinter(handle)
+                .ok()
+                .map_err(|e| format!("StartPagePrinter failed: {e}"))?;
 
             let mut written: u32 = 0;
             let write_result = WritePrinter(
@@ -115,7 +120,7 @@ fn print_raw_blocking(printer_name: &str, bytes: &[u8]) -> Result<(), String> {
             let _ = EndPagePrinter(handle);
             let _ = EndDocPrinter(handle);
 
-            write_result.map_err(|e| format!("WritePrinter failed: {e}"))?;
+            write_result.ok().map_err(|e| format!("WritePrinter failed: {e}"))?;
             if written as usize != bytes.len() {
                 return Err(format!(
                     "Only {written} of {} bytes reached the printer — the job likely \
