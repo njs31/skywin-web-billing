@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skywin Labels</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Skywin Labels</h1>
+      <button id="settings-toggle" class="ghost" type="button">Settings</button>
+    </header>
+
+    <section id="settings-panel" class="panel hidden">
+      <div class="field">
+        <label for="server-url">Server address</label>
+        <input id="server-url" type="text" placeholder="https://skywin.qwicksapp.com" />
+      </div>
+      <div class="field">
+        <label for="api-key">Label printer API key</label>
+        <input id="api-key" type="text" placeholder="from the web app's Settings page" />
+      </div>
+      <div class="field">
+        <label for="printer-share">Printer share name</label>
+        <input id="printer-share" type="text" placeholder="e.g. TSC" />
+        <p class="hint">
+          The name given under the printer's own Properties &rarr; Sharing &rarr;
+          "Share this printer" &mdash; not its display name in the printer list.
+        </p>
+      </div>
+      <div class="row">
+        <button id="save-settings" type="button">Save</button>
+        <button id="test-print" class="secondary" type="button">Test print</button>
+        <span id="settings-status" class="status"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <input id="search" type="text" placeholder="Search product, SKU, or barcode…" autofocus />
+      </div>
+      <table id="products-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Code</th>
+            <th class="num">MRP</th>
+            <th class="num">Stock</th>
+            <th>Expiry</th>
+            <th class="num">Qty</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="products-body"></tbody>
+      </table>
+      <p id="empty-state" class="hint hidden">No products found.</p>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -10,7 +10,7 @@ import { and, asc, eq, ilike, or } from "drizzle-orm";
 import { db } from "@/db";
 import { products } from "@/db/schema";
 import { verifyLabelApiKey } from "@/lib/api-auth";
-import { inclusiveRate, productCode } from "@/lib/label-svg";
+import { formatExpiry, inclusiveRate, productCode } from "@/lib/label-svg";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
       saleRate: products.saleRate,
       gstRate: products.gstRate,
       stockQty: products.stockQty,
+      expiryDate: products.expiryDate,
     })
     .from(products)
     .where(
@@ -64,6 +65,7 @@ export async function GET(req: NextRequest) {
         code: productCode(row),
         mrp: inclusiveRate(row.saleRate, row.gstRate).toFixed(2),
         stock: row.stockQty,
+        expiry: formatExpiry(row.expiryDate),
       })),
     },
     { headers: { "Cache-Control": "no-store" } }

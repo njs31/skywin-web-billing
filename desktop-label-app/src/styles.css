@@ -1,0 +1,174 @@
+:root {
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  color: #1a1a1a;
+  background: #f7f7f8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 16px 20px 40px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e2e2e5;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.field {
+  margin-bottom: 10px;
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 4px;
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.hint {
+  font-size: 11px;
+  color: #777;
+  margin: 4px 0 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+button {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid #2f6f4f;
+  background: #2f6f4f;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #fff;
+  color: #2f6f4f;
+}
+
+button.ghost {
+  background: transparent;
+  color: #444;
+  border-color: #ccc;
+}
+
+button.small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+}
+
+th {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #888;
+  letter-spacing: 0.03em;
+}
+
+.num {
+  text-align: right;
+}
+
+td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.qty-input {
+  width: 52px;
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  text-align: right;
+}
+
+.status {
+  font-size: 12px;
+  color: #666;
+}
+
+.status.error {
+  color: #b3261e;
+}
+
+.status.ok {
+  color: #2f6f4f;
+}
+
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1a1a;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  max-width: 480px;
+  white-space: pre-wrap;
+}
+
+.toast.error {
+  background: #b3261e;
+}
+
+.toast.ok {
+  background: #2f6f4f;
+}
