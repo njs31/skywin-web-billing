@@ -1,8 +1,15 @@
 "use server";
 
 /**
- * Server actions for syncing sales to Zoho Books and pushing e-Invoice /
- * e-Way Bill for them. See lib/zoho/* for the API layer this wires up.
+ * Server actions for e-Invoice (IRN) / e-Way Bill generation.
+ *
+ * The Zoho Books-mediated GSP integration that used to back these was
+ * removed outright (not phased out) in favor of a direct whitebooks.in
+ * integration — see the "remove Zoho, move to whitebooks.in" work. That
+ * replacement isn't built yet: every generation path below is a clear,
+ * deliberate stub until it is, rather than left silently broken by a
+ * missing import. `updateDispatchDetails` is untouched — it only ever
+ * wrote to this app's own `sales` row, no GSP involved.
  */
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -11,52 +18,32 @@ import { getSaleById } from "@/lib/queries/sales";
 import { EINVOICE_REPORTING_WINDOW_DAYS } from "@/lib/queries/einvoice";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { isValidGstin } from "@/lib/gst";
-import { BUSINESS } from "@/lib/business";
-import { zohoStateCode } from "@/lib/zoho/gst";
-import {
-  upsertInvoice,
-  toSyncInputs,
-  ensureContact,
-  refreshInvoiceAddresses,
-} from "@/lib/zoho/sync";
-import {
-  pushEInvoice,
-  cancelEInvoice,
-  einvoiceUpdateFields,
-  getEinvoiceStatus,
-} from "@/lib/zoho/einvoice";
-import {
-  generateEwayBill,
-  cancelEwayBill,
-  getEwayBillStatus,
-  type DispatchDetails,
-} from "@/lib/zoho/eway";
+
+const NOT_CONFIGURED =
+  "e-Invoice/e-Way Bill generation is being moved to whitebooks.in and " +
+  "isn't wired up yet. Nothing was sent anywhere.";
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
-/**
- * Any active sale with a customer on file — GSTIN not required. This is
- * as far as "sync to Zoho" needs to go: an e-way bill applies to goods
- * movement regardless of the buyer's GST registration, so the underlying
- * Zoho invoice has to exist for an unregistered customer too. Only
- * e-Invoicing itself (loadActiveB2bSale, below) is legally gated by GSTIN.
- */
+
+/** Any active sale with a customer on file — GSTIN not required, since an
+ *  e-way bill applies to goods movement regardless of the buyer's GST
+ *  registration. Only e-Invoicing itself (loadActiveB2bSale) is legally
+ *  gated by GSTIN. */
 async function loadActiveSale(saleId: number): Promise<LoadedSale> {
   const sale = await getSaleById(saleId);
   if (!sale) throw new Error("Sale not found.");
   if (sale.status !== "active") {
-    throw new Error(`${sale.invoiceNo} is ${sale.status}, not active — can't sync.`);
+    throw new Error(`${sale.invoiceNo} is ${sale.status}, not active — can't generate.`);
   }
   if (!sale.customerId) {
-    throw new Error(`${sale.invoiceNo} has no customer on file — can't sync to Zoho.`);
+    throw new Error(`${sale.invoiceNo} has no customer on file.`);
   }
   return sale;
 }
 
-/**
- * Active sale to a GST-registered customer — the actual legal boundary
- * for e-Invoicing (B2B/export only; a placeholder like "URP" for an
- * unregistered customer doesn't count, however real their purchase was).
- */
+/** Active sale to a GST-registered customer — the actual legal boundary
+ *  for e-Invoicing (B2B/export only; a placeholder like "URP" for an
+ *  unregistered customer doesn't count, however real their purchase was). */
 async function loadActiveB2bSale(saleId: number): Promise<LoadedSale> {
   const sale = await loadActiveSale(saleId);
   if (!isValidGstin(sale.customerGstin)) {
@@ -68,45 +55,13 @@ async function loadActiveB2bSale(saleId: number): Promise<LoadedSale> {
   return sale;
 }
 
-/** Pushes a sale to Zoho Books as an invoice, if it isn't there already.
- *  Works for any customer, registered or not — see loadActiveSale. */
-export async function syncSaleToZoho(saleId: number) {
-  await requireNonDealer();
-  const sale = await loadActiveSale(saleId);
-
-  if (sale.zohoInvoiceId) {
-    return { zohoInvoiceId: sale.zohoInvoiceId, alreadySynced: true as const };
-  }
-
-  const { syncSale, customer, items } = toSyncInputs(sale);
-  try {
-    const result = await upsertInvoice({ sale: syncSale, items, customer });
-    await db
-      .update(sales)
-      .set({
-        zohoInvoiceId: result.zohoInvoiceId,
-        zohoContactId: result.zohoContactId,
-        zohoSyncError: null,
-      })
-      .where(eq(sales.id, saleId));
-    return { ...result, alreadySynced: false as const };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await db
-      .update(sales)
-      .set({ zohoSyncError: message })
-      .where(eq(sales.id, saleId));
-    throw err;
-  }
-}
-
 function withinReportingWindow(date: Date): boolean {
   const ageMs = Date.now() - date.getTime();
   return ageMs <= EINVOICE_REPORTING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 }
 
-/** Syncs (if needed) then pushes the e-Invoice/IRN for one sale. */
-export async function generateIrn(saleId: number) {
+/** Generates the e-Invoice/IRN for one sale. STUB — see file header. */
+export async function generateIrn(saleId: number): Promise<never> {
   await requireNonDealer();
   const sale = await loadActiveB2bSale(saleId);
 
@@ -119,226 +74,47 @@ export async function generateIrn(saleId: number) {
     );
   }
 
-  let zohoInvoiceId = sale.zohoInvoiceId;
-  if (!zohoInvoiceId) {
-    const synced = await syncSaleToZoho(saleId);
-    zohoInvoiceId = synced.zohoInvoiceId;
-  }
-
-  try {
-    if (sale.zohoInvoiceId) {
-      // Invoice already existed from an earlier sync — but ensureContact's
-      // refresh-on-every-call behavior only runs when ensureContact itself
-      // is called, which an already-synced invoice otherwise skips.
-      // Without this, a contact created before a data fix (e.g. an
-      // address that used to be too long for Zoho) stays stale forever,
-      // and every push keeps failing on the same already-fixed-on-our-side
-      // problem. Confirmed as a real, live case, not theoretical.
-      const { customer } = toSyncInputs(sale);
-      await ensureContact(customer);
-      // The contact refresh above is not enough on its own: an invoice
-      // carries its own frozen copy of Bill-To/Ship-To, and Zoho never
-      // re-derives it from the contact. See refreshInvoiceAddresses.
-      await refreshInvoiceAddresses(zohoInvoiceId!, customer);
-    }
-    const pushed = await pushEInvoice(zohoInvoiceId!);
-    await db
-      .update(sales)
-      .set(einvoiceUpdateFields(pushed))
-      .where(eq(sales.id, saleId));
-    return pushed;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await db
-      .update(sales)
-      .set({ einvoiceStatus: "failed", einvoiceError: message })
-      .where(eq(sales.id, saleId));
-    throw err;
-  }
+  throw new Error(NOT_CONFIGURED);
 }
 
-/** Cancels a pushed e-Invoice. Only legal within 24h of the IRN — Zoho/the
- *  IRP itself enforces that window; this doesn't re-check it client-side. */
-export async function cancelIrn(saleId: number, reason: string) {
+/** Cancels a pushed e-Invoice. STUB — see file header. */
+export async function cancelIrn(_saleId: number, _reason: string): Promise<never> {
   await requireNonDealer();
-  const sale = await getSaleById(saleId);
-  if (!sale) throw new Error("Sale not found.");
-  if (!sale.zohoInvoiceId || !sale.irn) {
-    throw new Error(`${sale.invoiceNo} has no IRN to cancel.`);
-  }
-
-  await cancelEInvoice(sale.zohoInvoiceId, reason);
-  await db
-    .update(sales)
-    .set({ einvoiceStatus: "cancelled" })
-    .where(eq(sales.id, saleId));
+  throw new Error(NOT_CONFIGURED);
 }
 
-/**
- * Syncs (if needed) then generates the e-Way Bill shell for one sale.
- *
- * `dispatch` is optional — any field left out falls back to what's already
- * stored on the sale (vehicle no. / transporter name / GSTIN / distance
- * captured at billing time, when the operator filled those in because the
- * bill crossed the e-way threshold). This is what makes the one-click path
- * possible: when billing already captured everything, the e-Way Bill page
- * can call this with no `dispatch` at all.
- */
+/** Generates the e-Way Bill for one sale. STUB — see file header. */
 export async function generateEwb(
   saleId: number,
-  dispatch: DispatchDetails = {}
-) {
+  _dispatch: DispatchDetails = {}
+): Promise<never> {
   await requireNonDealer();
-  // Deliberately loadActiveSale, not loadActiveB2bSale — an e-way bill
-  // applies to goods movement above the value threshold regardless of
-  // whether the buyer is GST-registered (see requiresEwayBill/lib/gst.ts).
-  const sale = await loadActiveSale(saleId);
-
-  // Zoho's e-Way Bill UI shows this as a required "Place of Delivery"
-  // field that's NOT auto-filled from the invoice when the contact has
-  // no separate shipping address — confirmed as a real, live cause of a
-  // silent government-side rejection. Derived the same way place of
-  // supply already is: from the customer's own GSTIN when registered,
-  // falling back to our own business's state for an unregistered
-  // customer (consistent with the intrastate assumption isInterstateGst
-  // already makes when there's no GSTIN to read a state from).
-  const placeOfDeliveryStateCode = isValidGstin(sale.customerGstin)
-    ? zohoStateCode(sale.customerGstin)
-    : zohoStateCode(BUSINESS.stateCode);
-
-  const resolved: DispatchDetails = {
-    vehicleNumber: dispatch.vehicleNumber ?? sale.vehicleNo ?? undefined,
-    transporterName: dispatch.transporterName ?? sale.transporterName ?? undefined,
-    transporterGstin: dispatch.transporterGstin ?? sale.transporterGstin ?? undefined,
-    distanceKm:
-      dispatch.distanceKm ??
-      (sale.distanceKm != null ? Number(sale.distanceKm) : undefined),
-    transportMode: dispatch.transportMode,
-    placeOfDeliveryStateCode,
-  };
-
-  // Persist whatever was entered before attempting the push — otherwise a
-  // failed push (Zoho down, IRN not yet generated, etc.) would silently
-  // discard details someone just typed in to fix a "missing" invoice.
-  await db
-    .update(sales)
-    .set({
-      vehicleNo: resolved.vehicleNumber ?? null,
-      transporterName: resolved.transporterName ?? null,
-      transporterGstin: resolved.transporterGstin ?? null,
-      transportMode: resolved.transportMode ?? null,
-      distanceKm: resolved.distanceKm != null ? String(resolved.distanceKm) : null,
-    })
-    .where(eq(sales.id, saleId));
-
-  let zohoInvoiceId = sale.zohoInvoiceId;
-  if (!zohoInvoiceId) {
-    const synced = await syncSaleToZoho(saleId);
-    zohoInvoiceId = synced.zohoInvoiceId;
-  }
-
-  let ewb: Awaited<ReturnType<typeof generateEwayBill>>;
-  try {
-    if (sale.zohoInvoiceId) {
-      // Same reasoning as generateIrn: refresh the contact *and* the
-      // invoice's own frozen address copy, so a data fix made after the
-      // invoice was first synced (e.g. a too-long address) actually
-      // reaches Zoho instead of the push repeating the same
-      // already-fixed-on-our-side failure forever.
-      const { customer } = toSyncInputs(sale);
-      await ensureContact(customer);
-      await refreshInvoiceAddresses(zohoInvoiceId!, customer);
-    }
-    ewb = await generateEwayBill(zohoInvoiceId!, resolved);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await db
-      .update(sales)
-      .set({ ewbStatus: "failed", ewbError: message })
-      .where(eq(sales.id, saleId));
-    throw err;
-  }
-
-  // Prefer Zoho's own generation timestamp; fall back to "now" if it's
-  // missing or doesn't parse — a real e-way bill was still just created
-  // either way, so the cancel-window countdown needs some start point.
-  const parsedGeneratedAt = ewb.ewaybill_date ? new Date(ewb.ewaybill_date) : null;
-  const generatedAt =
-    parsedGeneratedAt && !Number.isNaN(parsedGeneratedAt.getTime())
-      ? parsedGeneratedAt
-      : new Date();
-  // Confirmed a real, silent failure mode: Zoho's POST succeeds (HTTP 200,
-  // a shell record created) even when the actual government submission is
-  // rejected — the only signal is this flag, with no error text anywhere
-  // in the response. Treating it as "pending" with no explanation left
-  // the UI showing nothing had gone wrong when it plainly had. Handled
-  // outside the try/catch above (not a thrown exception from the API
-  // call) so there's exactly one DB write and one plain Error thrown for
-  // this case, not two — a custom Error subclass thrown across the
-  // Server Action boundary here previously didn't survive Next.js's
-  // serialization back to the client and surfaced as an opaque generic
-  // message instead of this one.
-  const vehicleDetailsPushFailed = ewb.is_vehicle_details_push_failed === true;
-  const ewbStatus = ewb.ewaybill_number
-    ? "generated"
-    : vehicleDetailsPushFailed
-      ? "failed"
-      : "pending";
-  const ewbError = vehicleDetailsPushFailed
-    ? "Zoho created the e-way bill locally but the government submission " +
-      "failed (Zoho gives no specific reason via the API for this one — " +
-      "check this e-way bill directly in Zoho Books for a fuller message)."
-    : null;
-  await db
-    .update(sales)
-    .set({
-      ewbStatus,
-      ewbId: ewb.ewaybill_id || null,
-      ewbNo: ewb.ewaybill_number || null,
-      ewbGeneratedAt: ewb.ewaybill_number ? generatedAt : null,
-      ewbValidUntil: ewb.ewaybill_expiry_date ? new Date(ewb.ewaybill_expiry_date) : null,
-      ewbRaw: JSON.stringify(ewb),
-      ewbError,
-    })
-    .where(eq(sales.id, saleId));
-
-  // Deliberately not thrown: this is a known, already-recorded outcome,
-  // not an exception. Next.js redacts a thrown Server Action error's
-  // message in production regardless of what's thrown (confirmed — see
-  // this function's earlier revision, and generateIrn's genuine
-  // exceptions have the same exposure), so the caller refreshing the
-  // page and reading the persisted ewbStatus/ewbError back is the
-  // reliable channel, not an inline exception message.
-  return ewb;
+  await loadActiveSale(saleId);
+  throw new Error(NOT_CONFIGURED);
 }
 
-/**
- * Cancels a generated e-way bill. Only legal within the government's
- * cancellation window (24h from generation, and only if not yet verified
- * by an officer in transit) — Zoho/the IRP itself enforces that, not this.
- * UNVERIFIED request shape (see lib/zoho/eway.ts's cancelEwayBill) —
- * confirm against a real e-way bill before relying on this.
- */
-export async function cancelEwb(saleId: number, reason: string) {
+/** Cancels a generated e-Way Bill. STUB — see file header. */
+export async function cancelEwb(_saleId: number, _reason: string): Promise<never> {
   await requireNonDealer();
-  const sale = await getSaleById(saleId);
-  if (!sale) throw new Error("Sale not found.");
-  if (!sale.ewbId || !sale.ewbNo) {
-    throw new Error(`${sale.invoiceNo} has no e-way bill to cancel.`);
-  }
-
-  await cancelEwayBill(sale.ewbId, reason);
-  await db
-    .update(sales)
-    .set({ ewbStatus: "cancelled" })
-    .where(eq(sales.id, saleId));
+  throw new Error(NOT_CONFIGURED);
 }
 
+export type DispatchDetails = {
+  vehicleNumber?: string;
+  transporterName?: string;
+  /** GSTIN of the transporter, if they're GST-registered. */
+  transporterGstin?: string;
+  /** km, approximate. */
+  distanceKm?: number;
+  /** "road" | "rail" | "air" | "ship". */
+  transportMode?: string;
+};
+
 /**
- * Saves dispatch details on a sale WITHOUT attempting to push an e-way
- * bill — for fixing a "missing details" invoice ahead of time, separately
- * from actually pushing it. Narrowly scoped: only touches these four
- * fields, never items, amounts, or anything already reported to Zoho/IRP.
+ * Saves dispatch details on a sale WITHOUT attempting to generate an
+ * e-way bill — for fixing a "missing details" invoice ahead of time. Only
+ * touches these fields on skywin-bill's own `sales` row; no third party
+ * involved, so this keeps working regardless of the stubs above.
  */
 export async function updateDispatchDetails(
   saleId: number,
@@ -355,52 +131,4 @@ export async function updateDispatchDetails(
       distanceKm: dispatch.distanceKm != null ? String(dispatch.distanceKm) : null,
     })
     .where(eq(sales.id, saleId));
-}
-
-/**
- * Pulls the current e-Invoice and e-Way Bill status from Zoho and saves
- * whatever's there — without pushing anything. For reconciling a case
- * our own push flow never sees: a real government e-way bill generated
- * by someone directly on the government portal (Mode: WEB) and then
- * associated to the invoice in Zoho via its own "Fetch From Portal", or
- * any other change made straight in Zoho's UI. Confirmed necessary from
- * a real, live case, not theoretical — see the "URP e-way bill" work.
- */
-export async function syncStatusFromZoho(saleId: number) {
-  await requireNonDealer();
-  const sale = await getSaleById(saleId);
-  if (!sale) throw new Error("Sale not found.");
-  if (!sale.zohoInvoiceId) {
-    throw new Error(`${sale.invoiceNo} hasn't been synced to Zoho yet — nothing to check.`);
-  }
-
-  const [einvoice, ewb] = await Promise.all([
-    getEinvoiceStatus(sale.zohoInvoiceId),
-    getEwayBillStatus(sale.zohoInvoiceId),
-  ]);
-
-  await db
-    .update(sales)
-    .set(einvoiceUpdateFields(einvoice))
-    .where(eq(sales.id, saleId));
-
-  if (ewb) {
-    await db
-      .update(sales)
-      .set({
-        ewbStatus: ewb.ewaybill_number ? "generated" : "pending",
-        ewbId: ewb.ewaybill_id || null,
-        ewbNo: ewb.ewaybill_number || null,
-        ewbGeneratedAt: ewb.ewaybill_date ? new Date(ewb.ewaybill_date) : null,
-        ewbValidUntil: ewb.ewaybill_expiry_date ? new Date(ewb.ewaybill_expiry_date) : null,
-        ewbRaw: JSON.stringify(ewb),
-        ewbError: null,
-      })
-      .where(eq(sales.id, saleId));
-  }
-
-  return {
-    einvoiceFound: Boolean(einvoice.irn),
-    ewbFound: Boolean(ewb?.ewaybill_number),
-  };
 }

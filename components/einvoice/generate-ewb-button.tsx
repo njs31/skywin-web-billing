@@ -41,8 +41,8 @@ export function GenerateEwbButton({
   distanceKm: prefilledDistanceKm,
 }: {
   saleId: number;
-  /** Zoho's internal ewaybill_id — needed to cancel; the e-way bill NUMBER
-   *  (ewbNo) is a different, government-facing value. */
+  /** The GSP's internal e-way bill id — needed to cancel; the e-way bill
+   *  NUMBER (ewbNo) is a different, government-facing value. */
   ewbId?: string | null;
   ewbNo: string | null;
   ewbStatus: string;
@@ -182,7 +182,7 @@ export function GenerateEwbButton({
               className="text-[10px] text-red-600 underline"
               onClick={() => setCancelling(true)}
               disabled={!ewbId}
-              title={!ewbId ? "No Zoho e-way bill id on file for this invoice" : undefined}
+              title={!ewbId ? "No e-way bill id on file for this invoice" : undefined}
             >
               {cancelHoursLeft != null
                 ? `Cancel (${cancelHoursLeft.toFixed(1)}h left)`

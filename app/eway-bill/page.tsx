@@ -12,7 +12,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { GenerateEwbButton } from "@/components/einvoice/generate-ewb-button";
-import { SyncFromZohoButton } from "@/components/einvoice/sync-from-zoho-button";
 
 export default async function EwayBillPage() {
   // Same candidate list as the e-Invoice page (it already carries ewb*
@@ -105,11 +104,6 @@ export default async function EwayBillPage() {
                           {row.ewbError}
                         </p>
                       )}
-                      {row.zohoSyncError && (
-                        <p className="max-w-[240px] text-[11px] text-red-600">
-                          Sync error: {row.zohoSyncError}
-                        </p>
-                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex flex-col items-end gap-1">
@@ -130,7 +124,6 @@ export default async function EwayBillPage() {
                           transporterName={row.transporterName}
                           distanceKm={row.distanceKm}
                         />
-                        {row.zohoInvoiceId && <SyncFromZohoButton saleId={row.id} />}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -186,7 +179,6 @@ export default async function EwayBillPage() {
                           transporterName={row.transporterName}
                           distanceKm={row.distanceKm}
                         />
-                        {row.zohoInvoiceId && <SyncFromZohoButton saleId={row.id} />}
                       </div>
                     </TableCell>
                   </TableRow>

@@ -18,7 +18,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PushEinvoiceButton } from "@/components/einvoice/push-einvoice-button";
-import { SyncFromZohoButton } from "@/components/einvoice/sync-from-zoho-button";
 
 export default async function EinvoicePage() {
   const rows = await getEinvoiceCandidates();
@@ -37,9 +36,9 @@ export default async function EinvoicePage() {
         <div>
           <h1 className="text-2xl font-bold">e-Invoice</h1>
           <p className="text-sm text-slate-500">
-            Push B2B invoices to Zoho Books for a government IRN. Only active,
-            GST invoices from the last {EINVOICE_REPORTING_WINDOW_DAYS} days
-            are shown — the IRP won&apos;t accept anything older.
+            Push B2B invoices for a government IRN. Only active, GST invoices
+            from the last {EINVOICE_REPORTING_WINDOW_DAYS} days are shown —
+            the IRP won&apos;t accept anything older.
           </p>
         </div>
       </div>
@@ -97,11 +96,6 @@ export default async function EinvoicePage() {
                             {row.einvoiceError}
                           </p>
                         )}
-                        {row.zohoSyncError && (
-                          <p className="max-w-[240px] text-[11px] text-red-600">
-                            Sync error: {row.zohoSyncError}
-                          </p>
-                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex flex-col items-end gap-1">
@@ -120,7 +114,6 @@ export default async function EinvoicePage() {
                               ackDate={row.ackDate?.toISOString() ?? null}
                             />
                           )}
-                          {row.zohoInvoiceId && <SyncFromZohoButton saleId={row.id} />}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -168,7 +161,6 @@ export default async function EinvoicePage() {
                           einvoiceError={row.einvoiceError}
                           ackDate={row.ackDate?.toISOString() ?? null}
                         />
-                        {row.zohoInvoiceId && <SyncFromZohoButton saleId={row.id} />}
                       </div>
                     </TableCell>
                   </TableRow>

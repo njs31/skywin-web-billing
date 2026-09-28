@@ -33,11 +33,6 @@ export type EinvoiceRow = {
   customerAddress: string | null;
   customerDistrict: string | null;
   customerPinCode: string | null;
-  zohoInvoiceId: string | null;
-  /** Set when the initial Zoho invoice sync itself failed (auto or
-   *  manual) — distinct from einvoiceError/ewbError, which are about the
-   *  later IRN/e-way-bill push. */
-  zohoSyncError: string | null;
   einvoiceStatus: string;
   irn: string | null;
   ackDate: Date | null;
@@ -75,8 +70,6 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
       customerAddress: customers.address,
       customerDistrict: customers.district,
       customerPinCode: customers.pinCode,
-      zohoInvoiceId: sales.zohoInvoiceId,
-      zohoSyncError: sales.zohoSyncError,
       einvoiceStatus: sales.einvoiceStatus,
       irn: sales.irn,
       ackDate: sales.ackDate,

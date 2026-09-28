@@ -88,13 +88,6 @@ export const customers = pgTable(
       "0"
     ),
     createdAt: timestamp("created_at").defaultNow().notNull(),
-    /** Zoho Books contact id for this customer, cached once created as an
-     *  unregistered ("consumer") contact — a customer with no valid GSTIN
-     *  can't be found again by gst_no like a B2B contact can, so this is
-     *  what avoids creating a duplicate Zoho contact on every sync. Only
-     *  used for that path; a GST-registered customer's contact is still
-     *  looked up fresh by GSTIN each time (lib/zoho/sync.ts). */
-    zohoContactId: text("zoho_contact_id"),
   },
   (table) => ({
     gstinUnique: uniqueIndex("customers_gstin_unique").on(table.gstin),
@@ -275,17 +268,10 @@ export const sales = pgTable(
     cancelReason: text("cancel_reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
 
-    // --- Zoho Books sync + e-Invoice/e-Way Bill (all nullable: most sales
-    // are B2C and never touch this path; only GSTIN-bearing B2B sales do). ---
-    /** Zoho Books invoice id, once this sale has been synced there. */
-    zohoInvoiceId: text("zoho_invoice_id"),
-    /** Zoho Books contact id for the buyer, cached to skip a lookup per sync. */
-    zohoContactId: text("zoho_contact_id"),
-    /** Set when the initial Zoho invoice sync (auto, on checkout, or manual
-     *  retry) fails — distinct from einvoiceError/ewbError, which are about
-     *  the IRN/e-way-bill push, a separate later step. Cleared on the next
-     *  successful sync. */
-    zohoSyncError: text("zoho_sync_error"),
+    // --- e-Invoice/e-Way Bill (all nullable: most sales are B2C and never
+    // touch this path; only GSTIN-bearing B2B sales do). Written by a GSP
+    // integration (currently being moved from Zoho to whitebooks.in — see
+    // lib/actions/einvoice.ts). ---
     /** "none" | "pending" | "pushed" | "failed" | "cancelled". */
     einvoiceStatus: text("einvoice_status").default("none").notNull(),
     irn: text("irn"),
@@ -296,16 +282,15 @@ export const sales = pgTable(
     signedQr: text("signed_qr"),
     /** Verbatim IRP/NIC rejection message, for the Failed bucket. */
     einvoiceError: text("einvoice_error"),
-    /** The full `einvoice_details` object Zoho returns, as JSON text. Kept
-     *  verbatim because only `inv_ref_num` (→ `irn` above) is confirmed
-     *  against a real response as of this build; ack_no/ack_date/the signed
-     *  QR field names are not yet verified against a real push. Once a real
-     *  push has been run, read this to confirm/add the missing typed columns. */
+    /** The full e-invoice response object from whichever GSP produced it,
+     *  as JSON text — kept verbatim as a debugging trail alongside the
+     *  typed columns above. */
     einvoiceRaw: text("einvoice_raw"),
     /** "none" | "pending" | "generated" | "failed" | "cancelled". */
     ewbStatus: text("ewb_status").default("none").notNull(),
-    /** Zoho's internal ewaybill_id — needed to cancel/extend via the API.
-     *  Distinct from ewbNo, the government-issued e-way bill number. */
+    /** The GSP's own internal e-way bill id, if it has one distinct from
+     *  the government-issued e-way bill number (ewbNo) — needed to
+     *  cancel/extend via that GSP's API. */
     ewbId: text("ewb_id"),
     ewbNo: text("ewb_no"),
     /** When the e-way bill was generated — distinct from ewbValidUntil
@@ -314,9 +299,9 @@ export const sales = pgTable(
     ewbGeneratedAt: timestamp("ewb_generated_at"),
     ewbValidUntil: timestamp("ewb_valid_until"),
     ewbError: text("ewb_error"),
-    /** Full e-way bill object Zoho returns (ewaybill_id, transporter/vehicle
-     *  fields, etc.) — confirmed against a real (test, deleted) response, but
-     *  kept verbatim since cancel/extend haven't been exercised yet. */
+    /** Full e-way bill response object from whichever GSP produced it, as
+     *  JSON text — kept verbatim as a debugging trail alongside the typed
+     *  columns above. */
     ewbRaw: text("ewb_raw"),
     /** Dispatch details entered when generating an e-way bill — distinct
      *  from `transporterName`/`vehicleNo` above, which are free-text print

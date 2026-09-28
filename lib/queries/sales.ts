@@ -21,7 +21,6 @@ import {
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR } from "@/lib/financial-year";
-import { scheduleZohoSync } from "@/lib/zoho/sync";
 import { format } from "date-fns";
 import { desc, asc, eq, ne, gte, lte, sql, and, inArray } from "drizzle-orm";
 
@@ -125,9 +124,6 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
       row.created_at instanceof Date
         ? row.created_at
         : new Date(String(row.created_at)),
-    zohoInvoiceId: (row.zoho_invoice_id as string | null) ?? null,
-    zohoContactId: (row.zoho_contact_id as string | null) ?? null,
-    zohoSyncError: (row.zoho_sync_error as string | null) ?? null,
     einvoiceStatus: (row.einvoice_status as string | null) ?? "none",
     irn: (row.irn as string | null) ?? null,
     ackNo: (row.ack_no as string | null) ?? null,
@@ -793,12 +789,6 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
   scheduleQwicksStockPush(productIds);
 
-  // Push new B2B sales (GSTIN customer) to Zoho Books in the background;
-  // a no-op for B2C sales, checked inside scheduleZohoSync itself.
-  if (data.customerId) {
-    scheduleZohoSync(sale.id);
-  }
-
   return sale;
 }
 
@@ -940,9 +930,6 @@ export async function getSaleById(id: number) {
       status: sales.status,
       cancelledAt: sales.cancelledAt,
       cancelReason: sales.cancelReason,
-      zohoInvoiceId: sales.zohoInvoiceId,
-      zohoContactId: sales.zohoContactId,
-      zohoSyncError: sales.zohoSyncError,
       einvoiceStatus: sales.einvoiceStatus,
       irn: sales.irn,
       ackNo: sales.ackNo,

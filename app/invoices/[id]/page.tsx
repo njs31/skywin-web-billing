@@ -61,7 +61,7 @@ export default async function InvoiceDetailPage({
     termsOfDelivery: settings.termsOfDelivery,
   };
 
-  // Once a real IRN exists, print the IRP-signed QR Zoho gives back
+  // Once a real IRN exists, print the IRP-signed QR the GSP gives back
   // instead of the self-drawn placeholder — the signed one is what the
   // government (and a scanning customer) actually recognizes. Not if the
   // IRN itself was cancelled, though — printing a cancelled e-invoice's
