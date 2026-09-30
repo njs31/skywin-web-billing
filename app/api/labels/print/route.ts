@@ -15,6 +15,7 @@ import { buildEscPosForProducts } from "@/lib/label-escpos-server";
 import { buildTsplForProducts } from "@/lib/label-tspl-server";
 import { presentDotsFromMm } from "@/lib/escpos-print";
 import { getSettings } from "@/lib/settings";
+import { logLabelPrint } from "@/lib/queries/label-prints";
 import { DOTS_PER_MM } from "@/lib/label-print-config";
 
 export const runtime = "nodejs";
@@ -102,6 +103,20 @@ export async function GET(req: NextRequest) {
           ordered.map((product) => ({ product, copies, feedDots })),
           { presentDots: presentDotsFromMm(settings.labelTearOffMm) }
         );
+
+  // The "labels printed today" count. Best-effort on purpose: the bytes
+  // are already built and the printer is waiting, so a logging failure
+  // must never turn into a failed print.
+  const labelCount = ordered.length * copies;
+  try {
+    await logLabelPrint({
+      productId: ordered.length === 1 ? ordered[0].id : null,
+      labelCount,
+      source: "api",
+    });
+  } catch (error) {
+    console.error("[labels/print] failed to record print:", error);
+  }
 
   return new Response(job as unknown as BodyInit, {
     headers: {

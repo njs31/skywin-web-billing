@@ -699,6 +699,28 @@ export const dealerMappings = pgTable("dealer_mappings", {
     .notNull(),
 });
 
+/**
+ * One row per label print job that actually fed stickers — the source of
+ * the "labels printed today" count on the Products page. Browser-direct
+ * prints (Products page button) log here via POST /api/labels/log; phone
+ * and desktop-app prints log from GET /api/labels/print itself. Test
+ * prints are deliberately never logged. productId is null for multi-
+ * product API jobs, where one request covers several products.
+ */
+export const labelPrints = pgTable(
+  "label_prints",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id").references(() => products.id),
+    labelCount: integer("label_count").notNull(),
+    source: text("source").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    createdAtIdx: index("label_prints_created_at_idx").on(table.createdAt),
+  })
+);
+
 export type Category = typeof categories.$inferSelect;
 export type Supplier = typeof suppliers.$inferSelect;
 export type Customer = typeof customers.$inferSelect;
@@ -715,3 +737,4 @@ export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type ReportingLine = typeof reportingLines.$inferSelect;
 export type DealerMapping = typeof dealerMappings.$inferSelect;
+export type LabelPrint = typeof labelPrints.$inferSelect;

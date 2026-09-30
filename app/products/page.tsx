@@ -13,6 +13,7 @@ import { presentDotsFromMm } from "@/lib/escpos-print";
 import { getSettings } from "@/lib/settings";
 import { ProductSearch } from "@/components/products/product-search";
 import { ProductExportButtons } from "@/components/products/product-export-buttons";
+import { getTodayLabelCount } from "@/lib/queries/label-prints";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -37,6 +38,7 @@ export default async function ProductsPage({
     getProducts(q, page, PAGE_SIZE, sort, dir),
     q ? Promise.resolve(0) : getProductCount(),
   ]);
+  const todayLabelCount = await getTodayLabelCount();
 
   // The printer's tear-off feed, for the per-row print button.
   const settings = await getSettings();
@@ -57,6 +59,11 @@ export default async function ProductsPage({
           <p className="text-sm text-slate-500">
             {total} products — edit sale rates and GST
             {!q && totalPages > 1 && ` (page ${page} of ${totalPages})`}
+          </p>
+          <p className="text-xs text-slate-400">
+            {todayLabelCount === 1
+              ? "1 label printed today"
+              : `${todayLabelCount} labels printed today`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

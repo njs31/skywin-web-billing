@@ -144,6 +144,17 @@ export function PrintLabelButton({
       } else {
         await printCopiesVia(transport, product, count, { presentDots });
       }
+      // Record the run for the "labels printed today" count. Best-effort:
+      // the stickers already fed, so a logging failure stays silent.
+      try {
+        await fetch("/api/labels/log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId: product.id, labelCount: count }),
+        });
+      } catch {
+        // Ignore — counted on the next print.
+      }
       setQtyPromptOpen(false);
     } catch (error) {
       // Dismissing the device chooser is a decision, not a failure.
