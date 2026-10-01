@@ -1,15 +1,13 @@
 "use server";
 
 /**
- * Server actions for e-Invoice (IRN) / e-Way Bill generation.
+ * Server actions for e-Invoice (IRN) / e-Way Bill generation via
+ * WhiteBooks, our GST Suvidha Provider.
  *
- * The Zoho Books-mediated GSP integration that used to back these was
- * removed outright (not phased out) in favor of a direct whitebooks.in
- * integration — see the "remove Zoho, move to whitebooks.in" work. That
- * replacement isn't built yet: every generation path below is a clear,
- * deliberate stub until it is, rather than left silently broken by a
- * missing import. `updateDispatchDetails` is untouched — it only ever
- * wrote to this app's own `sales` row, no GSP involved.
+ * Failures persist the IRP's own message onto the sale (einvoiceError /
+ * ewbError) before throwing, because Next.js redacts thrown Server Action
+ * errors in production — the row's status column is the reliable channel,
+ * not the caught message. See the push buttons in components/einvoice/.
  */
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -17,11 +15,22 @@ import { sales } from "@/db/schema";
 import { getSaleById } from "@/lib/queries/sales";
 import { EINVOICE_REPORTING_WINDOW_DAYS } from "@/lib/queries/einvoice";
 import { requireNonDealer } from "@/lib/actions/auth";
+import { getSettings } from "@/lib/settings";
 import { isValidGstin } from "@/lib/gst";
-
-const NOT_CONFIGURED =
-  "e-Invoice/e-Way Bill generation is being moved to whitebooks.in and " +
-  "isn't wired up yet. Nothing was sent anywhere.";
+import { getWhitebooksConfig } from "@/lib/whitebooks/config";
+import {
+  cancelEwb as wbCancelEwb,
+  cancelIrn as wbCancelIrn,
+  generateEwbByIrn as wbGenerateEwbByIrn,
+  generateIrn as wbGenerateIrn,
+  WhitebooksError,
+} from "@/lib/whitebooks/client";
+import {
+  buildIrnPayload,
+  type IrnDispatch,
+  type IrnSale,
+  type IrnSeller,
+} from "@/lib/whitebooks/irn-payload";
 
 type LoadedSale = NonNullable<Awaited<ReturnType<typeof getSaleById>>>;
 
@@ -60,8 +69,83 @@ function withinReportingWindow(date: Date): boolean {
   return ageMs <= EINVOICE_REPORTING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 }
 
-/** Generates the e-Invoice/IRN for one sale. STUB — see file header. */
-export async function generateIrn(saleId: number): Promise<never> {
+/** "YYYY-MM-DD HH:mm:ss" (IRP format) → Date. Forgiving, never throws. */
+function parseIrpDate(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const ms = new Date(value.trim().replace(" ", "T")).getTime();
+  return Number.isFinite(ms) ? new Date(ms) : null;
+}
+
+function whitebooksErrorMessage(error: unknown): string {
+  if (error instanceof WhitebooksError) return error.message;
+  if (error instanceof Error) return `WhiteBooks call failed: ${error.message}`;
+  return "WhiteBooks call failed with an unknown error.";
+}
+
+function toIrnSale(sale: LoadedSale): IrnSale {
+  return {
+    invoiceNo: sale.invoiceNo,
+    date: new Date(sale.date),
+    grandTotal: sale.grandTotal,
+    billDiscount: sale.discountAmount,
+    buyer: {
+      name: sale.customerRecordName ?? sale.customerName,
+      gstin: sale.customerGstin,
+      address: sale.customerAddress,
+      pinCode: sale.customerPinCode,
+      phone: sale.customerPhone,
+      village: sale.customerVillage,
+      taluk: sale.customerTaluk,
+      district: sale.customerDistrict,
+    },
+    items: sale.items.map((it) => ({
+      name: it.customName?.trim() || it.productName || "Item",
+      hsnCode: it.hsnCode,
+      qty: it.qty,
+      rate: it.rate,
+      discountType: it.discountType,
+      discountValue: it.discountValue ?? it.discountPercent,
+      gstRate: it.gstRate,
+      unit: it.unit,
+      amount: it.amount,
+    })),
+  };
+}
+
+async function sellerFromSettings(): Promise<IrnSeller> {
+  const settings = await getSettings();
+  return {
+    gstin: settings.gstin,
+    name: settings.businessName,
+    address: settings.address,
+    phone: settings.phone,
+    email: settings.email,
+    stateCode: settings.stateCode,
+    locality: settings.businessLocality,
+    pin: settings.businessPin,
+  };
+}
+
+async function failIrn(
+  saleId: number,
+  invoiceNo: string,
+  error: unknown,
+  /** A failed *cancel* leaves the pushed IRN intact — only the error sticks. */
+  keepStatus: "failed" | "pushed" = "failed"
+): Promise<never> {
+  const message = whitebooksErrorMessage(error);
+  await db
+    .update(sales)
+    .set({ einvoiceStatus: keepStatus, einvoiceError: message.slice(0, 500) })
+    .where(eq(sales.id, saleId));
+  throw new Error(`${invoiceNo}: ${message}`);
+}
+
+/** Generates the e-Invoice/IRN for one sale via WhiteBooks. */
+export async function generateIrn(
+  saleId: number,
+  dispatch: IrnDispatch = null
+): Promise<{ irn: string; ackNo: string }> {
   await requireNonDealer();
   const sale = await loadActiveB2bSale(saleId);
 
@@ -74,29 +158,165 @@ export async function generateIrn(saleId: number): Promise<never> {
     );
   }
 
-  throw new Error(NOT_CONFIGURED);
+  const cfg = getWhitebooksConfig();
+  await db
+    .update(sales)
+    .set({ einvoiceStatus: "pending", einvoiceError: null })
+    .where(eq(sales.id, saleId));
+
+  try {
+    const payload = buildIrnPayload(
+      toIrnSale(sale),
+      await sellerFromSettings(),
+      dispatch
+    );
+    const data = await wbGenerateIrn(cfg, payload);
+    const irn = String(data.Irn ?? "");
+    if (!irn) throw new Error("IRP returned no IRN.");
+    const ackNo = String(data.AckNo ?? "");
+    await db
+      .update(sales)
+      .set({
+        einvoiceStatus: "pushed",
+        irn,
+        ackNo: ackNo || null,
+        ackDate: parseIrpDate(data.AckDt),
+        signedQr: typeof data.SignedQRCode === "string" ? data.SignedQRCode : null,
+        einvoiceError: null,
+        einvoiceRaw: JSON.stringify(data).slice(0, 8000),
+        // Same-call e-way bill: the IRP returns it on the same response
+        // when EwbDtls was included in the payload.
+        ...(data.EwbNo
+          ? {
+              ewbStatus: "generated",
+              ewbNo: String(data.EwbNo),
+              ewbGeneratedAt: new Date(),
+              ewbValidUntil: parseIrpDate(data.EwbValidTill),
+              ewbError: null,
+              ewbRaw: JSON.stringify(data).slice(0, 8000),
+            }
+          : {}),
+      })
+      .where(eq(sales.id, saleId));
+    return { irn, ackNo };
+  } catch (error) {
+    return failIrn(saleId, sale.invoiceNo, error);
+  }
 }
 
-/** Cancels a pushed e-Invoice. STUB — see file header. */
-export async function cancelIrn(_saleId: number, _reason: string): Promise<never> {
+/** Cancels a pushed e-Invoice. Only within 24h of AckDt (IRP rule). */
+export async function cancelIrn(saleId: number, reason: string): Promise<void> {
   await requireNonDealer();
-  throw new Error(NOT_CONFIGURED);
+  const sale = await loadActiveB2bSale(saleId);
+  if (!sale.irn) {
+    throw new Error(`${sale.invoiceNo} has no IRN to cancel.`);
+  }
+  if ((reason ?? "").trim().length < 3) {
+    throw new Error("Give a short reason — the IRP requires one.");
+  }
+  try {
+    await wbCancelIrn(getWhitebooksConfig(), sale.irn, reason.trim());
+    await db
+      .update(sales)
+      .set({ einvoiceStatus: "cancelled", einvoiceError: null })
+      .where(eq(sales.id, saleId));
+  } catch (error) {
+    await failIrn(saleId, sale.invoiceNo, error, "pushed");
+  }
 }
 
-/** Generates the e-Way Bill for one sale. STUB — see file header. */
+/**
+ * Generates the e-way bill for one sale against its already-pushed IRN.
+ * Without dispatch details (and none stored on the sale) there is nothing
+ * road-legal to generate from, so that fails up front with a plain message
+ * instead of an IRP rejection.
+ */
 export async function generateEwb(
   saleId: number,
-  _dispatch: DispatchDetails = {}
-): Promise<never> {
+  dispatch: DispatchDetails = {}
+): Promise<{ ewbNo: string }> {
   await requireNonDealer();
-  await loadActiveSale(saleId);
-  throw new Error(NOT_CONFIGURED);
+  const sale = await loadActiveSale(saleId);
+  if (!sale.irn) {
+    throw new Error(
+      `${sale.invoiceNo}: push the e-Invoice first — an e-way bill needs its IRN.`
+    );
+  }
+
+  const vehicleNo =
+    dispatch.vehicleNumber?.trim() || sale.vehicleNo?.trim() || "";
+  const distanceKm =
+    dispatch.distanceKm ?? (sale.distanceKm != null ? Number(sale.distanceKm) : NaN);
+  if (!vehicleNo || !(distanceKm > 0)) {
+    throw new Error(
+      `${sale.invoiceNo}: vehicle number and distance are required for an e-way bill.`
+    );
+  }
+
+  const cfg = getWhitebooksConfig();
+  await db
+    .update(sales)
+    .set({ ewbStatus: "pending", ewbError: null })
+    .where(eq(sales.id, saleId));
+  try {
+    const data = await wbGenerateEwbByIrn(cfg, {
+      irn: sale.irn,
+      distanceKm,
+      vehicleNo,
+      transporterName:
+        dispatch.transporterName?.trim() || sale.transporterName?.trim() || null,
+      transporterGstin: isValidGstin(sale.transporterGstin)
+        ? sale.transporterGstin!.trim().toUpperCase()
+        : null,
+    });
+    const ewbNo = String(data.EwbNo ?? "");
+    if (!ewbNo) throw new Error("IRP returned no e-way bill number.");
+    await db
+      .update(sales)
+      .set({
+        ewbStatus: "generated",
+        ewbNo,
+        ewbGeneratedAt: new Date(),
+        ewbValidUntil: parseIrpDate(data.EwbValidTill),
+        ewbError: null,
+        ewbRaw: JSON.stringify(data).slice(0, 8000),
+      })
+      .where(eq(sales.id, saleId));
+    return { ewbNo };
+  } catch (error) {
+    const message = whitebooksErrorMessage(error);
+    await db
+      .update(sales)
+      .set({ ewbStatus: "failed", ewbError: message.slice(0, 500) })
+      .where(eq(sales.id, saleId));
+    throw new Error(`${sale.invoiceNo}: ${message}`);
+  }
 }
 
-/** Cancels a generated e-Way Bill. STUB — see file header. */
-export async function cancelEwb(_saleId: number, _reason: string): Promise<never> {
+/** Cancels a generated e-way bill. Only within 24h of generation (NIC rule). */
+export async function cancelEwb(saleId: number, reason: string): Promise<void> {
   await requireNonDealer();
-  throw new Error(NOT_CONFIGURED);
+  const sale = await loadActiveSale(saleId);
+  if (!sale.ewbNo) {
+    throw new Error(`${sale.invoiceNo} has no e-way bill to cancel.`);
+  }
+  if ((reason ?? "").trim().length < 3) {
+    throw new Error("Give a short reason — the e-way bill system requires one.");
+  }
+  try {
+    await wbCancelEwb(getWhitebooksConfig(), sale.ewbNo, reason.trim());
+    await db
+      .update(sales)
+      .set({ ewbStatus: "cancelled", ewbError: null })
+      .where(eq(sales.id, saleId));
+  } catch (error) {
+    const message = whitebooksErrorMessage(error);
+    await db
+      .update(sales)
+      .set({ ewbError: message.slice(0, 500) })
+      .where(eq(sales.id, saleId));
+    throw new Error(`${sale.invoiceNo}: ${message}`);
+  }
 }
 
 export type DispatchDetails = {

@@ -14,6 +14,12 @@ export const DEFAULT_SETTINGS = {
   gstin: BUSINESS.gstin,
   state: BUSINESS.state,
   stateCode: BUSINESS.stateCode,
+  /**
+   * Seller locality + pincode for the IRN payload (NIC SellerDtls.Loc/Pin).
+   * Parsed from the printed address above; editable here if the shop moves.
+   */
+  businessLocality: "Kumbakonam",
+  businessPin: "612401",
   defaultOperator: "Counter",
   invoicePrefix: "INV",
   allowNegativeStock: "false",

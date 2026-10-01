@@ -42,6 +42,8 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             phone: fd.get("phone") as string,
             email: fd.get("email") as string,
             gstin: fd.get("gstin") as string,
+            businessLocality: fd.get("businessLocality") as string,
+            businessPin: fd.get("businessPin") as string,
             defaultOperator: fd.get("defaultOperator") as string,
             invoicePrefix: fd.get("invoicePrefix") as string,
             allowNegativeStock: "false",
@@ -109,6 +111,17 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
                 name="defaultOperator"
                 defaultValue={settings.defaultOperator}
               />
+            </div>
+            <div>
+              <Label>Locality (for e-Invoice seller address)</Label>
+              <Input
+                name="businessLocality"
+                defaultValue={settings.businessLocality}
+              />
+            </div>
+            <div>
+              <Label>Pincode (for e-Invoice seller address)</Label>
+              <Input name="businessPin" defaultValue={settings.businessPin} />
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
