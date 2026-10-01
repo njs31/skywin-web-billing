@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { getSales } from "@/lib/queries/sales";
+import { getSalesFiltered, parseSaleListParams } from "@/lib/queries/sales";
 import { getCurrentUser } from "@/lib/actions/auth";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 import { SalesReport } from "@/components/invoices/sales-report";
+import { InvoiceFilters } from "@/components/invoices/invoice-filters";
+import { InvoiceSortBar } from "@/components/invoices/invoice-sort-bar";
 import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,9 +35,23 @@ function BillTypeBadge({ billType }: { billType: string }) {
   );
 }
 
-export default async function InvoicesPage() {
-  const [sales, currentUser] = await Promise.all([getSales(), getCurrentUser()]);
+export default async function InvoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; type?: string; day?: string; sort?: string }>;
+}) {
+  const params = await searchParams;
+  const filter = parseSaleListParams(params);
+  const [sales, currentUser] = await Promise.all([
+    getSalesFiltered(filter),
+    getCurrentUser(),
+  ]);
   const isAdmin = currentUser?.role === "admin";
+  const filtered =
+    filter.q !== "" ||
+    filter.billType !== "all" ||
+    filter.day !== null ||
+    filter.sort !== "newest";
 
   return (
     <div className="space-y-6 p-6">
@@ -55,12 +71,39 @@ export default async function InvoicesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Recent Invoices</CardTitle>
+          <CardTitle className="text-base">Find invoices</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <InvoiceFilters
+            key={filter.q}
+            defaultQuery={filter.q}
+            defaultDay={filter.day ?? ""}
+            type={filter.billType}
+            sort={filter.sort}
+          />
+          <InvoiceSortBar
+            q={filter.q}
+            type={filter.billType}
+            day={filter.day ?? ""}
+            sort={filter.sort}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            {filtered
+              ? `${sales.length} matching invoice${sales.length === 1 ? "" : "s"}`
+              : "Recent Invoices"}
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {sales.length === 0 ? (
             <p className="p-6 text-sm text-slate-400">
-              No invoices yet. Create a sale from POS.
+              {filtered
+                ? "No invoices match these filters."
+                : "No invoices yet. Create a sale from POS."}
             </p>
           ) : (
             <Table>

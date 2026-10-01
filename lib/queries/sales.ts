@@ -22,7 +22,7 @@ import {
 import { getSettings } from "@/lib/settings";
 import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR, retailInvoiceDayStamp, assertRetailInvoiceNo } from "@/lib/financial-year";
 import { format } from "date-fns";
-import { desc, asc, eq, ne, gte, lte, sql, and, inArray } from "drizzle-orm";
+import { desc, asc, eq, ne, gte, lt, lte, sql, and, inArray } from "drizzle-orm";
 
 /** Reusable predicate: exclude cancelled invoices from reports/totals. */
 export const activeSale = ne(sales.status, "cancelled");
@@ -1122,8 +1122,134 @@ export async function getSales() {
   return query.orderBy(desc(sales.date)).limit(500);
 }
 
-export type SaleInvoiceOption = {
-  id: number;
+export type SaleListSort = "newest" | "oldest" | "amount-desc" | "amount-asc";
+export type SaleListBillType = "all" | "retail" | "wholesale" | "others";
+
+export type SaleListFilter = {
+  q: string;
+  billType: SaleListBillType;
+  /** YYYY-MM-DD in Asia/Kolkata, or null for all dates. */
+  day: string | null;
+  sort: SaleListSort;
+};
+
+const SALE_LIST_SORTS: SaleListSort[] = [
+  "newest",
+  "oldest",
+  "amount-desc",
+  "amount-asc",
+];
+const SALE_LIST_BILL_TYPES: SaleListBillType[] = [
+  "all",
+  "retail",
+  "wholesale",
+  "others",
+];
+
+/** Parse/normalize URL params for the Sale Book list. Pure — unit-tested. */
+export function parseSaleListParams(params: {
+  q?: string;
+  type?: string;
+  day?: string;
+  sort?: string;
+}): SaleListFilter {
+  const billType = (params.type ?? "all").toLowerCase();
+  const sort = (params.sort ?? "newest").toLowerCase();
+  const day = (params.day ?? "").trim();
+  return {
+    q: (params.q ?? "").trim(),
+    billType: (SALE_LIST_BILL_TYPES as string[]).includes(billType)
+      ? (billType as SaleListBillType)
+      : "all",
+    day: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null,
+    sort: (SALE_LIST_SORTS as string[]).includes(sort)
+      ? (sort as SaleListSort)
+      : "newest",
+  };
+}
+
+/**
+ * IST calendar-day bounds as UTC instants (Asia/Kolkata is UTC+5:30,
+ * no DST). Returns null for unparseable input. Pure — unit-tested.
+ */
+export function istDayRange(day: string): { from: Date; to: Date } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const from = new Date(`${day}T00:00:00+05:30`);
+  if (Number.isNaN(from.getTime())) return null;
+  return { from, to: new Date(from.getTime() + 24 * 60 * 60 * 1000) };
+}
+
+/**
+ * Sale Book listing with search / type / day / sort. Same rows and dealer
+ * scoping as getSales (which stays untouched for its other callers) —
+ * text matches invoice no., customer name or amount; `day` is an IST date.
+ */
+export async function getSalesFiltered(filter: SaleListFilter) {
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const customerIds = await getScopedCustomerIds();
+
+  const conditions = [];
+  if (filter.q) {
+    const pattern = `%${filter.q}%`;
+    conditions.push(
+      sql`(
+        ${sales.invoiceNo} ilike ${pattern}
+        or coalesce(${sales.customerName}, '') ilike ${pattern}
+        or coalesce(${customers.name}, '') ilike ${pattern}
+        or ${sales.grandTotal}::text like ${pattern}
+      )`
+    );
+  }
+  if (filter.billType !== "all") {
+    conditions.push(eq(sales.billType, filter.billType));
+  }
+  const range = filter.day ? istDayRange(filter.day) : null;
+  if (range) {
+    conditions.push(
+      and(
+        gte(sales.date, range.from),
+        lt(sales.date, range.to)
+      )
+    );
+  }
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return [];
+    conditions.push(inArray(sales.customerId, customerIds));
+  }
+
+  const orderBy =
+    filter.sort === "oldest"
+      ? asc(sales.date)
+      : filter.sort === "amount-desc"
+        ? [desc(sales.grandTotal), desc(sales.date)]
+        : filter.sort === "amount-asc"
+          ? [asc(sales.grandTotal), desc(sales.date)]
+          : desc(sales.date);
+
+  return db
+    .select({
+      id: sales.id,
+      invoiceNo: sales.invoiceNo,
+      date: sales.date,
+      billType: sales.billType,
+      customerName: sales.customerName,
+      customerId: sales.customerId,
+      paymentMode: sales.paymentMode,
+      grandTotal: sales.grandTotal,
+      paidAmount: sales.paidAmount,
+      operatorName: sales.operatorName,
+      status: sales.status,
+      customerRecordName: customers.name,
+    })
+    .from(sales)
+    .leftJoin(customers, eq(sales.customerId, customers.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(...(Array.isArray(orderBy) ? orderBy : [orderBy]))
+    .limit(500);
+}
+
+export type SaleInvoiceOption = {  id: number;
   invoiceNo: string;
   date: Date;
   customerId: number | null;

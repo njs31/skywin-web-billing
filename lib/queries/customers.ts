@@ -31,8 +31,88 @@ export async function getCustomers(search?: string) {
   return query.orderBy(asc(customers.name));
 }
 
-export async function getCustomerById(id: number) {
+export type CustomerListType = "all" | "retail" | "wholesale" | "farmer";
+
+export type CustomerListFilter = {
+  q: string;
+  type: CustomerListType;
+  page: number;
+};
+
+const CUSTOMER_LIST_TYPES: CustomerListType[] = [
+  "all",
+  "retail",
+  "wholesale",
+  "farmer",
+];
+
+export const CUSTOMER_PAGE_SIZE = 50;
+
+/** Parse/normalize URL params for the customer list. Pure — unit-tested. */
+export function parseCustomerListParams(params: {
+  q?: string;
+  type?: string;
+  page?: string;
+}): CustomerListFilter {
+  const type = (params.type ?? "all").toLowerCase();
+  return {
+    q: (params.q ?? "").trim(),
+    type: (CUSTOMER_LIST_TYPES as string[]).includes(type)
+      ? (type as CustomerListType)
+      : "all",
+    page: Math.max(1, parseInt(params.page ?? "1", 10) || 1),
+  };
+}
+
+/**
+ * Paged customer list with search (name/phone/GSTIN) and type filter.
+ * Same dealer scoping as getSales (which stays untouched); returns the
+ * total so the page can render real pagination instead of everything.
+ */
+export async function getCustomersPaged(filter: CustomerListFilter): Promise<{
+  rows: typeof customers.$inferSelect[];
+  total: number;
+}> {
   const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const customerIds = await getScopedCustomerIds();
+
+  const conditions: SQL[] = [];
+  if (filter.q) {
+    const pattern = `%${filter.q}%`;
+    const searchCond = or(
+      ilike(customers.name, pattern),
+      ilike(customers.phone, pattern),
+      ilike(customers.gstin, pattern)
+    );
+    if (searchCond) conditions.push(searchCond);
+  }
+  if (filter.type !== "all") {
+    conditions.push(eq(customers.type, filter.type));
+  }
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return { rows: [], total: 0 };
+    conditions.push(inArray(customers.id, customerIds));
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [rows, [{ count }]] = await Promise.all([
+    db
+      .select()
+      .from(customers)
+      .where(where)
+      .orderBy(asc(customers.name))
+      .limit(CUSTOMER_PAGE_SIZE)
+      .offset((filter.page - 1) * CUSTOMER_PAGE_SIZE),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(where),
+  ]);
+  return { rows, total: count ?? 0 };
+}
+
+export async function getCustomerById(id: number) {  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const customerIds = await getScopedCustomerIds();
   if (customerIds !== null && !customerIds.includes(id)) {
     return null;
