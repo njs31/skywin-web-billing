@@ -363,7 +363,7 @@ export default async function ReportsPage() {
                 <BookOpen className="h-4 w-4" />
               </div>
               <SectionHeader
-                title="Sale Book"
+                title="Invoices"
                 description="Recent invoices across retail and wholesale"
                 count={saleRows.length}
               />

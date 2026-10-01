@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
+import type { User } from "@/db/schema";
 import { useState, useEffect } from "react";
 
 const PURCHASE_ROUTES = ["/purchases", "/suppliers", "/purchase-orders"];
@@ -54,7 +55,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Sales",
     items: [
-      { href: "/invoices", label: "Sale Book", icon: Receipt },
+      { href: "/invoices", label: "Invoices", icon: Receipt },
       { href: "/quotations", label: "Quotations", icon: FileText },
       { href: "/returns", label: "Sales Return", icon: RotateCcw },
       { href: "/customers", label: "Customers", icon: Users },
@@ -126,10 +127,10 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [currentUser, setCurrentUser] = useState<any>({
+  const [currentUser, setCurrentUser] = useState<User | null>({
     role: "admin",
     name: "Administrator",
-  });
+  } as User);
 
   useEffect(() => {
     import("@/lib/actions/auth").then(({ getCurrentUser }) => {
