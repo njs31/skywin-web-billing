@@ -276,8 +276,9 @@ export const sales = pgTable(
     irn: text("irn"),
     ackNo: text("ack_no"),
     ackDate: timestamp("ack_date"),
-    /** The IRP-signed QR payload — printed on the invoice in place of the
-     *  self-drawn one once an IRN exists. */
+    /** The IRP-signed QR *payload* (signed JSON string, not an image —
+     *  the invoice page encodes it into a bitmap at render time). Printed
+     *  on the invoice in place of the self-drawn one once an IRN exists. */
     signedQr: text("signed_qr"),
     /** Verbatim IRP/NIC rejection message, for the Failed bucket. */
     einvoiceError: text("einvoice_error"),

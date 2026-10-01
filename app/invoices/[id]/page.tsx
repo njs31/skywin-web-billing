@@ -65,27 +65,28 @@ export default async function InvoiceDetailPage({
     termsOfDelivery: settings.termsOfDelivery,
   };
 
-  // Once a real IRN exists, print the IRP-signed QR the GSP gives back
-  // instead of the self-drawn placeholder — the signed one is what the
-  // government (and a scanning customer) actually recognizes. Not if the
-  // IRN itself was cancelled, though — printing a cancelled e-invoice's
-  // QR as if it were still valid would be actively misleading.
-  const hasLiveIrn =
-    sale.irn && sale.signedQr && sale.einvoiceStatus !== "cancelled";
-  const einvoiceQrUrl =
-    hasLiveIrn
-      ? sale.signedQr
-      : sale.eInvoiceRequested
-        ? await invoiceQrDataUrl(
-            JSON.stringify({
-              invoiceNo: sale.invoiceNo,
-              date: formatDateIST(sale.date),
-              sellerGstin: settings.gstin,
-              buyerGstin: sale.customerGstin || "",
-              grandTotal: sale.grandTotal,
-            })
-          )
-        : null;
+  // Once a real IRN exists, print a QR code *encoding* the IRP-signed
+  // payload the GSP gives back, instead of the self-drawn placeholder —
+  // the signed payload is what the government (and a scanning customer)
+  // actually recognizes. The stored value is the signed JSON string
+  // itself, not an image, so it must be rendered into a bitmap here. Not
+  // if the IRN itself was cancelled, though — printing a cancelled
+  // e-invoice's QR as if it were still valid would be actively misleading.
+  const signedPayload =
+    sale.irn && sale.einvoiceStatus !== "cancelled" ? sale.signedQr : null;
+  const einvoiceQrUrl = signedPayload
+    ? await invoiceQrDataUrl(signedPayload)
+    : sale.eInvoiceRequested
+      ? await invoiceQrDataUrl(
+          JSON.stringify({
+            invoiceNo: sale.invoiceNo,
+            date: formatDateIST(sale.date),
+            sellerGstin: settings.gstin,
+            buyerGstin: sale.customerGstin || "",
+            grandTotal: sale.grandTotal,
+          })
+        )
+      : null;
 
   return (
     <div className="p-6">
@@ -111,7 +112,7 @@ export default async function InvoiceDetailPage({
       </div>
       <InvoiceTemplate
         business={business}
-        sale={{ ...sale, irn: hasLiveIrn ? sale.irn : null }}
+        sale={{ ...sale, irn: signedPayload ? sale.irn : null }}
         items={sale.items}
         einvoiceQrUrl={einvoiceQrUrl}
       />
