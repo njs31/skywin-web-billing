@@ -9,6 +9,8 @@ describe("parseSaleListParams", () => {
       billType: "all",
       day: null,
       sort: "newest",
+      page: 1,
+      pageSize: 20,
     });
   });
 
@@ -19,22 +21,45 @@ describe("parseSaleListParams", () => {
         type: "wholesale",
         day: "2026-10-01",
         sort: "amount-desc",
+        page: "3",
+        pageSize: "50",
       }),
       {
         q: "SKYA/0409",
         billType: "wholesale",
         day: "2026-10-01",
         sort: "amount-desc",
+        page: 3,
+        pageSize: 50,
       }
     );
   });
 
-  it("falls back on unknown type, sort, or day", () => {
-    assert.deepEqual(parseSaleListParams({ type: "bogus", sort: "nope", day: "tomorrow" }), {
+  it("falls back on unknown type, sort, day, page or page size", () => {
+    assert.deepEqual(
+      parseSaleListParams({
+        type: "bogus",
+        sort: "nope",
+        day: "tomorrow",
+        page: "0",
+        pageSize: "33",
+      }),
+      {
+        q: "",
+        billType: "all",
+        day: null,
+        sort: "newest",
+        page: 1,
+        pageSize: 20,
+      }
+    );
+    assert.deepEqual(parseSaleListParams({ pageSize: "100" }), {
       q: "",
       billType: "all",
       day: null,
       sort: "newest",
+      page: 1,
+      pageSize: 100,
     });
   });
 });

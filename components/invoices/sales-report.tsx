@@ -5,7 +5,8 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { FileSpreadsheet, FileText, Search } from "lucide-react";
+import { FileSpreadsheet, FileText, Search, ChevronDown, Download } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { getSalesReportData } from "@/lib/actions/sales";
 import type { SalesReportData } from "@/lib/queries/sales";
 import { BUSINESS } from "@/lib/business";
@@ -49,10 +50,8 @@ function daysAgo(days: number) {
 }
 
 const QUICK_RANGES = [
-  { label: "Last 1 Week", days: 7 },
-  { label: "Last 10 Days", days: 10 },
-  { label: "Last 15 Days", days: 15 },
-  { label: "Last 30 Days", days: 30 },
+  { label: "Last 7 days", days: 7 },
+  { label: "Last 30 days", days: 30 },
 ] as const;
 
 function round2(n: number) {
@@ -377,7 +376,7 @@ function exportPdf(data: SalesReportData) {
 export function SalesReport() {
   const [fromDate, setFromDate] = useState(defaultFromDate);
   const [toDate, setToDate] = useState(defaultToDate);
-  const [activeQuick, setActiveQuick] = useState<number | null>(null);
+  const [activeQuick, setActiveQuick] = useState<number | "custom" | null>(null);
   const [report, setReport] = useState<SalesReportData | null>(null);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -420,146 +419,172 @@ export function SalesReport() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Sales Report</CardTitle>
-          <p className="text-sm text-slate-500">
-            Select a date range to view detailed sales invoices and line items in
-            ascending date / invoice order. Export to Excel or PDF.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {QUICK_RANGES.map((range) => (
-              <Button
-                key={range.days}
-                type="button"
-                size="sm"
-                variant={activeQuick === range.days ? "default" : "outline"}
-                disabled={isPending}
-                onClick={() => applyQuickRange(range.days)}
-                className={
-                  activeQuick === range.days
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                    : ""
-                }
+    <section aria-label="Sales report" className="space-y-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h2 className="text-base font-semibold">Sales Report</h2>
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Quick ranges">
+          {QUICK_RANGES.map((range) => (
+            <Button
+              key={range.days}
+              type="button"
+              size="sm"
+              variant={activeQuick === range.days ? "default" : "ghost"}
+              disabled={isPending}
+              onClick={() => applyQuickRange(range.days)}
+              className={
+                activeQuick === range.days
+                  ? "h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "h-8 text-slate-600"
+              }
+            >
+              {range.label}
+            </Button>
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            variant={activeQuick === "custom" ? "default" : "ghost"}
+            disabled={isPending}
+            onClick={() => setActiveQuick("custom")}
+            className={
+              activeQuick === "custom"
+                ? "h-8 bg-emerald-600 text-white hover:bg-emerald-700"
+                : "h-8 text-slate-600"
+            }
+          >
+            Custom range
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <Label htmlFor="report-from" className="text-xs text-slate-600">
+            From
+          </Label>
+          <Input
+            id="report-from"
+            type="date"
+            value={fromDate}
+            onChange={(e) => {
+              setFromDate(e.target.value);
+              setActiveQuick(null);
+            }}
+            className="mt-1 h-9 w-40 bg-white"
+          />
+        </div>
+        <div>
+          <Label htmlFor="report-to" className="text-xs text-slate-600">
+            To
+          </Label>
+          <Input
+            id="report-to"
+            type="date"
+            value={toDate}
+            onChange={(e) => {
+              setToDate(e.target.value);
+              setActiveQuick(null);
+            }}
+            className="mt-1 h-9 w-40 bg-white"
+          />
+        </div>
+        <Button
+          type="button"
+          onClick={() => loadReport()}
+          disabled={isPending || !fromDate || !toDate}
+          className="h-9 gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+        >
+          <Search className="h-4 w-4" aria-hidden />
+          {isPending ? "Loading…" : "Generate Report"}
+        </Button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!report || report.invoices.length === 0}
+              className="h-9 gap-1.5"
+              aria-label="Export report"
+            >
+              <Download className="h-4 w-4" aria-hidden />
+              Export
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" aria-hidden />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              align="end"
+              className="z-50 min-w-44 overflow-hidden rounded-lg border border-slate-200 bg-white p-1 shadow-md"
+            >
+              <DropdownMenu.Item
+                onSelect={() => handleExport("excel")}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm text-slate-700 outline-none focus:bg-emerald-50 focus:text-emerald-900"
               >
-                {range.label}
-              </Button>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
+                <FileSpreadsheet className="h-4 w-4" aria-hidden />
+                Export Excel
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                onSelect={() => handleExport("pdf")}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm text-slate-700 outline-none focus:bg-emerald-50 focus:text-emerald-900"
+              >
+                <FileText className="h-4 w-4" aria-hidden />
+                Export PDF
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
+      {error ? (
+        <p className="text-sm text-red-600" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
+
+      {report ? (
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+          <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
             <div>
-              <Label className="text-xs text-slate-600">From Date</Label>
-              <Input
-                type="date"
-                value={fromDate}
-                onChange={(e) => {
-                  setFromDate(e.target.value);
-                  setActiveQuick(null);
-                }}
-                className="mt-1 h-10 w-44 bg-white"
-              />
+              <dt className="text-xs text-slate-500">Bills</dt>
+              <dd className="text-base font-semibold tabular-nums">
+                {report.summary.billCount}
+                <span className="ml-1.5 text-xs font-normal text-slate-500">
+                  R {report.summary.retailCount} · W {report.summary.wholesaleCount}
+                </span>
+              </dd>
             </div>
             <div>
-              <Label className="text-xs text-slate-600">To Date</Label>
-              <Input
-                type="date"
-                value={toDate}
-                onChange={(e) => {
-                  setToDate(e.target.value);
-                  setActiveQuick(null);
-                }}
-                className="mt-1 h-10 w-44 bg-white"
-              />
+              <dt className="text-xs text-slate-500">Grand total</dt>
+              <dd className="text-base font-semibold tabular-nums text-emerald-700">
+                {formatCurrency(report.summary.grandTotal)}
+                <span className="ml-1.5 text-xs font-normal text-slate-500">
+                  Paid {formatCurrency(report.summary.paidAmount)}
+                </span>
+              </dd>
             </div>
-            <Button
-              type="button"
-              onClick={() => loadReport()}
-              disabled={isPending || !fromDate || !toDate}
-              className="h-10 gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              <Search className="h-4 w-4" />
-              {isPending ? "Loading..." : "Generate Report"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!report || report.invoices.length === 0}
-              onClick={() => handleExport("excel")}
-              className="h-10 gap-2"
-            >
-              <FileSpreadsheet className="h-4 w-4" />
-              Export Excel
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!report || report.invoices.length === 0}
-              onClick={() => handleExport("pdf")}
-              className="h-10 gap-2"
-            >
-              <FileText className="h-4 w-4" />
-              Export PDF
-            </Button>
-          </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        </CardContent>
-      </Card>
+            <div>
+              <dt className="text-xs text-slate-500">Taxable / Discount</dt>
+              <dd className="text-base font-semibold tabular-nums">
+                {formatCurrency(report.summary.subtotal)}
+                <span className="ml-1.5 text-xs font-normal text-slate-500">
+                  − {formatCurrency(report.summary.discountAmount)}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-500">GST</dt>
+              <dd className="text-base font-semibold tabular-nums">
+                {formatCurrency(
+                  report.summary.cgst + report.summary.sgst + report.summary.igst
+                )}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      ) : null}
 
       {report ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-xs text-slate-500">Total Bills</p>
-                <p className="text-2xl font-bold">{report.summary.billCount}</p>
-                <p className="text-xs text-slate-500">
-                  Retail {report.summary.retailCount} · Wholesale {report.summary.wholesaleCount}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-xs text-slate-500">Grand Total</p>
-                <p className="text-2xl font-bold text-emerald-700">
-                  {formatCurrency(report.summary.grandTotal)}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Paid {formatCurrency(report.summary.paidAmount)}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-xs text-slate-500">Taxable / Discount</p>
-                <p className="text-lg font-semibold">
-                  {formatCurrency(report.summary.subtotal)}
-                </p>
-                <p className="text-xs text-slate-500">
-                  Discount {formatCurrency(report.summary.discountAmount)}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <p className="text-xs text-slate-500">GST</p>
-                <p className="text-sm font-medium">
-                  CGST {formatCurrency(report.summary.cgst)}
-                </p>
-                <p className="text-sm font-medium">
-                  SGST {formatCurrency(report.summary.sgst)}
-                </p>
-                {report.summary.igst > 0 ? (
-                  <p className="text-sm font-medium">
-                    IGST {formatCurrency(report.summary.igst)}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-          </div>
-
-          {Object.keys(report.summary.byPaymentMode).length > 0 ? (
             <Card>
               <CardContent className="flex flex-wrap gap-4 p-4">
                 {sortPaymentModeEntries(
@@ -573,7 +598,6 @@ export function SalesReport() {
                 ))}
               </CardContent>
             </Card>
-          ) : null}
 
           <Tabs defaultValue="invoices">
             <TabsList>

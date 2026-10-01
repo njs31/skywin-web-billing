@@ -1131,6 +1131,8 @@ export type SaleListFilter = {
   /** YYYY-MM-DD in Asia/Kolkata, or null for all dates. */
   day: string | null;
   sort: SaleListSort;
+  page: number;
+  pageSize: 20 | 50 | 100;
 };
 
 const SALE_LIST_SORTS: SaleListSort[] = [
@@ -1152,10 +1154,13 @@ export function parseSaleListParams(params: {
   type?: string;
   day?: string;
   sort?: string;
+  page?: string;
+  pageSize?: string;
 }): SaleListFilter {
   const billType = (params.type ?? "all").toLowerCase();
   const sort = (params.sort ?? "newest").toLowerCase();
   const day = (params.day ?? "").trim();
+  const pageSize = Number(params.pageSize ?? 20);
   return {
     q: (params.q ?? "").trim(),
     billType: (SALE_LIST_BILL_TYPES as string[]).includes(billType)
@@ -1165,6 +1170,8 @@ export function parseSaleListParams(params: {
     sort: (SALE_LIST_SORTS as string[]).includes(sort)
       ? (sort as SaleListSort)
       : "newest",
+    page: Math.max(1, parseInt(params.page ?? "1", 10) || 1),
+    pageSize: pageSize === 50 || pageSize === 100 ? pageSize : 20,
   };
 }
 
@@ -1180,11 +1187,29 @@ export function istDayRange(day: string): { from: Date; to: Date } | null {
 }
 
 /**
- * Sale Book listing with search / type / day / sort. Same rows and dealer
- * scoping as getSales (which stays untouched for its other callers) —
- * text matches invoice no., customer name or amount; `day` is an IST date.
+ * Sale Book listing with search / type / day / sort and real server-side
+ * pagination. Same rows and dealer scoping as getSales (which stays
+ * untouched for its other callers) — text matches invoice no., customer
+ * name or amount; `day` is an IST date. Returns the page plus the total so
+ * the UI renders honest pagination instead of a capped list.
  */
-export async function getSalesFiltered(filter: SaleListFilter) {
+export async function getSalesFiltered(filter: SaleListFilter): Promise<{
+  rows: Array<{
+    id: number;
+    invoiceNo: string;
+    date: Date;
+    billType: string;
+    customerName: string | null;
+    customerId: number | null;
+    paymentMode: string;
+    grandTotal: string;
+    paidAmount: string | null;
+    operatorName: string | null;
+    status: string;
+    customerRecordName: string | null;
+  }>;
+  total: number;
+}> {
   const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
   const customerIds = await getScopedCustomerIds();
@@ -1214,7 +1239,7 @@ export async function getSalesFiltered(filter: SaleListFilter) {
     );
   }
   if (customerIds !== null) {
-    if (customerIds.length === 0) return [];
+    if (customerIds.length === 0) return { rows: [], total: 0 };
     conditions.push(inArray(sales.customerId, customerIds));
   }
 
@@ -1227,29 +1252,41 @@ export async function getSalesFiltered(filter: SaleListFilter) {
           ? [asc(sales.grandTotal), desc(sales.date)]
           : desc(sales.date);
 
-  return db
-    .select({
-      id: sales.id,
-      invoiceNo: sales.invoiceNo,
-      date: sales.date,
-      billType: sales.billType,
-      customerName: sales.customerName,
-      customerId: sales.customerId,
-      paymentMode: sales.paymentMode,
-      grandTotal: sales.grandTotal,
-      paidAmount: sales.paidAmount,
-      operatorName: sales.operatorName,
-      status: sales.status,
-      customerRecordName: customers.name,
-    })
-    .from(sales)
-    .leftJoin(customers, eq(sales.customerId, customers.id))
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(...(Array.isArray(orderBy) ? orderBy : [orderBy]))
-    .limit(500);
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const order = Array.isArray(orderBy) ? orderBy : [orderBy];
+  const [rows, [{ count }]] = await Promise.all([
+    db
+      .select({
+        id: sales.id,
+        invoiceNo: sales.invoiceNo,
+        date: sales.date,
+        billType: sales.billType,
+        customerName: sales.customerName,
+        customerId: sales.customerId,
+        paymentMode: sales.paymentMode,
+        grandTotal: sales.grandTotal,
+        paidAmount: sales.paidAmount,
+        operatorName: sales.operatorName,
+        status: sales.status,
+        customerRecordName: customers.name,
+      })
+      .from(sales)
+      .leftJoin(customers, eq(sales.customerId, customers.id))
+      .where(where)
+      .orderBy(...order)
+      .limit(filter.pageSize)
+      .offset((filter.page - 1) * filter.pageSize),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(sales)
+      .leftJoin(customers, eq(sales.customerId, customers.id))
+      .where(where),
+  ]);
+  return { rows, total: count ?? 0 };
 }
 
-export type SaleInvoiceOption = {  id: number;
+export type SaleInvoiceOption = {
+  id: number;
   invoiceNo: string;
   date: Date;
   customerId: number | null;
