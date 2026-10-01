@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { GenerateEwbButton } from "@/components/einvoice/generate-ewb-button";
+import { EwbVerifyButton } from "@/components/einvoice/ewb-verify-button";
 
 export default async function EwayBillPage() {
   // Same candidate list as the e-Invoice page (it already carries ewb*
@@ -183,6 +184,7 @@ export default async function EwayBillPage() {
                           transporterName={row.transporterName}
                           distanceKm={row.distanceKm}
                         />
+                        <EwbVerifyButton saleId={row.id} />
                       </div>
                     </TableCell>
                   </TableRow>

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PushEinvoiceButton } from "@/components/einvoice/push-einvoice-button";
+import { IrnVerifyButton } from "@/components/einvoice/irn-verify-button";
 
 export default async function EinvoicePage() {
   const rows = await getEinvoiceCandidates();
@@ -118,6 +119,9 @@ export default async function EinvoicePage() {
                               ackDate={row.ackDate?.toISOString() ?? null}
                             />
                           )}
+                          {!row.irn && (
+                            <IrnVerifyButton saleId={row.id} mode="doc" />
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -165,6 +169,7 @@ export default async function EinvoicePage() {
                           einvoiceError={row.einvoiceError}
                           ackDate={row.ackDate?.toISOString() ?? null}
                         />
+                        <IrnVerifyButton saleId={row.id} mode="details" />
                       </div>
                     </TableCell>
                   </TableRow>
