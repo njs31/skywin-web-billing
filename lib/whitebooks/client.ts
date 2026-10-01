@@ -156,6 +156,32 @@ async function postWhitebooks(
 }
 
 /**
+ * Authenticated GET against the e-invoice API family (fetch endpoints).
+ * `path` must already contain its query string (`param1=…` etc.) —
+ * `withEmail` appends `email=` with the correct separator.
+ */
+async function getWhitebooks(
+  cfg: WhitebooksConfig,
+  path: string,
+  action: string,
+  extraHeaders: Record<string, string> = {}
+): Promise<Record<string, unknown>> {
+  const token = await getAuthToken(cfg);
+  const res = await fetch(withEmail(cfg, path), {
+    method: "GET",
+    headers: {
+      ...commonHeaders(cfg),
+      "auth-token": token,
+      ...extraHeaders,
+    },
+  });
+  const responseBody = await readJson(res);
+  if (res.status === 401) cached = null;
+  throwIfFailed(responseBody, res.status, action);
+  return responseBody;
+}
+
+/**
  * Push one invoice JSON to the IRP. `payload` is the NIC v1.03 document
  * built by `buildIrnPayload` — passed through verbatim.
  */
@@ -244,6 +270,60 @@ export async function cancelEwb(
     "E-way bill cancellation"
   );
   return (response.data ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * Fetch a pushed IRN's details. Only the last 72 hours (IRP rule), so
+ * this is a reconciliation tool, not an archive.
+ */
+export async function getIrnDetails(
+  cfg: WhitebooksConfig,
+  irn: string
+): Promise<Record<string, unknown>> {
+  const body = await getWhitebooks(
+    cfg,
+    `/einvoice/type/GETIRN/version/V1_03?param1=${encodeURIComponent(irn)}`,
+    "IRN details fetch"
+  );
+  return (body.data ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * Look up an IRN by document type/number/date — the recovery path when a
+ * push timed out and the sale row was left without an IRN. Only the last
+ * 72 hours (IRP rule). This app only ever sends `Typ: "INV"`, so callers
+ * pass "INV".
+ */
+export async function getIrnByDocDetails(
+  cfg: WhitebooksConfig,
+  args: { docType: string; docNo: string; docDate: Date }
+): Promise<Record<string, unknown>> {
+  const dd = String(args.docDate.getDate()).padStart(2, "0");
+  const mm = String(args.docDate.getMonth() + 1).padStart(2, "0");
+  const docDate = `${dd}/${mm}/${args.docDate.getFullYear()}`;
+  const body = await getWhitebooks(
+    cfg,
+    `/einvoice/type/GETIRNBYDOCDETAILS/version/V1_03?param1=${encodeURIComponent(args.docType)}`,
+    "IRN lookup by document details",
+    {
+      docnum: args.docNo,
+      docdate: docDate,
+    }
+  );
+  return (body.data ?? {}) as Record<string, unknown>;
+}
+
+/** Fetch e-way bill details against an IRN. */
+export async function getEwaybillDetailsByIrn(
+  cfg: WhitebooksConfig,
+  irn: string
+): Promise<Record<string, unknown>> {
+  const body = await getWhitebooks(
+    cfg,
+    `/einvoice/type/GETEWAYBILLIRN/version/V1_03?param1=${encodeURIComponent(irn)}`,
+    "E-way bill details fetch"
+  );
+  return (body.data ?? {}) as Record<string, unknown>;
 }
 
 /** Test hook: forget the cached token (process restart does the same). */

@@ -23,6 +23,9 @@ import {
   cancelIrn as wbCancelIrn,
   generateEwbByIrn as wbGenerateEwbByIrn,
   generateIrn as wbGenerateIrn,
+  getEwaybillDetailsByIrn as wbGetEwaybillDetailsByIrn,
+  getIrnByDocDetails as wbGetIrnByDocDetails,
+  getIrnDetails as wbGetIrnDetails,
   WhitebooksError,
 } from "@/lib/whitebooks/client";
 import {
@@ -336,6 +339,64 @@ export type DispatchDetails = {
   /** "road" | "rail" | "air" | "ship". */
   transportMode?: string;
 };
+
+/**
+ * Read-only lookups against pushed documents. These never write to the
+ * database — they answer "what does the IRP actually hold?" after an
+ * uncertain push, a 72-hour-window check, or an e-way bill verification.
+ * Only the last 72 hours are queryable (IRP rule).
+ */
+export async function fetchIrnDetails(
+  saleId: number
+): Promise<Record<string, unknown>> {
+  await requireNonDealer();
+  const sale = await loadActiveSale(saleId);
+  if (!sale.irn) {
+    throw new Error(`${sale.invoiceNo} has no IRN to look up.`);
+  }
+  try {
+    return await wbGetIrnDetails(getWhitebooksConfig(), sale.irn);
+  } catch (error) {
+    throw new Error(`${sale.invoiceNo}: ${whitebooksErrorMessage(error)}`);
+  }
+}
+
+/**
+ * Find an IRN by document type/number/date — the recovery path when a push
+ * timed out and the sale row was left without an IRN. This app only ever
+ * sends `Typ: "INV"`, so the type is fixed, not asked.
+ */
+export async function fetchIrnByDocDetails(
+  saleId: number
+): Promise<Record<string, unknown>> {
+  await requireNonDealer();
+  const sale = await loadActiveSale(saleId);
+  try {
+    return await wbGetIrnByDocDetails(getWhitebooksConfig(), {
+      docType: "INV",
+      docNo: sale.invoiceNo,
+      docDate: new Date(sale.date),
+    });
+  } catch (error) {
+    throw new Error(`${sale.invoiceNo}: ${whitebooksErrorMessage(error)}`);
+  }
+}
+
+/** Fetch e-way bill details against the sale's pushed IRN. */
+export async function fetchEwaybillDetailsByIrn(
+  saleId: number
+): Promise<Record<string, unknown>> {
+  await requireNonDealer();
+  const sale = await loadActiveSale(saleId);
+  if (!sale.irn) {
+    throw new Error(`${sale.invoiceNo} has no IRN to look up e-way bills for.`);
+  }
+  try {
+    return await wbGetEwaybillDetailsByIrn(getWhitebooksConfig(), sale.irn);
+  } catch (error) {
+    throw new Error(`${sale.invoiceNo}: ${whitebooksErrorMessage(error)}`);
+  }
+}
 
 /**
  * Saves dispatch details on a sale WITHOUT attempting to generate an
