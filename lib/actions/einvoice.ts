@@ -247,10 +247,20 @@ export async function generateEwb(
 ): Promise<{ ewbNo: string }> {
   await requireNonDealer();
   const sale = await loadActiveSale(saleId);
+  // Persisted before throwing (status untouched): in production Next.js
+  // redacts the thrown message on screen, so without this the row shows a
+  // mystery error and a refresh reveals nothing.
   if (!sale.irn) {
-    throw new Error(
-      `${sale.invoiceNo}: push the e-Invoice first — an e-way bill needs its IRN.`
-    );
+    const message =
+      `${sale.invoiceNo}: push the e-Invoice first — an e-way bill needs its IRN.` +
+      (sale.customerGstin
+        ? ""
+        : " This buyer has no GSTIN on file, so no IRN can ever exist for this bill.");
+    await db
+      .update(sales)
+      .set({ ewbError: message.slice(0, 500) })
+      .where(eq(sales.id, saleId));
+    throw new Error(message);
   }
 
   const vehicleNo =
@@ -258,9 +268,13 @@ export async function generateEwb(
   const distanceKm =
     dispatch.distanceKm ?? (sale.distanceKm != null ? Number(sale.distanceKm) : NaN);
   if (!vehicleNo || !(distanceKm > 0)) {
-    throw new Error(
-      `${sale.invoiceNo}: vehicle number and distance are required for an e-way bill.`
-    );
+    const message =
+      `${sale.invoiceNo}: vehicle number and distance are required for an e-way bill.`;
+    await db
+      .update(sales)
+      .set({ ewbError: message.slice(0, 500) })
+      .where(eq(sales.id, saleId));
+    throw new Error(message);
   }
 
   const cfg = getWhitebooksConfig();
