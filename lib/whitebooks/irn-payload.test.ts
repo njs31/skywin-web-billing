@@ -136,8 +136,45 @@ describe("buildIrnPayload", () => {
     assert.equal(val.TotInvVal, 1062);
   });
 
-  it("attaches EwbDtls only when dispatch details exist", () => {
-    const withDispatch = buildIrnPayload(sale(), seller, {
+  it("satisfies the IRP 2189 rule: TotInvVal = items + othChrg − discount ± 1", () => {
+    // Multi-line bill with line discounts AND a bill discount — the exact
+    // shape that double-subtracted Discount before the fix.
+    const s = sale({
+      grandTotal: 5239,
+      billDiscount: 0,
+      items: [
+        {
+          name: "Sprayer A",
+          hsnCode: "84244100",
+          qty: 1,
+          rate: 4073.13,
+          gstRate: 5,
+          unit: "Pcs",
+          amount: 3869.47,
+        },
+        {
+          name: "Copper 500GM",
+          hsnCode: "28332990",
+          qty: 4,
+          rate: 311.19,
+          gstRate: 5,
+          unit: "500 GM",
+          amount: 1120.28,
+        },
+      ],
+    });
+    const payload = buildIrnPayload(s, seller);
+    const items = payload.ItemList as Array<Record<string, number>>;
+    const val = payload.ValDtls as Record<string, number>;
+    const itemTotal = items.reduce((sum, it) => sum + it.TotItemVal, 0);
+    const derived = itemTotal + val.OthChrg - val.Discount;
+    assert.ok(
+      Math.abs(val.TotInvVal - derived) <= 1,
+      `TotInvVal ${val.TotInvVal} vs derived ${derived}`
+    );
+  });
+
+  it("attaches EwbDtls only when dispatch details exist", () => {    const withDispatch = buildIrnPayload(sale(), seller, {
       vehicleNo: "TN68A1234",
       transporterName: "Selvam Transport",
       distanceKm: 120,

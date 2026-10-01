@@ -186,7 +186,6 @@ export function buildIrnPayload(
     throw new Error("Cannot e-invoice: bill discount exceeds the subtotal.");
   }
 
-  let lineDiscountTotal = 0;
   const itemList = sale.items.map((it, i) => {
     const qty = num(it.qty);
     const unitPrice = num(it.rate);
@@ -194,7 +193,6 @@ export function buildIrnPayload(
     const totAmt = round2(qty * unitPrice);
     const assAmt = round2(num(it.amount) * scale);
     const lineDiscount = round2(totAmt - num(it.amount));
-    lineDiscountTotal += lineDiscount;
     const gstRt = num(it.gstRate);
     if (!(gstRt >= 0)) {
       throw new Error(`Cannot e-invoice: bad GST rate on "${it.name}".`);
@@ -245,7 +243,11 @@ export function buildIrnPayload(
   const cgstVal = sum((it) => it.CgstAmt);
   const sgstVal = sum((it) => it.SgstAmt);
   const igstVal = sum((it) => it.IgstAmt);
-  const discountTotal = round2(lineDiscountTotal + billDiscount);
+  // ValDtls.Discount stays 0: every discount (line and bill-level) is
+  // already netted into the lines above, and the IRP derives its own
+  // total as (sum of TotItemVal) + OthChrg − Discount (error 2189) — any
+  // value here would be subtracted a second time.
+  const discountTotal = 0;
   const grandTotal = round2(num(sale.grandTotal));
   const preRound = round2(assVal + cgstVal + sgstVal + igstVal);
   const rndOff = round2(grandTotal - preRound);
