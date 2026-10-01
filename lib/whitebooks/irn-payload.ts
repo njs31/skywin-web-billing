@@ -75,22 +75,38 @@ export function nicAmount(n: number): number {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** NIC UQC codes for every unit this shop bills in (see lib/units.ts). */
+/** NIC UQC codes for every unit this shop bills in (see lib/units.ts).
+ *  Keys are normalised (lowercased, non-letters stripped), so data-entry
+ *  variants like "500 GM" or "Mtr." still resolve instead of blocking a
+ *  push over a spelling. */
 const UNIT_TO_UQC: Record<string, string> = {
   pcs: "PCS",
+  pc: "PCS",
+  nos: "NOS",
+  no: "NOS",
   gram: "GMS",
+  gm: "GMS",
+  gms: "GMS",
+  g: "GMS",
   kg: "KGS",
+  kgs: "KGS",
   metre: "MTR",
   meter: "MTR",
+  mtr: "MTR",
+  m: "MTR",
   ml: "MLT",
   litre: "LTR",
   liter: "LTR",
+  ltr: "LTR",
+  l: "LTR",
   packet: "PAC",
+  pkt: "PAC",
   bag: "BAG",
 };
 
 export function uqcForUnit(unit: string | null | undefined): string {
-  const uqc = UNIT_TO_UQC[(unit ?? "").trim().toLowerCase()];
+  const key = (unit ?? "").trim().toLowerCase().replace(/[^a-z]/g, "");
+  const uqc = UNIT_TO_UQC[key];
   if (!uqc) {
     throw new Error(
       `Cannot e-invoice: unit "${unit ?? ""}" has no NIC quantity code. ` +

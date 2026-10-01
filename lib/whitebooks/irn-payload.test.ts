@@ -57,6 +57,8 @@ describe("irn payload helpers", () => {
     assert.equal(uqcForUnit("Pcs"), "PCS");
     assert.equal(uqcForUnit("Bag"), "BAG");
     assert.equal(uqcForUnit("Gram"), "GMS");
+    assert.equal(uqcForUnit("500 GM"), "GMS");
+    assert.equal(uqcForUnit("Mtr."), "MTR");
     assert.throws(() => uqcForUnit("Sack"), /quantity code/);
   });
 

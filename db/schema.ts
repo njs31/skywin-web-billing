@@ -269,9 +269,8 @@ export const sales = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
 
     // --- e-Invoice/e-Way Bill (all nullable: most sales are B2C and never
-    // touch this path; only GSTIN-bearing B2B sales do). Written by a GSP
-    // integration (currently being moved from Zoho to whitebooks.in — see
-    // lib/actions/einvoice.ts). ---
+    // touch this path; only GSTIN-bearing B2B sales do). Written by the
+    // WhiteBooks GSP integration — see lib/actions/einvoice.ts. ---
     /** "none" | "pending" | "pushed" | "failed" | "cancelled". */
     einvoiceStatus: text("einvoice_status").default("none").notNull(),
     irn: text("irn"),
