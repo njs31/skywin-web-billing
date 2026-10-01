@@ -206,6 +206,62 @@ export function requiresEwayBill(
   return grandTotal > threshold;
 }
 
+export type EinvoiceCustomerMaster = {
+  gstin?: string | null;
+  address?: string | null;
+  district?: string | null;
+  village?: string | null;
+  taluk?: string | null;
+  pinCode?: string | null;
+};
+
+/**
+ * Is this customer e-invoice eligible, and if so what is still missing?
+ * Eligible = GST-registered (B2B). Missing-field wording matches
+ * einvoiceMissingFields so POS, the e-Invoice page and the push guard all
+ * name the same fields. Pure — unit-tested.
+ */
+export function einvoiceReadiness(
+  customer: EinvoiceCustomerMaster | null | undefined
+): { eligible: boolean; missing: string[] } {
+  if (!isValidGstin(customer?.gstin)) return { eligible: false, missing: [] };
+  const missing: string[] = [];
+  if (!customer!.address?.trim()) missing.push("Customer address");
+  if (
+    !customer!.district?.trim() &&
+    !customer!.village?.trim() &&
+    !customer!.taluk?.trim()
+  ) {
+    missing.push("Customer city");
+  }
+  if (!customer!.pinCode?.trim()) missing.push("Customer PIN code");
+  return { eligible: true, missing };
+}
+
+/**
+ * Is an e-way bill legally required for these totals, and if so what
+ * dispatch details are still missing? Wording matches
+ * ewayBillMissingFields. Pure — unit-tested.
+ */
+export function ewayBillReadiness(args: {
+  grandTotal: number;
+  interstate: boolean;
+  vehicleNo?: string | null;
+  transporterName?: string | null;
+  distanceKm?: number | null;
+}): { required: boolean; missing: string[] } {
+  if (!requiresEwayBill(args.grandTotal, args.interstate)) {
+    return { required: false, missing: [] };
+  }
+  const missing: string[] = [];
+  if (!args.vehicleNo?.trim()) missing.push("Vehicle number");
+  if (!args.transporterName?.trim()) missing.push("Transporter name");
+  if (!(typeof args.distanceKm === "number" && args.distanceKm > 0)) {
+    missing.push("Distance");
+  }
+  return { required: true, missing };
+}
+
 /**
  * One selling price for every customer.
  *

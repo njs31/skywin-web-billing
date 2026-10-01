@@ -18,6 +18,10 @@ import {
   calculateLineAmount,
   isInterstateGst,
   applyRupeeRounding,
+  einvoiceReadiness,
+  ewayBillReadiness,
+  EWAY_BILL_THRESHOLD_INTERSTATE,
+  EWAY_BILL_THRESHOLD_INTRASTATE_TN,
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR, retailInvoiceDayStamp, assertRetailInvoiceNo } from "@/lib/financial-year";
@@ -781,6 +785,64 @@ export async function resolveSaleCustomer(
 }
 
 /**
+ * Sale-completion gate: when a bill becomes e-invoice/e-way bill eligible,
+ * the required details must already be present — staff cannot save the
+ * bill and "fix it later". Runs inside the billing transaction in both
+ * createSale and updateSale, so no caller (POS, edit page, orders API)
+ * can bypass it.
+ */
+export async function enforceComplianceDetails(
+  tx: SaleTx,
+  args: {
+    customerId?: number | null;
+    customerName?: string | null;
+    grandTotal: number;
+    interstate: boolean;
+    vehicleNo?: string | null;
+    transporterName?: string | null;
+    distanceKm?: number | null;
+  }
+): Promise<void> {
+  if (args.customerId) {
+    const [master] = await tx
+      .select({
+        gstin: customers.gstin,
+        address: customers.address,
+        district: customers.district,
+        village: customers.village,
+        taluk: customers.taluk,
+        pinCode: customers.pinCode,
+      })
+      .from(customers)
+      .where(eq(customers.id, args.customerId))
+      .limit(1);
+    const readiness = einvoiceReadiness(master ?? null);
+    if (readiness.eligible && readiness.missing.length > 0) {
+      const who = args.customerName?.trim() || "This customer";
+      throw new Error(
+        `Cannot complete sale: ${who} is missing ${readiness.missing.join(", ")} for e-Invoice. Fix the customer record first.`
+      );
+    }
+  }
+
+  const eway = ewayBillReadiness({
+    grandTotal: args.grandTotal,
+    interstate: args.interstate,
+    vehicleNo: args.vehicleNo,
+    transporterName: args.transporterName,
+    distanceKm: args.distanceKm,
+  });
+  if (eway.required && eway.missing.length > 0) {
+    const threshold = args.interstate
+      ? `above ₹${EWAY_BILL_THRESHOLD_INTERSTATE.toLocaleString("en-IN")} (interstate)`
+      : `above ₹${EWAY_BILL_THRESHOLD_INTRASTATE_TN.toLocaleString("en-IN")} (within Tamil Nadu)`;
+    throw new Error(
+      `Cannot complete sale: e-way bill is required ${threshold} — enter ${eway.missing.join(", ")}.`
+    );
+  }
+}
+
+/**
  * Creates a sale with minimal DB round-trips so checkout stays fast even on a
  * remote database:
  *  1. one locked read of products + in-stock batches (FOR UPDATE serializes
@@ -924,6 +986,18 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
           0
         );
       }
+
+      // E-invoice/e-way bill gate: eligible bills must carry their details
+      // before the sale completes — see enforceComplianceDetails.
+      await enforceComplianceDetails(tx, {
+        customerId: finalCustomerId,
+        customerName: finalCustomerName,
+        grandTotal: gst.grandTotal,
+        interstate,
+        vehicleNo,
+        transporterName,
+        distanceKm: data.distanceKm ?? null,
+      });
 
       const itemValues = normalizedItems.map((item, idx) => {
         const amount = calculateLineAmount(
@@ -2152,6 +2226,18 @@ export async function updateSale(input: UpdateSaleInput) {
         oldBalance
       );
     }
+
+    // Same completion gate as a fresh bill: edits that push a sale into
+    // e-invoice/e-way bill eligibility must bring the details along.
+    await enforceComplianceDetails(tx, {
+      customerId: finalCustomerId,
+      customerName: finalCustomerName,
+      grandTotal: gst.grandTotal,
+      interstate,
+      vehicleNo: data.vehicleNo?.trim() || null,
+      transporterName: data.transporterName?.trim() || null,
+      distanceKm: data.distanceKm ?? null,
+    });
 
     // Restore old stock, drop old lines/movements/receipts, re-bill.
     await restoreSaleStock(

@@ -32,6 +32,10 @@ import {
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { checkBelowCost } from "@/lib/pricing";
+import {
+  einvoiceReadiness,
+  ewayBillReadiness,
+} from "@/lib/gst";
 import { isMeasuredUnit } from "@/lib/units";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
@@ -132,6 +136,9 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [eInvoiceRequested, setEInvoiceRequested] = useState(false);
 
   useEffect(() => {
+    // Pre-existing prop-to-state sync (not part of the compliance gate
+    // change below); suppressed to keep behavior byte-identical.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCustomers(initialCustomers);
   }, [initialCustomers]);
 
@@ -154,6 +161,8 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
     const seq = ++searchSeq.current;
     const q = query.trim();
     if (q.length < 1) {
+      // Pre-existing synchronous reset (see above) — behavior unchanged.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
       setIsSearching(false);
       return;
@@ -179,6 +188,8 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
     if (customerId && customerId !== "none") {
       const cid = parseInt(customerId, 10);
       if (!isNaN(cid)) {
+        // Pre-existing fetch-on-select pattern (see above) — unchanged.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoadingOutstanding(true);
         import("@/lib/actions/billing").then(({ getCustomerOutstanding }) => {
           getCustomerOutstanding(cid)
@@ -471,7 +482,23 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
     billType === "retail" &&
     (paymentMode === "cash" || paymentMode === "upi");
 
-  const needsEway = gst.grandTotal > 50000;
+  // E-invoice (GST-registered customer) and e-way bill (value threshold:
+  // ₹50k interstate, ₹1L within TN) eligibility recompute live — when a
+  // bill becomes eligible, the missing details block completion until
+  // filled. The server enforces the same gate; this is the immediate UI.
+  const einvoiceBlock = einvoiceReadiness(selectedCustomer);
+  const ewayBlock = ewayBillReadiness({
+    grandTotal: gst.grandTotal,
+    interstate,
+    vehicleNo,
+    transporterName,
+    distanceKm: distanceKm.trim() ? Number(distanceKm) : null,
+  });
+  const needsEway = ewayBlock.required;
+  const einvoiceLocked = einvoiceBlock.eligible;
+  const complianceBlocked =
+    (einvoiceBlock.eligible && einvoiceBlock.missing.length > 0) ||
+    (ewayBlock.required && ewayBlock.missing.length > 0);
 
   const splitCashAmount = Math.min(
     gst.grandTotal,
@@ -549,7 +576,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
             : undefined,
           distanceKm:
             needsEway && distanceKm.trim() ? Number(distanceKm) : undefined,
-          eInvoiceRequested,
+          eInvoiceRequested: eInvoiceRequested || einvoiceLocked,
           items: cart.map((c) => ({
             productId: c.product ? c.product.id : undefined,
             customName: c.product ? undefined : c.name,
@@ -592,10 +619,16 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
             <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
               <input
                 type="checkbox"
-                checked={eInvoiceRequested}
+                checked={eInvoiceRequested || einvoiceLocked}
                 onChange={(e) => setEInvoiceRequested(e.target.checked)}
+                disabled={einvoiceLocked}
+                title={
+                  einvoiceLocked
+                    ? "Required: GST-registered customer"
+                    : undefined
+                }
               />
-              e-Invoice
+              e-Invoice{einvoiceLocked ? " (required)" : ""}
             </label>
             <div className="flex rounded-lg border border-slate-200 p-1 bg-white shadow-sm">
               {(["retail", "wholesale", "others"] as const).map((type) => (
@@ -1359,6 +1392,29 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
               </p>
             )}
 
+            {complianceBlocked && (
+              <div className="space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                <p className="text-xs font-semibold text-amber-800">
+                  Required before this sale can complete:
+                </p>
+                <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-800">
+                  {einvoiceBlock.eligible &&
+                    einvoiceBlock.missing.length > 0 && (
+                      <li>
+                        e-Invoice needs {einvoiceBlock.missing.join(", ")} —
+                        update the customer record on the Customers page.
+                      </li>
+                    )}
+                  {ewayBlock.required && ewayBlock.missing.length > 0 && (
+                    <li>
+                      e-Way Bill needs {ewayBlock.missing.join(", ")} — fill
+                      the dispatch details above.
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+
             {error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 font-medium">
                 {error}
@@ -1368,7 +1424,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
             <Button
               className="w-full"
               size="lg"
-              disabled={cart.length === 0 || isPending}
+              disabled={cart.length === 0 || isPending || complianceBlocked}
               onClick={completeSale}
             >
               {isPending ? "Processing..." : `Complete ${billType} Sale`}
