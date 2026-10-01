@@ -9,7 +9,7 @@
  * einvoiceMissingFields for how it also surfaces "not GST-registered" as
  * a reason, not just missing address fields.
  */
-import { and, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
 import { sales, customers } from "@/db/schema";
 import { isValidGstin } from "@/lib/gst";
@@ -20,6 +20,32 @@ export { isValidGstin };
  *  be pushed for an IRN at all. Matches the 30-day rule checked against the
  *  live catalogue while scoping this feature. */
 export const EINVOICE_REPORTING_WINDOW_DAYS = 30;
+
+/**
+ * AATO (₹ crore) at/above which the IRP enforces the 30-day reporting
+ * window. CURRENT OFFICIAL RULE (GSTN advisory 05.11.2024, effective
+ * 01.04.2025): enforced only for AATO ≥ 10cr; "no such reporting
+ * restriction on taxpayers with an AATO of less than 10 crores as of now".
+ */
+export const IRP_30DAY_WINDOW_AATO_CRORE = 10;
+
+/**
+ * Whether the 30-day push block applies to this business. Business AATO is
+ * ₹5–10cr (below the 10cr threshold), so the block does NOT apply — older
+ * FY bills stay pushable (duplicates and FY boundaries are still enforced
+ * by the IRP itself). Pass an explicit AATO to evaluate other bands.
+ */
+export function isIrpReportingWindowEnforced(aatoCrore?: number): boolean {
+  if (aatoCrore == null) return false;
+  return aatoCrore >= IRP_30DAY_WINDOW_AATO_CRORE;
+}
+
+/** True when `date` is still inside the (possibly inapplicable) window. */
+export function isWithinReportingWindow(date: Date, aatoCrore?: number): boolean {
+  if (!isIrpReportingWindowEnforced(aatoCrore)) return true;
+  const ageMs = Date.now() - date.getTime();
+  return ageMs <= EINVOICE_REPORTING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+}
 
 export type EinvoiceRow = {
   id: number;
@@ -52,12 +78,27 @@ export type EinvoiceRow = {
   distanceKm: string | null;
 };
 
-/** Active, B2B (GSTIN present) sales within the IRP's reporting window. */
-export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
-  const windowStart = new Date();
-  windowStart.setDate(windowStart.getDate() - EINVOICE_REPORTING_WINDOW_DAYS);
-
-  return db
+/** Candidate sales for the e-Invoice / e-Way Bill pages.
+ *
+ *  CURRENT BEHAVIOR → OFFICIAL RULE → PROPOSED (and implemented) BEHAVIOR:
+ *  - Was: only active sales from the last 30 days were listed/pushable.
+ *  - Official rule (GSTN advisory 05.11.2024, effective 01.04.2025): the
+ *    30-day IRP reporting window binds only AATO ≥ ₹10cr taxpayers; below
+ *    that there is "no such reporting restriction … as of now".
+ *  - This business (AATO ₹5–10cr) is below the threshold, so by default
+ *    (`windowDays = null`) there is NO date filter — newest first, capped
+ *    at 500 rows like the Sale Book. Pass an explicit `windowDays` to
+ *    re-impose a window (e.g. if AATO crosses 10cr — then also flip
+ *    `isIrpReportingWindowEnforced`'s default).
+ *
+ *  Note the e-Way Bill page shares this list: e-way bills never had a
+ *  30-day IRP rule at all, so lifting the filter fixes that page's scope
+ *  as a side effect.
+ */
+export async function getEinvoiceCandidates(
+  windowDays: number | null = null
+): Promise<EinvoiceRow[]> {
+  const base = db
     .select({
       id: sales.id,
       invoiceNo: sales.invoiceNo,
@@ -86,7 +127,18 @@ export async function getEinvoiceCandidates(): Promise<EinvoiceRow[]> {
       distanceKm: sales.distanceKm,
     })
     .from(sales)
-    .innerJoin(customers, eq(sales.customerId, customers.id))
+    .innerJoin(customers, eq(sales.customerId, customers.id));
+
+  if (windowDays == null) {
+    return base
+      .where(eq(sales.status, "active"))
+      .orderBy(desc(sales.date))
+      .limit(500);
+  }
+
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - windowDays);
+  return base
     .where(and(eq(sales.status, "active"), gte(sales.date, windowStart)))
     .orderBy(sales.date);
 }

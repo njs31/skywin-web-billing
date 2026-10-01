@@ -90,7 +90,11 @@ export default async function EwayBillPage() {
                       {formatCurrency(row.grandTotal)}
                     </TableCell>
                     <TableCell>
-                      {missing.length === 0 ? (
+                      {row.ewbStatus === "failed" ? (
+                        <span className="rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                          Push failed — fix and retry
+                        </span>
+                      ) : missing.length === 0 ? (
                         <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                           Ready to push
                         </span>

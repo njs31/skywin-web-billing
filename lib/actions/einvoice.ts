@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { sales } from "@/db/schema";
 import { getSaleById } from "@/lib/queries/sales";
-import { EINVOICE_REPORTING_WINDOW_DAYS } from "@/lib/queries/einvoice";
+import { isWithinReportingWindow } from "@/lib/queries/einvoice";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { getSettings } from "@/lib/settings";
 import { isValidGstin } from "@/lib/gst";
@@ -64,9 +64,12 @@ async function loadActiveB2bSale(saleId: number): Promise<LoadedSale> {
   return sale;
 }
 
+/** Reporting-window guard. Business AATO (₹5–10cr) is below the IRP's
+ *  10cr enforcement threshold, so this currently never blocks — see
+ *  isIrpReportingWindowEnforced. Kept as a call-time check so the block
+ *  reactivates itself if the business crosses the threshold. */
 function withinReportingWindow(date: Date): boolean {
-  const ageMs = Date.now() - date.getTime();
-  return ageMs <= EINVOICE_REPORTING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  return isWithinReportingWindow(date);
 }
 
 /** "YYYY-MM-DD HH:mm:ss" (IRP format) → Date. Forgiving, never throws. */
@@ -154,7 +157,8 @@ export async function generateIrn(
   }
   if (!withinReportingWindow(new Date(sale.date))) {
     throw new Error(
-      `${sale.invoiceNo} is older than the IRP's ${EINVOICE_REPORTING_WINDOW_DAYS}-day reporting window.`
+      `${sale.invoiceNo} is older than the IRP's 30-day reporting window ` +
+        "(applies at AATO ≥ ₹10cr)."
     );
   }
 
@@ -183,7 +187,10 @@ export async function generateIrn(
         ackDate: parseIrpDate(data.AckDt),
         signedQr: typeof data.SignedQRCode === "string" ? data.SignedQRCode : null,
         einvoiceError: null,
-        einvoiceRaw: JSON.stringify(data).slice(0, 8000),
+        // Full response, untruncated: einvoice_raw is unbounded text, so
+        // the complete SignedInvoice survives for reprint/audit. (Truncating
+        // it used to destroy exactly the field auditors ask for.)
+        einvoiceRaw: JSON.stringify(data),
         // Same-call e-way bill: the IRP returns it on the same response
         // when EwbDtls was included in the payload.
         ...(data.EwbNo
@@ -193,7 +200,7 @@ export async function generateIrn(
               ewbGeneratedAt: new Date(),
               ewbValidUntil: parseIrpDate(data.EwbValidTill),
               ewbError: null,
-              ewbRaw: JSON.stringify(data).slice(0, 8000),
+              ewbRaw: JSON.stringify(data),
             }
           : {}),
       })
@@ -279,7 +286,7 @@ export async function generateEwb(
         ewbGeneratedAt: new Date(),
         ewbValidUntil: parseIrpDate(data.EwbValidTill),
         ewbError: null,
-        ewbRaw: JSON.stringify(data).slice(0, 8000),
+        ewbRaw: JSON.stringify(data),
       })
       .where(eq(sales.id, saleId));
     return { ewbNo };

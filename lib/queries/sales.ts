@@ -20,7 +20,7 @@ import {
   applyRupeeRounding,
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
-import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR } from "@/lib/financial-year";
+import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR, retailInvoiceDayStamp, assertRetailInvoiceNo } from "@/lib/financial-year";
 import { format } from "date-fns";
 import { desc, asc, eq, ne, gte, lte, sql, and, inArray } from "drizzle-orm";
 
@@ -848,8 +848,13 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     );
 
   const isWholesale = data.billType === "wholesale";
-  const dayStamp = format(new Date(), "yyyyMMdd");
-  const retailPrefix = `${settings.invoicePrefix}-${dayStamp}-`;
+  // Retail series: INV-YYMMDD-NNNN (15 chars, IRP-compatible by
+  // construction — see lib/financial-year.ts). The LIKE scope below pins
+  // the exact day stamp, so old-format rows (INV-YYYYMMDD-NNNN) can never
+  // match it and both series allocate independently without renumbering.
+  const retailDayStamp = retailInvoiceDayStamp(new Date());
+  const retailPrefix = `${settings.invoicePrefix}-${retailDayStamp}-`;
+  const retailLike = `${settings.invoicePrefix}-${retailDayStamp}-%`;
   const { start: fyStart, end: fyEnd, shortLabel: fyShortLabel } =
     getIndianFinancialYearBounds();
   // postgres.js raw sql cannot bind JS Date — must pass ISO strings
@@ -876,7 +881,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     ? sql`(s.invoice_no like ${wholesaleLike} or s.invoice_no like 'WHL-%')
             and s.date >= ${fyStartIso}::timestamptz
             and s.date <= ${fyEndIso}::timestamptz`
-    : sql`s.invoice_no like ${settings.invoicePrefix + "-%"}
+    : sql`s.invoice_no like ${retailLike}
             and s.date >= ${fyStartIso}::timestamptz
             and s.date <= ${fyEndIso}::timestamptz`;
   const poNumber = data.poNumber?.trim() || null;
@@ -1029,6 +1034,11 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       `)) as unknown as Array<Record<string, unknown>>;
 
       const created = mapSaleRow(createdRows[0]);
+
+      // Fail closed: a retail number must be IRP-compatible the moment it
+      // is minted (wholesale SKYA/… already is). Throws inside the
+      // transaction, so an oversized number can never be saved.
+      if (!isWholesale) assertRetailInvoiceNo(created.invoiceNo);
 
       // Cash / card / UPI (and cheque) sales credit the party ledger automatically
       // so Tally receipts and customer outstanding stay in sync with the invoice.

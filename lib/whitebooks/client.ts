@@ -198,7 +198,13 @@ export type EwbByIrnParams = {
   transporterGstin?: string | null;
 };
 
-/** Generate an e-way bill against an existing IRN. */
+/** Generate an e-way bill against an existing IRN.
+ *
+ *  KNOWN LIMITATION (staging scope: documented, not expanded): TransMode
+ *  is always "1" (road) and VehType always "R" (regular) — rail/air/ship
+ *  and over-dimensional cargo have no UI or mapping. Standalone (non-IRN)
+ *  e-way bills are likewise out of scope by decision.
+ */
 export async function generateEwbByIrn(
   cfg: WhitebooksConfig,
   params: EwbByIrnParams

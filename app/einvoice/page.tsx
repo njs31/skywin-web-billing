@@ -4,7 +4,6 @@ import {
   getEinvoiceCandidates,
   einvoiceMissingFields,
   isValidGstin,
-  EINVOICE_REPORTING_WINDOW_DAYS,
 } from "@/lib/queries/einvoice";
 import { formatCurrency, formatDateIST } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,9 +35,10 @@ export default async function EinvoicePage() {
         <div>
           <h1 className="text-2xl font-bold">e-Invoice</h1>
           <p className="text-sm text-slate-500">
-            Push B2B invoices for a government IRN. Only active, GST invoices
-            from the last {EINVOICE_REPORTING_WINDOW_DAYS} days are shown —
-            the IRP won&apos;t accept anything older.
+            Push B2B invoices for a government IRN. Our turnover band has
+            no 30-day IRP reporting limit, so all active B2B bills are
+            shown, newest first — the IRP still rejects duplicates and
+            cross-FY re-reporting.
           </p>
         </div>
       </div>
@@ -82,7 +82,11 @@ export default async function EinvoicePage() {
                         {formatCurrency(row.grandTotal)}
                       </TableCell>
                       <TableCell>
-                        {missing.length === 0 ? (
+                        {row.einvoiceStatus === "failed" ? (
+                          <span className="rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                            Push failed — fix and retry
+                          </span>
+                        ) : missing.length === 0 ? (
                           <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                             Ready to push
                           </span>

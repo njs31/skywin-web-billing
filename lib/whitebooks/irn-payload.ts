@@ -9,8 +9,31 @@
  * remainder carried as RndOffAmt — the IRP rejects a document whose
  * ValDtls don't foot, so a large remainder throws instead of pushing a
  * wrong invoice.
+ *
+ * FIELD MAP (Skywin → IRP/NIC v1.03 → rule). Checked against the notified
+ * e-invoice schema + IRIS IRP validation catalogue:
+ * - Version "1.1"            — mandatory, current schema version (kept).
+ * - TranDtls.SupTyp "B2B"    — only B2B is gated in (loadActiveB2bSale).
+ * - TranDtls.RegRev "N"      — reverse charge not modeled (limitation).
+ * - TranDtls.IgstOnIntra "N" — intra-state IGST not used (limitation).
+ * - DocDtls.Typ "INV"        — only invoices; CRN/DBN unsupported.
+ * - DocDtls.No               — invoice_no verbatim, official 16-char pattern.
+ * - DocDtls.Dt               — DD/MM/YYYY from sales.date.
+ * - SellerDtls.*             — settings/businessLocality/businessPin (all mandatory).
+ * - BuyerDtls.Gstin/LglNm/Addr1/Loc/Pin/Stcd — customer record, all mandatory; Pos=Stcd=buyer state.
+ * - BuyerDtls.Ph/Em, TrdNm   — optional (Em never sent; Ph digits-only-or-null).
+ * - Item.SlNo/IsServc "N"    — services not distinguished (limitation: a service line is sent as goods).
+ * - Item.HsnCd               — 6/8-digit numeric (AATO >5cr rule).
+ * - Item.Qty/UnitPrice        — up to 3dp, never exponent.
+ * - Item.Unit                — NIC UQC map (customs list).
+ * - Item.TotAmt = Qty×UnitPrice; AssAmt = TotAmt−Discount; TotItemVal = AssAmt+taxes (±1 per IRP 2192/2193/2194).
+ * - ValDtls.*                — sums of lines; Discount 0 (all discounts netted — IRP 2189 formula); OthChrg 0 (not modeled); Ces* 0 (cess not modeled); RndOffAmt = remainder; TotInvVal = grand_total.
+ * - EwbDtls                  — only with vehicle+distance (same-call EWB).
+ * Never sent (all optional/conditional and not applicable): BchDtls,
+ * DispDtls/ShipDtls, PayDtls, RefDtls, AddlDocDtls, ExpDtls, AttribDtls.
  */
 import { isValidGstin } from "@/lib/gst";
+import { isIrpCompatibleDocNo } from "@/lib/financial-year";
 
 export type IrnSaleItem = {
   name: string;
@@ -116,6 +139,34 @@ export function uqcForUnit(unit: string | null | undefined): string {
   return uqc;
 }
 
+/**
+ * HSN/SAC validation for this business (AATO ₹5–10cr).
+ *
+ * CURRENT OFFICIAL RULE (Notification 78/2020-Central Tax; enforced on the
+ * IRP since 01.10.2023): AATO above ₹5cr must report HSN of at least
+ * 6 digits; others at least 4. The IRP additionally rejects codes outside
+ * the GSTN HSN master. This checks shape (6-or-8-digit numeric, the only
+ * lengths the customs-derived master uses); full master-list membership
+ * is a documented follow-up, not guessed here.
+ *
+ * Throws an actionable message naming the item — the push never reaches
+ * WhiteBooks with a bad HSN.
+ */
+export function validateHsn(hsn: string | null | undefined, itemName: string): string {
+  const code = (hsn ?? "").trim().replace(/\s/g, "");
+  if (!code) {
+    throw new Error(`Cannot e-invoice: "${itemName}" has no HSN code.`);
+  }
+  if (!/^[0-9]{6}([0-9]{2})?$/.test(code)) {
+    throw new Error(
+      `Cannot e-invoice: "${itemName}" has HSN "${code}" — ` +
+        "this business must report 6- or 8-digit numeric HSN codes. " +
+        "Fix the product master."
+    );
+  }
+  return code;
+}
+
 export function stateCodeOfGstin(gstin: string): string {
   return gstin.trim().toUpperCase().slice(0, 2);
 }
@@ -147,12 +198,14 @@ export function buildIrnPayload(
     throw new Error("Cannot e-invoice: the bill has no items.");
   }
 
-  // NIC Doc No: max 16 chars, letters/digits/-/slash only.
+  // NIC DocDtls.No: String(16), official pattern shared with numbering.
+  // Existing 17-char retail numbers fail here with an explicit message —
+  // never silently substituted (see PART 2 of the staging plan).
   const docNo = sale.invoiceNo.trim();
-  if (!/^[A-Za-z0-9/\-]{1,16}$/.test(docNo)) {
+  if (!isIrpCompatibleDocNo(docNo)) {
     throw new Error(
       `Cannot e-invoice: invoice number "${docNo}" is not IRP-compatible ` +
-        "(max 16 chars, letters/digits/-// only)."
+        "(max 16 chars, letters/digits/-// only, must not start with 0, / or -)."
     );
   }
 
@@ -206,10 +259,7 @@ export function buildIrnPayload(
     const cgstAmt = interstate ? 0 : half;
     const sgstAmt = interstate ? 0 : half;
     const igstAmt = interstate ? tax : 0;
-    const hsn = (it.hsnCode ?? "").trim().replace(/\s/g, "");
-    if (!hsn) {
-      throw new Error(`Cannot e-invoice: "${it.name}" has no HSN code.`);
-    }
+    const hsn = validateHsn(it.hsnCode, it.name);
     return {
       SlNo: String(i + 1),
       IsServc: "N",
