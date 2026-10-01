@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getSales } from "@/lib/queries/sales";
+import { getCurrentUser } from "@/lib/actions/auth";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 import { SalesReport } from "@/components/invoices/sales-report";
 import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
@@ -33,7 +34,8 @@ function BillTypeBadge({ billType }: { billType: string }) {
 }
 
 export default async function InvoicesPage() {
-  const sales = await getSales();
+  const [sales, currentUser] = await Promise.all([getSales(), getCurrentUser()]);
+  const isAdmin = currentUser?.role === "admin";
 
   return (
     <div className="space-y-6 p-6">
@@ -116,6 +118,11 @@ export default async function InvoicesPage() {
                         <Button asChild size="sm" variant="outline">
                           <Link href={`/invoices/${sale.id}`}>View</Link>
                         </Button>
+                        {isAdmin && !cancelled && (
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/invoices/${sale.id}/edit`}>Edit</Link>
+                          </Button>
+                        )}
                         <PrintSizeMenu href={`/invoices/${sale.id}`} />
                       </div>
                     </TableCell>

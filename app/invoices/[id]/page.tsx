@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import QRCode from "qrcode";
-import { getSaleById } from "@/lib/queries/sales";
+import { getSaleById, getSaleEditability } from "@/lib/queries/sales";
 import { getSettings } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/actions/auth";
 import { InvoiceTemplate } from "@/components/invoice/invoice-template";
@@ -39,6 +39,10 @@ export default async function InvoiceDetailPage({
   ]);
   if (!sale) notFound();
   const canCancel = currentUser?.role === "admin" && sale.status !== "cancelled";
+  const { editable: canEdit } =
+    currentUser?.role === "admin" && sale.status !== "cancelled"
+      ? await getSaleEditability(sale.id)
+      : { editable: false };
 
   // Retail bills print as an ~80mm thermal receipt unless a size is forced.
   const effectiveSize =
@@ -90,6 +94,11 @@ export default async function InvoiceDetailPage({
           <Link href="/invoices">Back to Sale Book</Link>
         </Button>
         <div className="flex items-center gap-3">
+          {canEdit && (
+            <Button asChild variant="outline">
+              <Link href={`/invoices/${sale.id}/edit`}>Edit</Link>
+            </Button>
+          )}
           {canCancel && (
             <CancelInvoiceButton saleId={sale.id} invoiceNo={sale.invoiceNo} />
           )}

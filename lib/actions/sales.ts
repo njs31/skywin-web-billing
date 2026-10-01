@@ -3,6 +3,7 @@
 import {
   createSale as createSaleMutation,
   cancelSale as cancelSaleMutation,
+  updateSale as updateSaleMutation,
   getSalesReport,
   searchSalesForReturn as searchSalesForReturnQuery,
 } from "@/lib/queries/sales";
@@ -27,6 +28,16 @@ export async function cancelSale(saleId: number, reason: string) {
     throw new Error("A cancellation reason is required.");
   }
   return cancelSaleMutation(saleId, trimmed, admin.name || admin.phone || "admin");
+}
+
+export async function updateSale(
+  input: Parameters<typeof updateSaleMutation>[0]
+) {
+  await requireAdmin();
+  if (input.customerId) {
+    await assertCustomerAccess(input.customerId);
+  }
+  return updateSaleMutation(input);
 }
 
 export async function getSalesReportData(fromDate: string, toDate: string) {

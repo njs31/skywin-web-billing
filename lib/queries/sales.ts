@@ -28,7 +28,7 @@ import { desc, asc, eq, ne, gte, lte, sql, and, inArray } from "drizzle-orm";
 export const activeSale = ne(sales.status, "cancelled");
 import { z } from "zod";
 
-const saleItemSchema = z.object({
+export const saleItemSchema = z.object({
   productId: z.number().optional().nullable(),
   customName: z.string().optional(),
   qty: z.number().positive(),
@@ -41,7 +41,7 @@ const saleItemSchema = z.object({
   batchId: z.number().optional().nullable(),
 });
 
-const createSaleSchema = z.object({
+export const createSaleSchema = z.object({
   billType: z.enum(["retail", "wholesale", "others"]).default("retail"),
   customerId: z.number().optional(),
   customerName: z.string().optional(),
@@ -69,6 +69,17 @@ const createSaleSchema = z.object({
   externalOrderId: z.string().optional(),
   items: z.array(saleItemSchema).min(1),
 });
+
+/**
+ * Edit-invoice input: everything a fresh bill takes except the series
+ * fields — bill type, date and invoice number never change on edit (the
+ * FY series must stay continuous and the IRP window is date-bound).
+ */
+export const updateSaleSchema = createSaleSchema
+  .omit({ billType: true })
+  .extend({ saleId: z.number().int().positive() });
+
+export type UpdateSaleInput = z.infer<typeof updateSaleSchema>;
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
@@ -159,6 +170,617 @@ function isInvoiceNoConflict(err: unknown): boolean {
 }
 
 /**
+ * Shared sale-line engine: createSale and updateSale run the exact same
+ * stock, tax and receipt logic — an edit is a restore plus a re-bill in
+ * one transaction, reusing every helper below. Pure pieces
+ * (normalize/settlement/allocation) are unit-tested; DB pieces take the
+ * transaction client.
+ */
+
+type SaleTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export type NormalizedSaleItem = {
+  productId?: number | null;
+  customName?: string;
+  qty: number;
+  rate: number;
+  gstRate: number;
+  discountPercent?: number;
+  discountType: "percent" | "value";
+  discountValue: number;
+  hsnCode?: string | null;
+  batchId?: number | null;
+};
+
+/** Fold percent discounts into discountValue, like POS checkout does. */
+export function normalizeSaleItems(
+  items: Array<{
+    productId?: number | null;
+    customName?: string;
+    qty: number;
+    rate: number;
+    gstRate: number;
+    discountPercent?: number;
+    discountType: "percent" | "value";
+    discountValue: number;
+    hsnCode?: string | null;
+    batchId?: number | null;
+  }>
+): NormalizedSaleItem[] {
+  return items.map((i) => {
+    const hasExplicitValue =
+      i.discountValue > 0 || i.discountType === "value";
+    const discountValue = hasExplicitValue
+      ? i.discountValue
+      : (i.discountPercent ?? i.discountValue);
+    return { ...i, discountValue };
+  });
+}
+
+export type SaleSettlementInput = {
+  billType: "retail" | "wholesale" | "others";
+  paymentMode: "cash" | "upi" | "credit" | "card" | "cheque" | "neft";
+  cashAmount?: number;
+  upiAmount?: number;
+  paidAmount?: number;
+  discountAmount?: number;
+};
+
+/**
+ * GST totals plus payment normalization/validation — the same rupee
+ * rounding, split-payment alignment and incomplete-payment guards as
+ * counter checkout, so an edited bill can never be saved half-paid.
+ */
+export function computeSaleSettlement(
+  input: SaleSettlementInput,
+  normalizedItems: NormalizedSaleItem[],
+  interstate: boolean
+) {
+  const gst = applyRupeeRounding(
+    calculateGstBreakdown(
+      normalizedItems.map((i) => ({
+        qty: i.qty,
+        rate: i.rate,
+        gstRate: i.gstRate,
+        discountType: i.discountType,
+        discountValue: i.discountValue,
+      })),
+      { billDiscount: input.discountAmount ?? 0, interstate }
+    )
+  );
+  const roundOff = gst.roundOff ?? 0;
+
+  let cashAmount = round2(input.cashAmount ?? 0);
+  let upiAmount = round2(input.upiAmount ?? 0);
+
+  if (input.paymentMode === "upi" && cashAmount === 0 && upiAmount === 0) {
+    upiAmount = gst.grandTotal;
+  } else if (input.paymentMode === "cash" && cashAmount === 0 && upiAmount === 0) {
+    cashAmount = gst.grandTotal;
+  }
+
+  let paidAmount =
+    input.paymentMode === "credit"
+      ? round2(input.paidAmount ?? 0)
+      : cashAmount + upiAmount > 0
+        ? round2(cashAmount + upiAmount)
+        : round2(input.paidAmount ?? gst.grandTotal);
+
+  if (
+    input.paymentMode !== "credit" &&
+    cashAmount + upiAmount > 0 &&
+    Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01 &&
+    Math.abs(cashAmount + upiAmount - (gst.grandTotal - roundOff)) <= 0.02
+  ) {
+    const diff = round2(gst.grandTotal - (cashAmount + upiAmount));
+    if (upiAmount > 0) upiAmount = round2(upiAmount + diff);
+    else cashAmount = round2(cashAmount + diff);
+    paidAmount = round2(cashAmount + upiAmount);
+  } else if (
+    input.paymentMode !== "credit" &&
+    cashAmount + upiAmount === 0 &&
+    Math.abs(paidAmount - (gst.grandTotal - roundOff)) <= 0.02
+  ) {
+    paidAmount = gst.grandTotal;
+  }
+
+  if (
+    input.billType === "retail" &&
+    (input.paymentMode === "cash" || input.paymentMode === "upi") &&
+    cashAmount + upiAmount > 0 &&
+    Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01
+  ) {
+    throw new Error("Cash + UPI amounts must equal the bill grand total.");
+  }
+
+  if (
+    input.paymentMode !== "credit" &&
+    Math.abs(paidAmount - gst.grandTotal) > 0.01 &&
+    paidAmount < gst.grandTotal
+  ) {
+    throw new Error(
+      `Payment incomplete for ${input.paymentMode.toUpperCase()} sale. Paid ₹${paidAmount.toFixed(2)} of ₹${gst.grandTotal.toFixed(2)}.`
+    );
+  }
+
+  return { gst, roundOff, cashAmount, upiAmount, paidAmount };
+}
+
+export type BatchStockRow = {
+  batchId: number;
+  batchNumber: string;
+  qty: number;
+  expiryDate: string | null;
+};
+
+export type ProductStockInfo = {
+  name: string;
+  hsnCode: string | null;
+  batches: BatchStockRow[];
+};
+
+/** Locked product + in-stock batch snapshot (FOR UPDATE serializes sellers). */
+export async function lockProductsWithBatches(
+  tx: SaleTx,
+  productIds: number[]
+): Promise<Map<number, ProductStockInfo>> {
+  const productInfo = new Map<number, ProductStockInfo>();
+  if (productIds.length === 0) return productInfo;
+  const idList = sql.join(
+    productIds.map((id) => sql`${id}`),
+    sql`, `
+  );
+  const rows = (await tx.execute(sql`
+    select
+      p.id as product_id,
+      p.name as product_name,
+      p.hsn_code as hsn_code,
+      b.id as batch_id,
+      b.batch_number as batch_number,
+      b.qty as batch_qty,
+      b.expiry_date as expiry_date
+    from products p
+    left join product_batches b
+      on b.product_id = p.id and b.qty::numeric > 0
+    where p.id in (${idList})
+    order by
+      p.id asc,
+      (b.expiry_date is null) asc,
+      b.expiry_date asc,
+      b.id asc
+    for update of p
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  for (const row of rows) {
+    const pid = Number(row.product_id);
+    if (!productInfo.has(pid)) {
+      productInfo.set(pid, {
+        name: String(row.product_name),
+        hsnCode: (row.hsn_code as string | null) ?? null,
+        batches: [],
+      });
+    }
+    if (row.batch_id != null) {
+      productInfo.get(pid)!.batches.push({
+        batchId: Number(row.batch_id),
+        batchNumber: String(row.batch_number),
+        qty: parseFloat(String(row.batch_qty)),
+        expiryDate: toDateString(row.expiry_date),
+      });
+    }
+  }
+  return productInfo;
+}
+
+/** Stock sufficiency + HSN presence, against the locked snapshot. */
+export function checkStockAndHsn(
+  productInfo: Map<number, ProductStockInfo>,
+  productQtyMap: Map<number, number>,
+  normalizedItems: NormalizedSaleItem[]
+): void {
+  for (const [productId, totalQty] of productQtyMap) {
+    const info = productInfo.get(productId);
+    if (!info) throw new Error(`Product ${productId} not found`);
+    const available = info.batches.reduce((s, b) => s + b.qty, 0);
+    if (available <= 0) {
+      throw new Error(`${info.name} is out of stock and cannot be sold.`);
+    }
+    if (available < totalQty) {
+      throw new Error(
+        `Insufficient stock for ${info.name}. Available: ${available}, requested: ${totalQty}`
+      );
+    }
+  }
+
+  for (const item of normalizedItems) {
+    if (!item.productId) continue;
+    const effectiveHsn =
+      item.hsnCode || productInfo.get(item.productId)!.hsnCode;
+    if (!effectiveHsn || !effectiveHsn.trim()) {
+      throw new Error(
+        `HSN code is mandatory for all items on the invoice (${item.customName || "Product ID: " + item.productId}).`
+      );
+    }
+  }
+}
+
+export type Deduction = { batchId: number; batchNumber: string; qty: number };
+
+/**
+ * Allocate deductions in memory from the locked snapshot: a pinned batch
+ * when the line names one, FEFO otherwise. Pure — unit-tested.
+ */
+export function allocateDeductions(
+  productInfo: Map<number, ProductStockInfo>,
+  normalizedItems: NormalizedSaleItem[]
+): Deduction[][] {
+  const remaining = new Map<number, number>();
+  for (const info of productInfo.values()) {
+    for (const b of info.batches) remaining.set(b.batchId, b.qty);
+  }
+
+  return normalizedItems.map((item) => {
+    if (!item.productId) return [];
+    const info = productInfo.get(item.productId)!;
+    const taken: Deduction[] = [];
+
+    if (item.batchId) {
+      const batch = info.batches.find((b) => b.batchId === item.batchId);
+      if (!batch) {
+        throw new Error(
+          "Selected batch is out of stock or does not belong to this product."
+        );
+      }
+      const avail = remaining.get(batch.batchId) ?? 0;
+      if (avail < item.qty) {
+        throw new Error(
+          `Insufficient qty in batch ${batch.batchNumber}. Available: ${avail}, requested: ${item.qty}`
+        );
+      }
+      remaining.set(batch.batchId, round2(avail - item.qty));
+      taken.push({
+        batchId: batch.batchId,
+        batchNumber: batch.batchNumber,
+        qty: item.qty,
+      });
+      return taken;
+    }
+
+    let need = item.qty;
+    for (const b of info.batches) {
+      if (need <= 0) break;
+      const avail = remaining.get(b.batchId) ?? 0;
+      if (avail <= 0) continue;
+      const take = Math.min(avail, need);
+      remaining.set(b.batchId, round2(avail - take));
+      taken.push({ batchId: b.batchId, batchNumber: b.batchNumber, qty: take });
+      need = round2(need - take);
+    }
+    if (need > 0) {
+      throw new Error(
+        `Insufficient stock for ${info.name}. Requested quantity exceeds available batches.`
+      );
+    }
+    return taken;
+  });
+}
+
+export type RestoreLine = {
+  productId: number | null;
+  batchId: number | null;
+  batchNumber: string | null;
+  qty: number | string;
+};
+
+/** Put stock back for old lines (edit restore / cancellation). */
+export async function restoreSaleStock(
+  tx: SaleTx,
+  lines: RestoreLine[],
+  referenceId: number,
+  notes: string
+): Promise<number> {
+  const perProduct = new Map<number, number>();
+  for (const it of lines) {
+    if (!it.productId) continue;
+    const qty = toNum(it.qty);
+    perProduct.set(it.productId, (perProduct.get(it.productId) ?? 0) + qty);
+    if (it.batchId) {
+      await tx
+        .update(productBatches)
+        .set({ qty: sql`${productBatches.qty}::numeric + ${qty.toFixed(2)}`, updatedAt: new Date() })
+        .where(eq(productBatches.id, it.batchId));
+    }
+    await tx.insert(stockMovements).values({
+      productId: it.productId,
+      batchId: it.batchId ?? null,
+      batchNumber: it.batchNumber ?? null,
+      type: "return",
+      qtyDelta: qty.toFixed(2),
+      referenceId,
+      notes,
+    });
+  }
+  for (const [productId, qty] of perProduct) {
+    await tx
+      .update(products)
+      .set({ stockQty: sql`${products.stockQty}::numeric + ${qty.toFixed(2)}` })
+      .where(eq(products.id, productId));
+  }
+  return perProduct.size;
+}
+
+/** Drop a sale's lines, its sale movements and its auto receipts. */
+export async function deleteSaleLinesReceiptsAndMovements(
+  tx: SaleTx,
+  saleId: number
+): Promise<void> {
+  await tx.delete(saleItems).where(eq(saleItems.saleId, saleId));
+  await tx
+    .delete(stockMovements)
+    .where(
+      and(
+        eq(stockMovements.referenceId, saleId),
+        eq(stockMovements.type, "sale")
+      )
+    );
+  const allocations = await tx
+    .select({ paymentId: partyPaymentAllocations.paymentId })
+    .from(partyPaymentAllocations)
+    .where(eq(partyPaymentAllocations.saleId, saleId));
+  const paymentIds = [...new Set(allocations.map((a) => a.paymentId))];
+  for (const pid of paymentIds) {
+    // Allocations cascade off the payment row — same as cancellation.
+    await tx.delete(partyPayments).where(eq(partyPayments.id, pid));
+  }
+}
+
+/** One statement: deduct batches, refresh product stock + nearest expiry. */
+export async function applyBatchDeductions(
+  tx: SaleTx,
+  itemDeductions: Deduction[][],
+  productIds: number[]
+): Promise<void> {
+  const batchTakes = new Map<number, number>();
+  for (const deductions of itemDeductions) {
+    for (const d of deductions) {
+      batchTakes.set(d.batchId, round2((batchTakes.get(d.batchId) ?? 0) + d.qty));
+    }
+  }
+  if (batchTakes.size === 0) return;
+  const batchVals = [...batchTakes].map(
+    ([batchId, take]) => sql`(${batchId}::int, ${take.toFixed(2)}::numeric)`
+  );
+  const idList = sql.join(
+    productIds.map((id) => sql`${id}`),
+    sql`, `
+  );
+  await tx.execute(sql`
+    with takes as (
+      select * from (values ${sql.join(batchVals, sql`, `)}) as t(batch_id, take)
+    ),
+    batch_upd as (
+      update product_batches pb
+      set qty = pb.qty - t.take, updated_at = now()
+      from takes t
+      where pb.id = t.batch_id
+    )
+    update products p
+    set stock_qty = agg.total,
+        expiry_date = agg.nearest
+    from (
+      select
+        b.product_id,
+        coalesce(sum(b.qty::numeric - coalesce(t.take, 0)), 0) as total,
+        min(b.expiry_date) filter (where b.qty::numeric - coalesce(t.take, 0) > 0) as nearest
+      from product_batches b
+      left join takes t on t.batch_id = b.id
+      where b.product_id in (${idList})
+      group by b.product_id
+    ) agg
+    where p.id = agg.product_id
+  `);
+}
+
+/** Insert lines + sale movements for a known sale id (the edit path). */
+export async function insertSaleItemsAndMovements(
+  tx: SaleTx,
+  saleId: number,
+  normalizedItems: NormalizedSaleItem[],
+  itemDeductions: Deduction[][]
+): Promise<void> {
+  for (const [idx, item] of normalizedItems.entries()) {
+    const amount = calculateLineAmount(
+      item.qty,
+      item.rate,
+      item.discountValue,
+      item.discountType
+    );
+    const deductions = itemDeductions[idx];
+    const batchLabel = deductions.length
+      ? deductions.map((d) => `${d.batchNumber}(${d.qty})`).join(", ")
+      : null;
+    await tx.insert(saleItems).values({
+      saleId,
+      productId: item.productId ?? null,
+      customName: item.customName || null,
+      qty: item.qty.toFixed(2),
+      rate: item.rate.toFixed(2),
+      discountPercent:
+        item.discountType === "percent" ? item.discountValue.toFixed(2) : "0",
+      discountType: item.discountType,
+      discountValue: item.discountValue.toFixed(2),
+      gstRate: item.gstRate.toFixed(2),
+      amount: amount.toFixed(2),
+      hsnCode: item.hsnCode || null,
+      batchId: deductions[0]?.batchId ?? null,
+      batchNumber: batchLabel,
+    });
+    for (const d of deductions) {
+      await tx.insert(stockMovements).values({
+        productId: item.productId!,
+        batchId: d.batchId,
+        batchNumber: d.batchNumber,
+        type: "sale",
+        qtyDelta: (-d.qty).toFixed(2),
+        referenceId: saleId,
+        notes: item.batchId ? `Batch ${batchLabel}` : `FEFO ${batchLabel}`,
+      });
+    }
+  }
+}
+
+/** Counter-settlement receipts + allocations for a sale. */
+export async function createAutoReceipts(
+  tx: SaleTx,
+  args: {
+    saleId: number;
+    invoiceNo: string;
+    customerId: number | null;
+    paymentMode: "cash" | "upi" | "credit" | "card" | "cheque" | "neft";
+    paidAmount: number;
+    cashAmount: number;
+    upiAmount: number;
+  }
+): Promise<void> {
+  if (!args.customerId || !(args.paidAmount > 0)) return;
+  const receiptParts = buildAutoReceiptParts({
+    paymentMode: args.paymentMode,
+    paidAmount: args.paidAmount,
+    cashAmount: args.cashAmount,
+    upiAmount: args.upiAmount,
+  });
+  for (const part of receiptParts) {
+    const [payment] = await tx
+      .insert(partyPayments)
+      .values({
+        type: "receipt",
+        customerId: args.customerId,
+        amount: part.amount.toFixed(2),
+        paymentMode: part.paymentMode,
+        referenceNo: args.invoiceNo,
+        notes: `Auto receipt for ${args.invoiceNo} (${part.paymentMode.toUpperCase()})`,
+      })
+      .returning();
+    await tx.insert(partyPaymentAllocations).values({
+      paymentId: payment.id,
+      saleId: args.saleId,
+      amount: part.amount.toFixed(2),
+    });
+  }
+}
+
+/**
+ * Credit-limit check. `oldOutstandingBalance` is this bill's own current
+ * unpaid amount (grandTotal − paid) — zero for a fresh bill, so createSale
+ * passes 0 and updateSale passes the pre-edit balance.
+ */
+export async function checkCreditLimit(
+  tx: SaleTx,
+  customerId: number,
+  newGrandTotal: number,
+  newPaidAmount: number,
+  oldOutstandingBalance = 0
+): Promise<void> {
+  const [creditRow] = (await tx.execute(sql`
+    select
+      c.credit_limit as credit_limit,
+      coalesce((
+        select sum(grand_total::numeric - coalesce(paid_amount::numeric, 0))
+        from sales where customer_id = c.id
+      ), 0) as sales_total,
+      coalesce((
+        select sum(grand_total::numeric)
+        from sale_returns where customer_id = c.id
+      ), 0) as returns_total,
+      coalesce((
+        select sum(pp.amount::numeric - coalesce(a.allocated, 0))
+        from party_payments pp
+        left join (
+          select payment_id, sum(amount::numeric) as allocated
+          from party_payment_allocations
+          group by payment_id
+        ) a on a.payment_id = pp.id
+        where pp.customer_id = c.id and pp.type = 'receipt'
+      ), 0) as unallocated_receipts
+    from customers c
+    where c.id = ${customerId}
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  const limit = parseFloat(String(creditRow?.credit_limit ?? "0"));
+  if (!(limit > 0)) return;
+  const currentOutstanding =
+    parseFloat(String(creditRow?.sales_total ?? "0")) -
+    parseFloat(String(creditRow?.returns_total ?? "0")) -
+    parseFloat(String(creditRow?.unallocated_receipts ?? "0"));
+
+  const newCredit = Math.max(0, newGrandTotal - newPaidAmount);
+  if (currentOutstanding - oldOutstandingBalance + newCredit > limit) {
+    throw new Error(
+      `Credit limit exceeded. Outstanding: ₹${(currentOutstanding - oldOutstandingBalance).toFixed(2)}, Limit: ₹${limit.toFixed(2)}, New credit: ₹${newCredit.toFixed(2)}`
+    );
+  }
+}
+
+/** Find-or-create the bill customer (matches by phone, then name). */
+export async function resolveSaleCustomer(
+  tx: SaleTx,
+  data: { customerId?: number; customerName?: string; customerPhone?: string }
+): Promise<{ finalCustomerId: number | undefined; finalCustomerName: string | undefined }> {
+  let finalCustomerId = data.customerId;
+  let finalCustomerName = data.customerName;
+
+  if (
+    !finalCustomerId &&
+    (data.customerName?.trim() || data.customerPhone?.trim())
+  ) {
+    let existingCustomer = null;
+    if (data.customerPhone?.trim()) {
+      [existingCustomer] = await tx
+        .select()
+        .from(customers)
+        .where(eq(customers.phone, data.customerPhone.trim()))
+        .limit(1);
+    }
+
+    if (!existingCustomer && data.customerName?.trim()) {
+      [existingCustomer] = await tx
+        .select()
+        .from(customers)
+        .where(eq(customers.name, data.customerName.trim()))
+        .limit(1);
+    }
+
+    if (existingCustomer) {
+      finalCustomerId = existingCustomer.id;
+      finalCustomerName = existingCustomer.name;
+
+      if (data.customerPhone?.trim() && !existingCustomer.phone) {
+        await tx
+          .update(customers)
+          .set({ phone: data.customerPhone.trim() })
+          .where(eq(customers.id, existingCustomer.id));
+      }
+    } else {
+      const [newCustomer] = await tx
+        .insert(customers)
+        .values({
+          name:
+            data.customerName?.trim() ||
+            `Customer-${data.customerPhone?.trim()}`,
+          phone: data.customerPhone?.trim() || null,
+          type: "retail",
+          creditLimit: "0.00",
+        })
+        .returning();
+      finalCustomerId = newCustomer.id;
+      finalCustomerName = newCustomer.name;
+    }
+  }
+
+  return { finalCustomerId, finalCustomerName };
+}
+
+/**
  * Creates a sale with minimal DB round-trips so checkout stays fast even on a
  * remote database:
  *  1. one locked read of products + in-stock batches (FOR UPDATE serializes
@@ -198,14 +820,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   }
   const productIds = [...productQtyMap.keys()];
 
-  const normalizedItems = data.items.map((i) => {
-    const hasExplicitValue =
-      i.discountValue > 0 || i.discountType === "value";
-    const discountValue = hasExplicitValue
-      ? i.discountValue
-      : (i.discountPercent ?? i.discountValue);
-    return { ...i, discountValue };
-  });
+  const normalizedItems = normalizeSaleItems(data.items);
 
   // Resolve customer GSTIN early for IGST vs CGST/SGST (B2B interstate).
   let interstate = false;
@@ -218,77 +833,19 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     interstate = isInterstateGst(cust?.gstin, settings.stateCode);
   }
 
-  const gst = applyRupeeRounding(
-    calculateGstBreakdown(
-      normalizedItems.map((i) => ({
-        qty: i.qty,
-        rate: i.rate,
-        gstRate: i.gstRate,
-        discountType: i.discountType,
-        discountValue: i.discountValue,
-      })),
-      { billDiscount: data.discountAmount ?? 0, interstate }
-    )
-  );
-  const roundOff = gst.roundOff ?? 0;
-
-  let cashAmount = round2(data.cashAmount ?? 0);
-  let upiAmount = round2(data.upiAmount ?? 0);
-
-  // Normalize settlement amounts for non-credit modes so UPI/Cash never stay unpaid.
-  if (data.paymentMode === "upi" && cashAmount === 0 && upiAmount === 0) {
-    upiAmount = gst.grandTotal;
-  } else if (data.paymentMode === "cash" && cashAmount === 0 && upiAmount === 0) {
-    cashAmount = gst.grandTotal;
-  }
-
-  // Non-credit modes are settled immediately at the counter.
-  // Prefer explicit cash/upi split when provided; otherwise mark fully paid.
-  let paidAmount =
-    data.paymentMode === "credit"
-      ? round2(data.paidAmount ?? 0)
-      : cashAmount + upiAmount > 0
-        ? round2(cashAmount + upiAmount)
-        : round2(data.paidAmount ?? gst.grandTotal);
-
-  // After rupee rounding, re-align split payments that were computed pre-round on POS.
-  if (
-    data.paymentMode !== "credit" &&
-    cashAmount + upiAmount > 0 &&
-    Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01 &&
-    Math.abs(cashAmount + upiAmount - (gst.grandTotal - roundOff)) <= 0.02
-  ) {
-    const diff = round2(gst.grandTotal - (cashAmount + upiAmount));
-    if (upiAmount > 0) upiAmount = round2(upiAmount + diff);
-    else cashAmount = round2(cashAmount + diff);
-    paidAmount = round2(cashAmount + upiAmount);
-  } else if (
-    data.paymentMode !== "credit" &&
-    cashAmount + upiAmount === 0 &&
-    Math.abs(paidAmount - (gst.grandTotal - roundOff)) <= 0.02
-  ) {
-    paidAmount = gst.grandTotal;
-  }
-
-  if (
-    data.billType === "retail" &&
-    (data.paymentMode === "cash" || data.paymentMode === "upi") &&
-    cashAmount + upiAmount > 0 &&
-    Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01
-  ) {
-    throw new Error("Cash + UPI amounts must equal the bill grand total.");
-  }
-
-  // Guard: cash/card/upi/cheque invoices must never remain unpaid.
-  if (
-    data.paymentMode !== "credit" &&
-    Math.abs(paidAmount - gst.grandTotal) > 0.01 &&
-    paidAmount < gst.grandTotal
-  ) {
-    throw new Error(
-      `Payment incomplete for ${data.paymentMode.toUpperCase()} sale. Paid ₹${paidAmount.toFixed(2)} of ₹${gst.grandTotal.toFixed(2)}.`
+  const { gst, roundOff, cashAmount, upiAmount, paidAmount } =
+    computeSaleSettlement(
+      {
+        billType: data.billType,
+        paymentMode: data.paymentMode,
+        cashAmount: data.cashAmount,
+        upiAmount: data.upiAmount,
+        paidAmount: data.paidAmount,
+        discountAmount: data.discountAmount,
+      },
+      normalizedItems,
+      interstate
     );
-  }
 
   const isWholesale = data.billType === "wholesale";
   const dayStamp = format(new Date(), "yyyyMMdd");
@@ -339,240 +896,28 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
 
   const executeSale = () =>
     db.transaction(async (tx) => {
-      type BatchRow = {
-        batchId: number;
-        batchNumber: string;
-        qty: number;
-        expiryDate: string | null;
-      };
-      const productInfo = new Map<
-        number,
-        { name: string; hsnCode: string | null; batches: BatchRow[] }
-      >();
-
-      if (productIds.length > 0) {
-        const idList = sql.join(
-          productIds.map((id) => sql`${id}`),
-          sql`, `
-        );
-        // Single locked read: FOR UPDATE OF p serializes concurrent sales of
-        // the same products, so the joined batch snapshot is authoritative.
-        const rows = (await tx.execute(sql`
-          select
-            p.id as product_id,
-            p.name as product_name,
-            p.hsn_code as hsn_code,
-            b.id as batch_id,
-            b.batch_number as batch_number,
-            b.qty as batch_qty,
-            b.expiry_date as expiry_date
-          from products p
-          left join product_batches b
-            on b.product_id = p.id and b.qty::numeric > 0
-          where p.id in (${idList})
-          order by
-            p.id asc,
-            (b.expiry_date is null) asc,
-            b.expiry_date asc,
-            b.id asc
-          for update of p
-        `)) as unknown as Array<Record<string, unknown>>;
-
-        for (const row of rows) {
-          const pid = Number(row.product_id);
-          if (!productInfo.has(pid)) {
-            productInfo.set(pid, {
-              name: String(row.product_name),
-              hsnCode: (row.hsn_code as string | null) ?? null,
-              batches: [],
-            });
-          }
-          if (row.batch_id != null) {
-            productInfo.get(pid)!.batches.push({
-              batchId: Number(row.batch_id),
-              batchNumber: String(row.batch_number),
-              qty: parseFloat(String(row.batch_qty)),
-              expiryDate: toDateString(row.expiry_date),
-            });
-          }
-        }
-
-        for (const [productId, totalQty] of productQtyMap) {
-          const info = productInfo.get(productId);
-          if (!info) throw new Error(`Product ${productId} not found`);
-          const available = info.batches.reduce((s, b) => s + b.qty, 0);
-          if (available <= 0) {
-            throw new Error(`${info.name} is out of stock and cannot be sold.`);
-          }
-          if (available < totalQty) {
-            throw new Error(
-              `Insufficient stock for ${info.name}. Available: ${available}, requested: ${totalQty}`
-            );
-          }
-        }
-
-        for (const item of normalizedItems) {
-          if (!item.productId) continue;
-          const effectiveHsn =
-            item.hsnCode || productInfo.get(item.productId)!.hsnCode;
-          if (!effectiveHsn || !effectiveHsn.trim()) {
-            throw new Error(
-              `HSN code is mandatory for all items on the invoice (${item.customName || "Product ID: " + item.productId}).`
-            );
-          }
-        }
-      }
+      const productInfo = await lockProductsWithBatches(tx, productIds);
+      checkStockAndHsn(productInfo, productQtyMap, normalizedItems);
 
       // Allocate deductions in memory (pinned batch or FEFO) from the locked snapshot.
-      const remaining = new Map<number, number>();
-      for (const info of productInfo.values()) {
-        for (const b of info.batches) remaining.set(b.batchId, b.qty);
-      }
+      const itemDeductions = allocateDeductions(productInfo, normalizedItems);
 
-      type Deduction = { batchId: number; batchNumber: string; qty: number };
-      const itemDeductions: Deduction[][] = normalizedItems.map(() => []);
-
-      normalizedItems.forEach((item, idx) => {
-        if (!item.productId) return;
-        const info = productInfo.get(item.productId)!;
-
-        if (item.batchId) {
-          const batch = info.batches.find((b) => b.batchId === item.batchId);
-          if (!batch) {
-            throw new Error(
-              "Selected batch is out of stock or does not belong to this product."
-            );
-          }
-          const avail = remaining.get(batch.batchId) ?? 0;
-          if (avail < item.qty) {
-            throw new Error(
-              `Insufficient qty in batch ${batch.batchNumber}. Available: ${avail}, requested: ${item.qty}`
-            );
-          }
-          remaining.set(batch.batchId, round2(avail - item.qty));
-          itemDeductions[idx].push({
-            batchId: batch.batchId,
-            batchNumber: batch.batchNumber,
-            qty: item.qty,
-          });
-        } else {
-          let need = item.qty;
-          for (const b of info.batches) {
-            if (need <= 0) break;
-            const avail = remaining.get(b.batchId) ?? 0;
-            if (avail <= 0) continue;
-            const take = Math.min(avail, need);
-            remaining.set(b.batchId, round2(avail - take));
-            itemDeductions[idx].push({
-              batchId: b.batchId,
-              batchNumber: b.batchNumber,
-              qty: take,
-            });
-            need = round2(need - take);
-          }
-          if (need > 0) {
-            throw new Error(
-              `Insufficient stock for ${info.name}. Requested quantity exceeds available batches.`
-            );
-          }
-        }
-      });
-
-      let finalCustomerId = data.customerId;
-      let finalCustomerName = data.customerName;
-
-      if (
-        !finalCustomerId &&
-        (data.customerName?.trim() || data.customerPhone?.trim())
-      ) {
-        let existingCustomer = null;
-        if (data.customerPhone?.trim()) {
-          [existingCustomer] = await tx
-            .select()
-            .from(customers)
-            .where(eq(customers.phone, data.customerPhone.trim()))
-            .limit(1);
-        }
-
-        if (!existingCustomer && data.customerName?.trim()) {
-          [existingCustomer] = await tx
-            .select()
-            .from(customers)
-            .where(eq(customers.name, data.customerName.trim()))
-            .limit(1);
-        }
-
-        if (existingCustomer) {
-          finalCustomerId = existingCustomer.id;
-          finalCustomerName = existingCustomer.name;
-
-          if (data.customerPhone?.trim() && !existingCustomer.phone) {
-            await tx
-              .update(customers)
-              .set({ phone: data.customerPhone.trim() })
-              .where(eq(customers.id, existingCustomer.id));
-          }
-        } else {
-          const [newCustomer] = await tx
-            .insert(customers)
-            .values({
-              name:
-                data.customerName?.trim() ||
-                `Customer-${data.customerPhone?.trim()}`,
-              phone: data.customerPhone?.trim() || null,
-              type: "retail",
-              creditLimit: "0.00",
-            })
-            .returning();
-          finalCustomerId = newCustomer.id;
-          finalCustomerName = newCustomer.name;
-        }
-      }
+      const { finalCustomerId, finalCustomerName } = await resolveSaleCustomer(
+        tx,
+        data
+      );
 
       if (data.paymentMode === "credit" && finalCustomerId) {
         // Match getCustomerOutstanding: only subtract UNALLOCATED receipts.
         // Allocated receipts already raise sales.paid_amount — counting them
         // again would understate outstanding and allow over-limit credit.
-        const [creditRow] = (await tx.execute(sql`
-          select
-            c.credit_limit as credit_limit,
-            coalesce((
-              select sum(grand_total::numeric - coalesce(paid_amount::numeric, 0))
-              from sales where customer_id = c.id
-            ), 0) as sales_total,
-            coalesce((
-              select sum(grand_total::numeric)
-              from sale_returns where customer_id = c.id
-            ), 0) as returns_total,
-            coalesce((
-              select sum(pp.amount::numeric - coalesce(a.allocated, 0))
-              from party_payments pp
-              left join (
-                select payment_id, sum(amount::numeric) as allocated
-                from party_payment_allocations
-                group by payment_id
-              ) a on a.payment_id = pp.id
-              where pp.customer_id = c.id and pp.type = 'receipt'
-            ), 0) as unallocated_receipts
-          from customers c
-          where c.id = ${finalCustomerId}
-        `)) as unknown as Array<Record<string, unknown>>;
-
-        const limit = parseFloat(String(creditRow?.credit_limit ?? "0"));
-        if (limit > 0) {
-          const currentOutstanding =
-            parseFloat(String(creditRow?.sales_total ?? "0")) -
-            parseFloat(String(creditRow?.returns_total ?? "0")) -
-            parseFloat(String(creditRow?.unallocated_receipts ?? "0"));
-
-          // Credit sale may already include a partial paidAmount (advance).
-          const newCredit = Math.max(0, gst.grandTotal - paidAmount);
-          if (currentOutstanding + newCredit > limit) {
-            throw new Error(
-              `Credit limit exceeded. Outstanding: ₹${currentOutstanding.toFixed(2)}, Limit: ₹${limit.toFixed(2)}, New credit: ₹${newCredit.toFixed(2)}`
-            );
-          }
-        }
+        await checkCreditLimit(
+          tx,
+          finalCustomerId,
+          gst.grandTotal,
+          paidAmount,
+          0
+        );
       }
 
       const itemValues = normalizedItems.map((item, idx) => {
@@ -688,78 +1033,19 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       // Cash / card / UPI (and cheque) sales credit the party ledger automatically
       // so Tally receipts and customer outstanding stay in sync with the invoice.
       if (finalCustomerId && paidAmount > 0) {
-        const receiptParts = buildAutoReceiptParts({
+        await createAutoReceipts(tx, {
+          saleId: created.id,
+          invoiceNo: created.invoiceNo,
+          customerId: finalCustomerId,
           paymentMode: data.paymentMode,
           paidAmount,
           cashAmount,
           upiAmount,
         });
-        for (const part of receiptParts) {
-          const [payment] = await tx
-            .insert(partyPayments)
-            .values({
-              type: "receipt",
-              customerId: finalCustomerId,
-              amount: part.amount.toFixed(2),
-              paymentMode: part.paymentMode,
-              referenceNo: created.invoiceNo,
-              notes: `Auto receipt for ${created.invoiceNo} (${part.paymentMode.toUpperCase()})`,
-            })
-            .returning();
-          await tx.insert(partyPaymentAllocations).values({
-            paymentId: payment.id,
-            saleId: created.id,
-            amount: part.amount.toFixed(2),
-          });
-        }
       }
 
       // Apply all batch deductions and product stock/expiry updates in one statement.
-      const batchTakes = new Map<number, number>();
-      for (const deductions of itemDeductions) {
-        for (const d of deductions) {
-          batchTakes.set(d.batchId, round2((batchTakes.get(d.batchId) ?? 0) + d.qty));
-        }
-      }
-
-      if (batchTakes.size > 0) {
-        const batchVals = [...batchTakes].map(
-          ([batchId, take]) => sql`(${batchId}::int, ${take.toFixed(2)}::numeric)`
-        );
-        const idList = sql.join(
-          productIds.map((id) => sql`${id}`),
-          sql`, `
-        );
-
-        // One statement: deduct batches and refresh product stock + nearest
-        // expiry (same semantics as syncProductStockQty). The aggregate reads
-        // the statement snapshot, so takes are subtracted explicitly.
-        await tx.execute(sql`
-          with takes as (
-            select * from (values ${sql.join(batchVals, sql`, `)}) as t(batch_id, take)
-          ),
-          batch_upd as (
-            update product_batches pb
-            set qty = pb.qty - t.take, updated_at = now()
-            from takes t
-            where pb.id = t.batch_id
-          )
-          update products p
-          set stock_qty = agg.total,
-              expiry_date = agg.nearest
-          from (
-            select
-              b.product_id,
-              coalesce(sum(b.qty::numeric - coalesce(t.take, 0)), 0) as total,
-              min(b.expiry_date) filter (where b.qty::numeric - coalesce(t.take, 0) > 0) as nearest
-            from product_batches b
-            left join takes t on t.batch_id = b.id
-            where b.product_id in (${idList})
-            group by b.product_id
-          ) agg
-          where p.id = agg.product_id
-        `);
-      }
+      await applyBatchDeductions(tx, itemDeductions, productIds);
 
       return created;
     });
@@ -1476,33 +1762,17 @@ export async function cancelSale(saleId: number, reason: string, actor: string) 
       .where(eq(saleItems.saleId, saleId));
 
     // Put stock back: per batch where we know it, otherwise just the product.
-    const perProduct = new Map<number, number>();
-    for (const it of items) {
-      if (!it.productId) continue;
-      const qty = toNum(it.qty);
-      perProduct.set(it.productId, (perProduct.get(it.productId) ?? 0) + qty);
-      if (it.batchId) {
-        await tx
-          .update(productBatches)
-          .set({ qty: sql`${productBatches.qty}::numeric + ${qty.toFixed(2)}`, updatedAt: new Date() })
-          .where(eq(productBatches.id, it.batchId));
-      }
-      await tx.insert(stockMovements).values({
+    const restoredProducts = await restoreSaleStock(
+      tx,
+      items.map((it) => ({
         productId: it.productId,
-        batchId: it.batchId ?? null,
-        batchNumber: it.batchNumber ?? null,
-        type: "return",
-        qtyDelta: qty.toFixed(2),
-        referenceId: saleId,
-        notes: `Cancellation of ${sale.invoiceNo}`,
-      });
-    }
-    for (const [productId, qty] of perProduct) {
-      await tx
-        .update(products)
-        .set({ stockQty: sql`${products.stockQty}::numeric + ${qty.toFixed(2)}` })
-        .where(eq(products.id, productId));
-    }
+        batchId: it.batchId,
+        batchNumber: it.batchNumber,
+        qty: it.qty,
+      })),
+      saleId,
+      `Cancellation of ${sale.invoiceNo}`
+    );
 
     // Reverse the auto customer receipt (allocations cascade on delete).
     const allocations = await tx
@@ -1524,7 +1794,7 @@ export async function cancelSale(saleId: number, reason: string, actor: string) 
       })
       .where(eq(sales.id, saleId));
 
-    return { invoiceNo: sale.invoiceNo, restoredProducts: perProduct.size };
+    return { invoiceNo: sale.invoiceNo, restoredProducts };
   });
 
   revalidateTag("sales", "max");
@@ -1536,6 +1806,282 @@ export async function cancelSale(saleId: number, reason: string, actor: string) 
   revalidatePath("/");
   revalidatePath("/reports");
   revalidatePath("/accounts/outstanding");
+
+  return result;
+}
+
+export type SaleEditability = { editable: boolean; reasons: string[] };
+
+/** Why an invoice can't be edited right now (empty reasons = editable). */
+export async function getSaleEditability(
+  saleId: number
+): Promise<SaleEditability> {
+  const [sale] = await db
+    .select({
+      id: sales.id,
+      invoiceNo: sales.invoiceNo,
+      status: sales.status,
+      einvoiceStatus: sales.einvoiceStatus,
+      irn: sales.irn,
+      ewbStatus: sales.ewbStatus,
+      ewbNo: sales.ewbNo,
+    })
+    .from(sales)
+    .where(eq(sales.id, saleId))
+    .limit(1);
+  if (!sale) return { editable: false, reasons: ["Invoice not found."] };
+
+  const reasons: string[] = [];
+  if (sale.status === "cancelled") {
+    reasons.push(`Invoice ${sale.invoiceNo} is cancelled.`);
+  }
+  const [linkedReturn] = await db
+    .select({ id: saleReturns.id })
+    .from(saleReturns)
+    .where(eq(saleReturns.saleId, saleId))
+    .limit(1);
+  if (linkedReturn) {
+    reasons.push(
+      `Invoice ${sale.invoiceNo} has a sales return against it — reverse the return first.`
+    );
+  }
+  if (sale.irn && sale.einvoiceStatus === "pushed") {
+    reasons.push(
+      `Invoice ${sale.invoiceNo} has a pushed IRN — cancel the e-Invoice first.`
+    );
+  }
+  if (sale.ewbNo && sale.ewbStatus === "generated") {
+    reasons.push(
+      `Invoice ${sale.invoiceNo} has a generated e-way bill — cancel it first.`
+    );
+  }
+  return { editable: reasons.length === 0, reasons };
+}
+
+/**
+ * Edit a sale: restores the old stock, then re-bills the new lines in the
+ * same transaction — same invoice number, date and bill type, fresh totals.
+ * Blocked while an IRN is pushed, an e-way bill is generated, a return is
+ * linked, or the bill is cancelled (see getSaleEditability).
+ */
+export async function updateSale(input: UpdateSaleInput) {
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
+  const data = updateSaleSchema.parse(input);
+  const settings = await getSettings();
+
+  if (data.paymentMode === "credit" && !data.customerId) {
+    throw new Error("Customer registration required for credit transactions.");
+  }
+
+  for (const item of data.items) {
+    if (!item.productId && (!item.hsnCode || !item.hsnCode.trim())) {
+      throw new Error(
+        `HSN code is mandatory for all items on the invoice (${item.customName || "item"}).`
+      );
+    }
+  }
+
+  const normalizedItems = normalizeSaleItems(data.items);
+  const productQtyMap = new Map<number, number>();
+  for (const item of normalizedItems) {
+    if (item.productId) {
+      productQtyMap.set(
+        item.productId,
+        (productQtyMap.get(item.productId) ?? 0) + item.qty
+      );
+    }
+  }
+  const productIds = [...productQtyMap.keys()];
+
+  const result = await db.transaction(async (tx) => {
+    const [sale] = await tx
+      .select()
+      .from(sales)
+      .where(eq(sales.id, data.saleId))
+      .for("update")
+      .limit(1);
+    if (!sale) throw new Error("Sale not found.");
+    if (sale.status === "cancelled") {
+      throw new Error(`Invoice ${sale.invoiceNo} is cancelled and cannot be edited.`);
+    }
+
+    const [linkedReturn] = await tx
+      .select({ id: saleReturns.id })
+      .from(saleReturns)
+      .where(eq(saleReturns.saleId, data.saleId))
+      .limit(1);
+    if (linkedReturn) {
+      throw new Error(
+        `Invoice ${sale.invoiceNo} has a sales return against it — reverse the return first.`
+      );
+    }
+    if (sale.irn && sale.einvoiceStatus === "pushed") {
+      throw new Error(
+        `Invoice ${sale.invoiceNo} has a pushed IRN — cancel the e-Invoice first.`
+      );
+    }
+    if (sale.ewbNo && sale.ewbStatus === "generated") {
+      throw new Error(
+        `Invoice ${sale.invoiceNo} has a generated e-way bill — cancel it first.`
+      );
+    }
+
+    const oldItems = await tx
+      .select({
+        productId: saleItems.productId,
+        batchId: saleItems.batchId,
+        batchNumber: saleItems.batchNumber,
+        qty: saleItems.qty,
+      })
+      .from(saleItems)
+      .where(eq(saleItems.saleId, data.saleId));
+    const oldBalance = Math.max(
+      0,
+      toNum(sale.grandTotal) - toNum(sale.paidAmount)
+    );
+
+    const { finalCustomerId, finalCustomerName } = await resolveSaleCustomer(
+      tx,
+      data
+    );
+
+    let interstate = false;
+    if (finalCustomerId) {
+      const [cust] = await tx
+        .select({ gstin: customers.gstin })
+        .from(customers)
+        .where(eq(customers.id, finalCustomerId))
+        .limit(1);
+      interstate = isInterstateGst(cust?.gstin, settings.stateCode);
+    }
+
+    const billType = sale.billType as "retail" | "wholesale" | "others";
+    const { gst, roundOff, cashAmount, upiAmount, paidAmount } =
+      computeSaleSettlement(
+        {
+          billType,
+          paymentMode: data.paymentMode,
+          cashAmount: data.cashAmount,
+          upiAmount: data.upiAmount,
+          paidAmount: data.paidAmount,
+          discountAmount: data.discountAmount,
+        },
+        normalizedItems,
+        interstate
+      );
+
+    if (data.paymentMode === "credit" && finalCustomerId) {
+      await checkCreditLimit(
+        tx,
+        finalCustomerId,
+        gst.grandTotal,
+        paidAmount,
+        oldBalance
+      );
+    }
+
+    // Restore old stock, drop old lines/movements/receipts, re-bill.
+    await restoreSaleStock(
+      tx,
+      oldItems.map((it) => ({
+        productId: it.productId,
+        batchId: it.batchId,
+        batchNumber: it.batchNumber,
+        qty: it.qty,
+      })),
+      data.saleId,
+      `Edit of ${sale.invoiceNo} (restore)`
+    );
+    await deleteSaleLinesReceiptsAndMovements(tx, data.saleId);
+
+    const productInfo = await lockProductsWithBatches(tx, productIds);
+    checkStockAndHsn(productInfo, productQtyMap, normalizedItems);
+    const itemDeductions = allocateDeductions(productInfo, normalizedItems);
+
+    await tx
+      .update(sales)
+      .set({
+        customerId: finalCustomerId ?? null,
+        customerName: finalCustomerName ?? null,
+        paymentMode: data.paymentMode,
+        operatorName: data.operatorName ?? settings.defaultOperator,
+        subtotal: gst.subtotal.toFixed(2),
+        discountAmount: gst.discountAmount.toFixed(2),
+        cgst: gst.cgst.toFixed(2),
+        sgst: gst.sgst.toFixed(2),
+        igst: gst.igst.toFixed(2),
+        grandTotal: gst.grandTotal.toFixed(2),
+        roundOff: roundOff.toFixed(2),
+        paidAmount: paidAmount.toFixed(2),
+        cashAmount: cashAmount.toFixed(2),
+        upiAmount: upiAmount.toFixed(2),
+        notes: data.notes ?? null,
+        poNumber: data.poNumber?.trim() || null,
+        purchaseOrderId: data.purchaseOrderId ?? null,
+        quotationNumber: data.quotationNumber?.trim() || null,
+        ewayBillNo: data.ewayBillNo?.trim() || null,
+        vehicleNo: data.vehicleNo?.trim() || null,
+        dispatchedThrough: data.dispatchedThrough?.trim() || null,
+        destination: data.destination?.trim() || null,
+        deliveryNote: data.deliveryNote?.trim() || null,
+        paymentTerms: data.paymentTerms?.trim() || null,
+        transporterName: data.transporterName?.trim() || null,
+        transporterGstin: data.transporterGstin?.trim().toUpperCase() || null,
+        distanceKm:
+          data.distanceKm != null ? data.distanceKm.toFixed(1) : null,
+        // New totals need a fresh push — a past failure is retryable again.
+        einvoiceStatus:
+          sale.einvoiceStatus === "failed" ? "none" : sale.einvoiceStatus,
+        einvoiceError: sale.einvoiceStatus === "failed" ? null : sale.einvoiceError,
+        ewbStatus: sale.ewbStatus === "failed" ? "none" : sale.ewbStatus,
+        ewbError: sale.ewbStatus === "failed" ? null : sale.ewbError,
+      })
+      .where(eq(sales.id, data.saleId));
+
+    await insertSaleItemsAndMovements(
+      tx,
+      data.saleId,
+      normalizedItems,
+      itemDeductions
+    );
+    await applyBatchDeductions(tx, itemDeductions, productIds);
+    if (finalCustomerId && paidAmount > 0) {
+      await createAutoReceipts(tx, {
+        saleId: data.saleId,
+        invoiceNo: sale.invoiceNo,
+        customerId: finalCustomerId,
+        paymentMode: data.paymentMode,
+        paidAmount,
+        cashAmount,
+        upiAmount,
+      });
+    }
+
+    return { id: data.saleId, invoiceNo: sale.invoiceNo };
+  });
+
+  revalidateTag("sales", "max");
+  revalidateTag("products", "max");
+  revalidateTag("customers", "max");
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${data.saleId}`);
+  revalidatePath("/products");
+  revalidatePath("/");
+  revalidatePath("/reports");
+  revalidatePath("/accounts/outstanding");
+  revalidatePath("/accounts/receipts");
+
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  const oldIds = await db
+    .select({ productId: saleItems.productId })
+    .from(saleItems)
+    .where(eq(saleItems.saleId, data.saleId));
+  scheduleQwicksStockPush([
+    ...new Set([
+      ...productIds,
+      ...oldIds.map((r) => r.productId).filter((id): id is number => id != null),
+    ]),
+  ]);
 
   return result;
 }
