@@ -1,22 +1,80 @@
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** Centered circular spinner for route `loading.tsx` files. */
+/**
+ * Skywin brand mark with a progress ring rounding around it. Used for
+ * route- and panel-level loading instead of a bare spinner.
+ */
+export function BrandLoader({
+  size = 88,
+  logoSize = 44,
+  className,
+}: {
+  size?: number;
+  logoSize?: number;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn("relative shrink-0", className)}
+      style={{ width: size, height: size }}
+      aria-hidden
+    >
+      <svg
+        viewBox="0 0 80 80"
+        width={size}
+        height={size}
+        className="absolute inset-0 animate-spin"
+        style={{ animationDuration: "1.1s" }}
+      >
+        <circle
+          cx="40"
+          cy="40"
+          r="35"
+          fill="none"
+          strokeWidth="6"
+          className="stroke-slate-200"
+        />
+        <circle
+          cx="40"
+          cy="40"
+          r="35"
+          fill="none"
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray="150 70"
+          className="stroke-emerald-600"
+        />
+      </svg>
+      <img
+        src="/logo.avif"
+        alt=""
+        width={logoSize}
+        height={logoSize}
+        className="absolute inset-0 m-auto rounded-full bg-white object-contain"
+        style={{ width: logoSize, height: logoSize }}
+        draggable={false}
+      />
+    </div>
+  );
+}
+
+/** Centered brand loader for route `loading.tsx` files. */
 export function PageLoader({
   label = "Loading…",
 }: {
-  /** Kept for call-site compat; all variants show the circle spinner. */
+  /** Kept for call-site compat; all variants show the brand loader. */
   variant?: "default" | "table" | "dashboard" | "form";
   label?: string;
 }) {
   return (
     <div
-      className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-6"
+      className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6"
       role="status"
       aria-live="polite"
       aria-label={label}
     >
-      <Loader2 className="h-10 w-10 animate-spin text-emerald-600" />
+      <BrandLoader />
       <p className="text-sm font-medium text-slate-600">{label}</p>
     </div>
   );
@@ -42,7 +100,7 @@ export function InlineLoader({
   );
 }
 
-/** Centered block spinner (dropdowns, panels). */
+/** Centered block loader (dropdowns, panels) — brand mark, smaller. */
 export function BlockLoader({
   label = "Loading…",
   className,
@@ -59,7 +117,7 @@ export function BlockLoader({
       role="status"
       aria-live="polite"
     >
-      <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+      <BrandLoader size={56} logoSize={28} />
       <span>{label}</span>
     </div>
   );
