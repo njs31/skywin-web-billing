@@ -26,9 +26,6 @@ export default async function EwayBillPage() {
   const required = rows.filter((r) =>
     requiresEwayBill(toNumber(r.grandTotal), toNumber(r.igst) > 0)
   );
-  const belowThreshold = rows.filter(
-    (r) => !requiresEwayBill(toNumber(r.grandTotal), toNumber(r.igst) > 0)
-  );
 
   // A cancelled e-way bill (unlike a cancelled IRN) can legally get a fresh
   // one, so it belongs back in "Pending" — not stuck looking valid forever
@@ -193,36 +190,6 @@ export default async function EwayBillPage() {
             </Table>
           </CardContent>
         </Card>
-      )}
-
-      {belowThreshold.length > 0 && (
-        <details className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-          <summary className="cursor-pointer text-sm font-medium text-slate-600">
-            Below threshold — no e-way bill required ({belowThreshold.length})
-          </summary>
-          <Table className="mt-3">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice #</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {belowThreshold.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-medium">{row.invoiceNo}</TableCell>
-                  <TableCell>{formatDateIST(row.date)}</TableCell>
-                  <TableCell>{row.customerName}</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(row.grandTotal)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </details>
       )}
     </div>
   );
