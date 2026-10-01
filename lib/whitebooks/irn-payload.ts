@@ -184,8 +184,13 @@ export function buildIrnPayload(
       throw new Error(`Cannot e-invoice: bad GST rate on "${it.name}".`);
     }
     const tax = round2((assAmt * gstRt) / 100);
-    const cgstAmt = interstate ? 0 : round2(tax / 2);
-    const sgstAmt = interstate ? 0 : round2(tax - cgstAmt);
+    // The IRP rejects a line whose halves differ by even a paisa (error
+    // 2227), which a round-half-up split produces on odd-paisa tax. Both
+    // halves carry the same rounded value instead; any stray paisa against
+    // the bill's own total is absorbed by RndOffAmt at the document level.
+    const half = round2(tax / 2);
+    const cgstAmt = interstate ? 0 : half;
+    const sgstAmt = interstate ? 0 : half;
     const igstAmt = interstate ? tax : 0;
     const hsn = (it.hsnCode ?? "").trim().replace(/\s/g, "");
     if (!hsn) {

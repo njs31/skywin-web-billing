@@ -146,6 +146,28 @@ describe("buildIrnPayload", () => {
     assert.equal(ewb.TransMode, "1");
   });
 
+  it("keeps CGST/SGST exactly equal on odd-paisa tax (IRP 2227)", () => {
+    const s = sale({
+      grandTotal: 11,
+      items: [
+        {
+          name: "Sample",
+          hsnCode: "31053000",
+          qty: 1,
+          rate: 10.1,
+          gstRate: 5,
+          unit: "Pcs",
+          amount: 10.1,
+        },
+      ],
+    });
+    const payload = buildIrnPayload(s, seller);
+    const items = payload.ItemList as Array<Record<string, number>>;
+    assert.equal(items[0].CgstAmt, items[0].SgstAmt);
+    const val = payload.ValDtls as Record<string, number>;
+    assert.equal(val.TotInvVal, 11);
+  });
+
   it("rejects bad data with actionable messages", () => {
     const noHsn = sale();
     noHsn.items[0].hsnCode = null;
