@@ -24,8 +24,7 @@ function emptyDailySeries(days: number) {
 }
 
 /** Last N days sales trend (fills missing days with 0). */
-export async function getSalesTrend(days = 30) {
-  const customerIds = await visibleCustomerFilter();
+export async function getSalesTrend(days = 30) {  const customerIds = await visibleCustomerFilter();
   if (customerIds !== null && customerIds.length === 0) {
     return emptyDailySeries(days);
   }
@@ -55,6 +54,53 @@ export async function getSalesTrend(days = 30) {
   );
 
   return emptyDailySeries(days).map((d) => {
+    const hit = map.get(d.date);
+    return hit ? { ...d, total: hit.total, bills: hit.bills } : d;
+  });
+}
+
+/**
+ * Sales trend for an explicit IST-calendar range (custom picker). Same
+ * shape as getSalesTrend; capped at 370 days so a wild range can't drag
+ * the whole history into the chart.
+ */
+export async function getSalesTrendRange(fromInput: Date, toInput: Date) {
+  const start = startOfDay(fromInput);
+  const end = startOfDay(toInput);
+  const days =
+    Math.min(370, Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1));
+
+  const customerIds = await visibleCustomerFilter();
+  const out: { date: string; label: string; total: number; bills: number }[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start.getTime() + i * 86400000);
+    out.push({ date: format(d, "yyyy-MM-dd"), label: format(d, "dd MMM"), total: 0, bills: 0 });
+  }
+  if (customerIds !== null && customerIds.length === 0) return out;
+
+  const conditions = [gte(sales.date, start), ne(sales.status, "cancelled")];
+  if (customerIds !== null) {
+    conditions.push(inArray(sales.customerId, customerIds));
+  }
+
+  const rows = await db
+    .select({
+      day: sql<string>`to_char(${sales.date}, 'YYYY-MM-DD')`,
+      total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
+      bills: sql<number>`count(*)::int`,
+    })
+    .from(sales)
+    .where(and(...conditions))
+    .groupBy(sql`to_char(${sales.date}, 'YYYY-MM-DD')`)
+    .orderBy(sql`to_char(${sales.date}, 'YYYY-MM-DD')`);
+
+  const map = new Map(
+    rows.map((r) => [
+      r.day,
+      { total: parseFloat(r.total), bills: r.bills ?? 0 },
+    ])
+  );
+  return out.map((d) => {
     const hit = map.get(d.date);
     return hit ? { ...d, total: hit.total, bills: hit.bills } : d;
   });
