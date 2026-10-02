@@ -1,4 +1,5 @@
 import { Truck } from "lucide-react";
+import Link from "next/link";
 import { getEinvoiceCandidates, ewayBillMissingFields } from "@/lib/queries/einvoice";
 import { requiresEwayBill } from "@/lib/gst";
 import { formatCurrency, formatDateIST, toNumber } from "@/lib/utils";
@@ -81,7 +82,14 @@ export default async function EwayBillPage() {
                   const missing = ewayBillMissingFields(row);
                   return (
                   <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.invoiceNo}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link
+                        href={`/invoices/${row.id}`}
+                        className="text-emerald-700 hover:underline"
+                      >
+                        {row.invoiceNo}
+                      </Link>
+                    </TableCell>
                     <TableCell>{formatDateIST(row.date)}</TableCell>
                     <TableCell>{row.customerName}</TableCell>
                     <TableCell className="text-right">
@@ -156,7 +164,14 @@ export default async function EwayBillPage() {
               <TableBody>
                 {done.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.invoiceNo}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link
+                        href={`/invoices/${row.id}`}
+                        className="text-emerald-700 hover:underline"
+                      >
+                        {row.invoiceNo}
+                      </Link>
+                    </TableCell>
                     <TableCell>{formatDateIST(row.date)}</TableCell>
                     <TableCell>{row.customerName}</TableCell>
                     <TableCell className="text-right">
