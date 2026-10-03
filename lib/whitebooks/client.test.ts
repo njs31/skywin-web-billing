@@ -141,4 +141,49 @@ describe("whitebooks fetch endpoints", () => {
     const authCalls = calls.filter((c) => c.url.includes("/einvoice/authenticate"));
     assert.equal(authCalls.length, 2);
   });
+
+  it("unwraps nested IRP error arrays into code + message", async () => {
+    script.push(
+      { status: 200, body: AUTH_OK },
+      {
+        status: 200,
+        body: {
+          status_cd: "0",
+          status_desc:
+            '[{"errorCode":"4005","errorMessage":"Eway Bill details are not found"}]',
+        },
+      }
+    );
+    await assert.rejects(
+      () => getEwaybillDetailsByIrn(cfg, "IRN123"),
+      (err: unknown) => {
+        assert.ok(err instanceof WhitebooksError);
+        assert.equal(err.code, "4005");
+        assert.match(err.message, /E-way bill details fetch failed \[4005\]/);
+        assert.match(err.message, /not found/);
+        return true;
+      }
+    );
+  });
+
+  it("sends the irp server type from auth on the EWB lookup", async () => {
+    script.push(
+      {
+        status: 200,
+        body: {
+          ...AUTH_OK,
+          data: { ...AUTH_OK.data, irp: "NIC1" },
+        },
+      },
+      { status: 200, body: { status_cd: "1", data: { EwbNo: 1 } } }
+    );
+    await getEwaybillDetailsByIrn(cfg, "IRN123");
+    assert.ok(calls[1].url.includes("irp=NIC1"));
+  });
+
+  it("omits irp when auth did not return one", async () => {
+    authThen({ EwbNo: 1 });
+    await getEwaybillDetailsByIrn(cfg, "IRN123");
+    assert.ok(!calls[1].url.includes("irp="));
+  });
 });

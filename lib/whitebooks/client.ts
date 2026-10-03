@@ -25,10 +25,11 @@ export class WhitebooksError extends Error {
 type AuthData = {
   AuthToken?: string;
   TokenExpiry?: string;
+  irp?: string;
 };
 
 /** In-memory token; re-authenticates a few minutes before expiry. */
-let cached: { token: string; expiresAtMs: number } | null = null;
+let cached: { token: string; expiresAtMs: number; irp?: string } | null = null;
 
 function commonHeaders(cfg: WhitebooksConfig): Record<string, string> {
   return {
@@ -69,14 +70,31 @@ function throwIfFailed(
   action: string
 ): asserts body is Record<string, unknown> & { data: unknown } {
   if (String(body.status_cd) === "1") return;
-  const code =
+  // Fetch endpoints nest IRP errors as a JSON array string in
+  // status_desc: `[{"errorCode":"4005","errorMessage":"…"}]`. Unwrap the
+  // first entry so callers (and the UI) see a real code and message
+  // instead of a raw blob that production error redaction then hides.
+  let code =
     typeof body.errorCode === "string" ? body.errorCode : undefined;
-  const desc =
+  let desc =
     typeof body.status_desc === "string"
       ? body.status_desc
       : `Unknown failure (HTTP ${httpStatus})`;
+  if (!code && typeof body.status_desc === "string") {
+    try {
+      const parsed: unknown = JSON.parse(body.status_desc);
+      const first = Array.isArray(parsed) ? parsed[0] : null;
+      if (first && typeof first === "object") {
+        const entry = first as Record<string, unknown>;
+        if (typeof entry.errorCode === "string") code = entry.errorCode;
+        if (typeof entry.errorMessage === "string") desc = entry.errorMessage;
+      }
+    } catch {
+      // Not a nested payload — keep the raw description.
+    }
+  }
   throw new WhitebooksError(
-    `${action} failed: ${desc}`,
+    code ? `${action} failed [${code}]: ${desc}` : `${action} failed: ${desc}`,
     code,
     httpStatus
   );
@@ -85,6 +103,7 @@ function throwIfFailed(
 async function authenticate(cfg: WhitebooksConfig): Promise<{
   token: string;
   expiresAtMs: number;
+  irp?: string;
 }> {
   const res = await fetch(withEmail(cfg, "/einvoice/authenticate"), {
     method: "GET",
@@ -106,7 +125,8 @@ async function authenticate(cfg: WhitebooksConfig): Promise<{
   const parsed = Date.parse((data.TokenExpiry ?? "").replace(" ", "T"));
   const expiresAtMs =
     (Number.isFinite(parsed) ? parsed : Date.now() + 3600_000) - 5 * 60_000;
-  return { token: data.AuthToken, expiresAtMs };
+  const irp = typeof data.irp === "string" && data.irp ? data.irp : undefined;
+  return { token: data.AuthToken, expiresAtMs, irp };
 }
 
 /** A cached IRP auth token, refreshing when close to expiry. */
@@ -313,14 +333,21 @@ export async function getIrnByDocDetails(
   return (body.data ?? {}) as Record<string, unknown>;
 }
 
-/** Fetch e-way bill details against an IRN. */
+/** Fetch e-way bill details against an IRN. Sends the `irp` server type
+ *  from authentication when known (per the endpoint schema). */
 export async function getEwaybillDetailsByIrn(
   cfg: WhitebooksConfig,
   irn: string
 ): Promise<Record<string, unknown>> {
+  // Ensure authentication first — the irp comes back with it.
+  await getAuthToken(cfg);
+  const irp = cached?.irp;
+  const path =
+    `/einvoice/type/GETEWAYBILLIRN/version/V1_03?param1=${encodeURIComponent(irn)}` +
+    (irp ? `&irp=${encodeURIComponent(irp)}` : "");
   const body = await getWhitebooks(
     cfg,
-    `/einvoice/type/GETEWAYBILLIRN/version/V1_03?param1=${encodeURIComponent(irn)}`,
+    path,
     "E-way bill details fetch"
   );
   return (body.data ?? {}) as Record<string, unknown>;

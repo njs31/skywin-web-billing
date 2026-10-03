@@ -5,6 +5,7 @@ import {
   fetchIrnByDocDetails,
   fetchIrnDetails,
 } from "@/lib/actions/einvoice";
+import { friendlyLookupError } from "./lookup-error";
 
 function str(value: unknown): string | null {
   return typeof value === "string" || typeof value === "number"
@@ -49,7 +50,7 @@ export function IrnVerifyButton({
             : await fetchIrnByDocDetails(saleId);
         setResult(data);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Lookup failed.");
+        setError(friendlyLookupError(e));
       }
     });
   };

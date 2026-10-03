@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { fetchEwaybillDetailsByIrn } from "@/lib/actions/einvoice";
+import { friendlyLookupError } from "./lookup-error";
 
 function str(value: unknown): string | null {
   return typeof value === "string" || typeof value === "number"
@@ -35,7 +36,7 @@ export function EwbVerifyButton({ saleId }: { saleId: number }) {
       try {
         setResult(await fetchEwaybillDetailsByIrn(saleId));
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Lookup failed.");
+        setError(friendlyLookupError(e));
       }
     });
   };
