@@ -5,7 +5,7 @@ import {
   fetchIrnByDocDetails,
   fetchIrnDetails,
 } from "@/lib/actions/einvoice";
-import { friendlyLookupError } from "./lookup-error";
+import { friendlyLookupError, friendlyResultError } from "./lookup-error";
 
 function str(value: unknown): string | null {
   return typeof value === "string" || typeof value === "number"
@@ -44,11 +44,12 @@ export function IrnVerifyButton({
     setOpen(true);
     startTransition(async () => {
       try {
-        const data =
+        const res =
           mode === "details"
             ? await fetchIrnDetails(saleId)
             : await fetchIrnByDocDetails(saleId);
-        setResult(data);
+        if (res.ok) setResult(res.data);
+        else setError(friendlyResultError(res, "irn"));
       } catch (e) {
         setError(friendlyLookupError(e));
       }

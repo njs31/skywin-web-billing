@@ -359,19 +359,34 @@ export type DispatchDetails = {
  * database — they answer "what does the IRP actually hold?" after an
  * uncertain push, a 72-hour-window check, or an e-way bill verification.
  * Only the last 72 hours are queryable (IRP rule).
+ *
+ * Results come back as data, never throws (besides auth): production
+ * builds redact thrown server-action messages before the client sees
+ * them, which would hide the IRP's own code/message. Returned values
+ * pass through untouched, so the button can show the real reason.
  */
+export type LookupResult =
+  | { ok: true; data: Record<string, unknown> }
+  | { ok: false; code?: string; message: string };
+
+function lookupFailure(error: unknown): LookupResult {
+  const message = whitebooksErrorMessage(error);
+  const code = error instanceof WhitebooksError ? error.code : undefined;
+  return { ok: false, code, message };
+}
 export async function fetchIrnDetails(
   saleId: number
-): Promise<Record<string, unknown>> {
+): Promise<LookupResult> {
   await requireNonDealer();
   const sale = await loadActiveSale(saleId);
   if (!sale.irn) {
-    throw new Error(`${sale.invoiceNo} has no IRN to look up.`);
+    return { ok: false, message: `${sale.invoiceNo} has no IRN to look up.` };
   }
   try {
-    return await wbGetIrnDetails(getWhitebooksConfig(), sale.irn);
+    const data = await wbGetIrnDetails(getWhitebooksConfig(), sale.irn);
+    return { ok: true, data };
   } catch (error) {
-    throw new Error(`${sale.invoiceNo}: ${whitebooksErrorMessage(error)}`);
+    return lookupFailure(error);
   }
 }
 
@@ -382,33 +397,38 @@ export async function fetchIrnDetails(
  */
 export async function fetchIrnByDocDetails(
   saleId: number
-): Promise<Record<string, unknown>> {
+): Promise<LookupResult> {
   await requireNonDealer();
   const sale = await loadActiveSale(saleId);
   try {
-    return await wbGetIrnByDocDetails(getWhitebooksConfig(), {
+    const data = await wbGetIrnByDocDetails(getWhitebooksConfig(), {
       docType: "INV",
       docNo: sale.invoiceNo,
       docDate: new Date(sale.date),
     });
+    return { ok: true, data };
   } catch (error) {
-    throw new Error(`${sale.invoiceNo}: ${whitebooksErrorMessage(error)}`);
+    return lookupFailure(error);
   }
 }
 
 /** Fetch e-way bill details against the sale's pushed IRN. */
 export async function fetchEwaybillDetailsByIrn(
   saleId: number
-): Promise<Record<string, unknown>> {
+): Promise<LookupResult> {
   await requireNonDealer();
   const sale = await loadActiveSale(saleId);
   if (!sale.irn) {
-    throw new Error(`${sale.invoiceNo} has no IRN to look up e-way bills for.`);
+    return {
+      ok: false,
+      message: `${sale.invoiceNo} has no IRN to look up e-way bills for.`,
+    };
   }
   try {
-    return await wbGetEwaybillDetailsByIrn(getWhitebooksConfig(), sale.irn);
+    const data = await wbGetEwaybillDetailsByIrn(getWhitebooksConfig(), sale.irn);
+    return { ok: true, data };
   } catch (error) {
-    throw new Error(`${sale.invoiceNo}: ${whitebooksErrorMessage(error)}`);
+    return lookupFailure(error);
   }
 }
 

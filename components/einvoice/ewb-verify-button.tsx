@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { fetchEwaybillDetailsByIrn } from "@/lib/actions/einvoice";
-import { friendlyLookupError } from "./lookup-error";
+import { friendlyLookupError, friendlyResultError } from "./lookup-error";
 
 function str(value: unknown): string | null {
   return typeof value === "string" || typeof value === "number"
@@ -34,7 +34,9 @@ export function EwbVerifyButton({ saleId }: { saleId: number }) {
     setOpen(true);
     startTransition(async () => {
       try {
-        setResult(await fetchEwaybillDetailsByIrn(saleId));
+        const res = await fetchEwaybillDetailsByIrn(saleId);
+        if (res.ok) setResult(res.data);
+        else setError(friendlyResultError(res, "ewb"));
       } catch (e) {
         setError(friendlyLookupError(e));
       }
