@@ -345,6 +345,8 @@ export const saleItems = pgTable(
     gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull(),
     amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
     hsnCode: text("hsn_code"),
+    /** Cashier-chosen unit for custom lines (product lines use products.unit). */
+    unit: text("unit"),
     batchId: integer("batch_id").references(() => productBatches.id),
     batchNumber: text("batch_number"),
   },

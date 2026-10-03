@@ -42,6 +42,8 @@ export const saleItemSchema = z.object({
   discountType: z.enum(["percent", "value"]).default("percent"),
   discountValue: z.number().min(0).default(0),
   hsnCode: z.string().optional().nullable(),
+  /** Cashier-chosen unit for custom lines; product lines use products.unit. */
+  unit: z.string().optional().nullable(),
   batchId: z.number().optional().nullable(),
 });
 
@@ -193,6 +195,7 @@ export type NormalizedSaleItem = {
   discountType: "percent" | "value";
   discountValue: number;
   hsnCode?: string | null;
+  unit?: string | null;
   batchId?: number | null;
 };
 
@@ -208,6 +211,7 @@ export function normalizeSaleItems(
     discountType: "percent" | "value";
     discountValue: number;
     hsnCode?: string | null;
+    unit?: string | null;
     batchId?: number | null;
   }>
 ): NormalizedSaleItem[] {
@@ -616,6 +620,7 @@ export async function insertSaleItemsAndMovements(
       gstRate: item.gstRate.toFixed(2),
       amount: amount.toFixed(2),
       hsnCode: item.hsnCode || null,
+      unit: item.unit?.trim() || null,
       batchId: deductions[0]?.batchId ?? null,
       batchNumber: batchLabel,
     });
@@ -1012,7 +1017,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
         const discountPercent =
           item.discountType === "percent" ? item.discountValue : 0;
 
-        return sql`(${item.productId ?? null}::int, ${item.customName || null}::text, ${item.qty.toFixed(2)}::numeric, ${item.rate.toFixed(2)}::numeric, ${discountPercent.toFixed(2)}::numeric, ${item.discountType}::text, ${item.discountValue.toFixed(2)}::numeric, ${item.gstRate.toFixed(2)}::numeric, ${amount.toFixed(2)}::numeric, ${item.hsnCode || null}::text, ${deductions[0]?.batchId ?? null}::int, ${batchLabel}::text)`;
+        return sql`(${item.productId ?? null}::int, ${item.customName || null}::text, ${item.qty.toFixed(2)}::numeric, ${item.rate.toFixed(2)}::numeric, ${discountPercent.toFixed(2)}::numeric, ${item.discountType}::text, ${item.discountValue.toFixed(2)}::numeric, ${item.gstRate.toFixed(2)}::numeric, ${amount.toFixed(2)}::numeric, ${item.hsnCode || null}::text, ${item.unit?.trim() || null}::text, ${deductions[0]?.batchId ?? null}::int, ${batchLabel}::text)`;
       });
 
       const movementValues: ReturnType<typeof sql>[] = [];
@@ -1091,16 +1096,16 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
         ins_items as (
           insert into sale_items (
             sale_id, product_id, custom_name, qty, rate, discount_percent,
-            discount_type, discount_value, gst_rate, amount, hsn_code,
+            discount_type, discount_value, gst_rate, amount, hsn_code, unit,
             batch_id, batch_number
           )
           select
             ns.id, v.product_id, v.custom_name, v.qty, v.rate, v.discount_percent,
-            v.discount_type, v.discount_value, v.gst_rate, v.amount, v.hsn_code,
+            v.discount_type, v.discount_value, v.gst_rate, v.amount, v.hsn_code, v.unit,
             v.batch_id, v.batch_number
           from new_sale ns
           cross join (values ${sql.join(itemValues, sql`, `)})
-            as v(product_id, custom_name, qty, rate, discount_percent, discount_type, discount_value, gst_rate, amount, hsn_code, batch_id, batch_number)
+            as v(product_id, custom_name, qty, rate, discount_percent, discount_type, discount_value, gst_rate, amount, hsn_code, unit, batch_id, batch_number)
         )
         ${movementsCte}
         select * from new_sale
@@ -1510,7 +1515,7 @@ export async function getSaleById(id: number) {
       discountValue: saleItems.discountValue,
       gstRate: saleItems.gstRate,
       amount: saleItems.amount,
-      unit: products.unit,
+      unit: sql<string | null>`coalesce(${saleItems.unit}, ${products.unit})`,
     })
     .from(saleItems)
     .leftJoin(products, eq(saleItems.productId, products.id))

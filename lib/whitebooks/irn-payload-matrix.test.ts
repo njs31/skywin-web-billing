@@ -247,6 +247,47 @@ describe("document number validation (Part 1 + Part 2)", () => {
   });
 });
 
+describe("custom lines carry their own unit", () => {
+  it("maps a custom line unit to its UQC", () => {
+    const s = sale({
+      grandTotal: 236,
+      items: [
+        {
+          name: "RUUF 1 LTR",
+          hsnCode: "28332990",
+          qty: 2,
+          rate: 100,
+          gstRate: 18,
+          unit: "Ltr",
+          amount: 200,
+        },
+      ],
+    });
+    const payload = buildIrnPayload(s, seller);
+    const items = payload.ItemList as Array<Record<string, unknown>>;
+    assert.equal(items[0].Unit, "LTR");
+    assert.equal(items[0].TotItemVal, 236);
+  });
+
+  it("still blocks a custom line with a blank unit", () => {
+    const s = sale({
+      grandTotal: 236,
+      items: [
+        {
+          name: "RUUF 1 LTR",
+          hsnCode: "28332990",
+          qty: 2,
+          rate: 100,
+          gstRate: 18,
+          unit: "",
+          amount: 200,
+        },
+      ],
+    });
+    assert.throws(() => buildIrnPayload(s, seller), /quantity code/);
+  });
+});
+
 describe("HSN validation (AATO > 5cr: 6-or-8-digit numeric)", () => {
   it("accepts 6- and 8-digit codes", () => {
     assert.equal(validateHsn("310530", "X"), "310530");

@@ -36,7 +36,7 @@ import {
   einvoiceReadiness,
   ewayBillReadiness,
 } from "@/lib/gst";
-import { isMeasuredUnit } from "@/lib/units";
+import { isMeasuredUnit, UNIT_OPTIONS } from "@/lib/units";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,8 @@ type CartItem = {
   discountType: "percent" | "value";
   discountValue: number;
   hsnCode?: string;
+  /** Cashier-chosen unit for custom lines (product lines use product.unit). */
+  unit?: string;
   availableQty: number;
   /** Landed cost per unit, for the below-cost warning. 0 when unknown. */
   cost: number;
@@ -115,6 +117,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [customDiscType, setCustomDiscType] = useState<"percent" | "value">("percent");
   const [customDiscVal, setCustomDiscVal] = useState("0");
   const [customHsn, setCustomHsn] = useState("");
+  const [customUnit, setCustomUnit] = useState<string>("Pcs");
 
   // Customer search & outstanding balance states
   const [customerSearch, setCustomerSearch] = useState("");
@@ -357,6 +360,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
         discountType: customDiscType,
         discountValue,
         hsnCode: customHsn.trim(),
+        unit: customUnit,
         availableQty: 999999,
         cost: 0,
       },
@@ -368,6 +372,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
     setCustomRate("");
     setCustomDiscVal("0");
     setCustomHsn("");
+    setCustomUnit("Pcs");
     setShowCustomForm(false);
   };
 
@@ -586,6 +591,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
             discountType: c.discountType,
             discountValue: c.discountValue,
             hsnCode: c.product ? (c.product.hsnCode || null) : c.hsnCode,
+            unit: c.product ? undefined : c.unit,
             batchId: c.batchId ?? undefined,
           })),
         });
@@ -751,6 +757,20 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                     value={customHsn}
                     onChange={(e) => setCustomHsn(e.target.value)}
                   />
+                </div>
+                <div>
+                  <Label className="text-xs">Unit *</Label>
+                  <select
+                    value={customUnit}
+                    onChange={(e) => setCustomUnit(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500"
+                  >
+                    {UNIT_OPTIONS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div>

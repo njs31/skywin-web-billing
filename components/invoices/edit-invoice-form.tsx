@@ -10,6 +10,7 @@ import {
   isInterstateGst,
 } from "@/lib/gst";
 import { toNumber } from "@/lib/utils";
+import { UNIT_OPTIONS } from "@/lib/units";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -255,6 +256,7 @@ export function EditInvoiceForm({
               l.discountType === "percent" ? l.discountPercent : l.discountValue
             ),
             hsnCode: l.hsnCode.trim() || undefined,
+            unit: l.productId ? undefined : l.unit.trim() || undefined,
           })),
         });
         router.push(`/invoices/${saleId}`);
@@ -378,14 +380,30 @@ export function EditInvoiceForm({
                 </Button>
               </div>
               {!l.productId && (
-                <div className="col-span-12 sm:col-span-4">
-                  <Label className="text-xs">HSN (required for custom items)</Label>
-                  <Input
-                    value={l.hsnCode}
-                    onChange={(e) => patchLine(l.key, { hsnCode: e.target.value })}
-                    placeholder="HSN code"
-                  />
-                </div>
+                <>
+                  <div className="col-span-12 sm:col-span-2">
+                    <Label className="text-xs">HSN (required for custom items)</Label>
+                    <Input
+                      value={l.hsnCode}
+                      onChange={(e) => patchLine(l.key, { hsnCode: e.target.value })}
+                      placeholder="HSN code"
+                    />
+                  </div>
+                  <div className="col-span-12 sm:col-span-2">
+                    <Label className="text-xs">Unit (required for custom items)</Label>
+                    <select
+                      value={l.unit || "Pcs"}
+                      onChange={(e) => patchLine(l.key, { unit: e.target.value })}
+                      className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500"
+                    >
+                      {UNIT_OPTIONS.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
               )}
             </div>
           ))}

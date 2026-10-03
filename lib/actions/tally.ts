@@ -68,7 +68,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       categoryName: categories.name,
       notes: sales.notes,
       qty: saleItems.qty,
-      unit: products.unit,
+      unit: sql<string | null>`coalesce(${saleItems.unit}, ${products.unit})`,
       rate: saleItems.rate,
       gstRate: saleItems.gstRate,
       amount: saleItems.amount,
