@@ -117,7 +117,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [customDiscType, setCustomDiscType] = useState<"percent" | "value">("percent");
   const [customDiscVal, setCustomDiscVal] = useState("0");
   const [customHsn, setCustomHsn] = useState("");
-  const [customUnit, setCustomUnit] = useState<string>("Pcs");
+  const [customUnit, setCustomUnit] = useState<string>("");
 
   // Customer search & outstanding balance states
   const [customerSearch, setCustomerSearch] = useState("");
@@ -342,6 +342,10 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
       setError("HSN code is a mandatory field for manual entry.");
       return;
     }
+    if (!customUnit) {
+      setError("Unit is required for manual entry — pick one.");
+      return;
+    }
     const qty = parseFloat(customQty) || 0;
     const rate = parseFloat(customRate) || 0;
     const gstRate = parseFloat(customGst) || 0;
@@ -372,7 +376,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
     setCustomRate("");
     setCustomDiscVal("0");
     setCustomHsn("");
-    setCustomUnit("Pcs");
+    setCustomUnit("");
     setShowCustomForm(false);
   };
 
@@ -765,6 +769,7 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                     onChange={(e) => setCustomUnit(e.target.value)}
                     className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500"
                   >
+                    <option value="">Select unit…</option>
                     {UNIT_OPTIONS.map((u) => (
                       <option key={u} value={u}>
                         {u}

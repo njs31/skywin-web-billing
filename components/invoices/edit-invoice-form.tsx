@@ -211,7 +211,7 @@ export function EditInvoiceForm({
         discountValue: "0",
         gstRate: "18",
         hsnCode: "",
-        unit: "Pcs",
+        unit: "",
       },
     ]);
   }
@@ -392,10 +392,11 @@ export function EditInvoiceForm({
                   <div className="col-span-12 sm:col-span-2">
                     <Label className="text-xs">Unit (required for custom items)</Label>
                     <select
-                      value={l.unit || "Pcs"}
+                      value={l.unit || ""}
                       onChange={(e) => patchLine(l.key, { unit: e.target.value })}
                       className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500"
                     >
+                      <option value="">Select unit…</option>
                       {UNIT_OPTIONS.map((u) => (
                         <option key={u} value={u}>
                           {u}

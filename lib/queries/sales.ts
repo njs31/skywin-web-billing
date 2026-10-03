@@ -866,13 +866,21 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
     throw new Error("Customer registration required for credit transactions.");
   }
 
-  // Custom (non-inventory) items must carry their own HSN. Product items may
-  // fall back to the product's HSN, validated after the product read below.
+  // Custom (non-inventory) items must carry their own HSN and unit: there
+  // is no product row to inherit either from. Product items may fall back
+  // to the product's HSN/unit, validated after the product read below.
   for (const item of data.items) {
-    if (!item.productId && (!item.hsnCode || !item.hsnCode.trim())) {
-      throw new Error(
-        `HSN code is mandatory for all items on the invoice (${item.customName || "item"}).`
-      );
+    if (!item.productId) {
+      if (!item.hsnCode || !item.hsnCode.trim()) {
+        throw new Error(
+          `HSN code is mandatory for all items on the invoice (${item.customName || "item"}).`
+        );
+      }
+      if (!item.unit || !item.unit.trim()) {
+        throw new Error(
+          `Unit is required for custom item "${item.customName || "item"}" — pick one before saving.`
+        );
+      }
     }
   }
 
@@ -2120,10 +2128,17 @@ export async function updateSale(input: UpdateSaleInput) {
   }
 
   for (const item of data.items) {
-    if (!item.productId && (!item.hsnCode || !item.hsnCode.trim())) {
-      throw new Error(
-        `HSN code is mandatory for all items on the invoice (${item.customName || "item"}).`
-      );
+    if (!item.productId) {
+      if (!item.hsnCode || !item.hsnCode.trim()) {
+        throw new Error(
+          `HSN code is mandatory for all items on the invoice (${item.customName || "item"}).`
+        );
+      }
+      if (!item.unit || !item.unit.trim()) {
+        throw new Error(
+          `Unit is required for custom item "${item.customName || "item"}" — pick one before saving.`
+        );
+      }
     }
   }
 
