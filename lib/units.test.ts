@@ -5,6 +5,7 @@ import {
   qtyFieldLabel,
   parseQtyInput,
   formatQtyWithUnit,
+  unitWithoutQuantity,
 } from "./units";
 
 describe("units of measurement", () => {
@@ -38,5 +39,17 @@ describe("units of measurement", () => {
   it("formats a quantity with its unit", () => {
     assert.equal(formatQtyWithUnit(500, "Gram"), "500 Gram");
     assert.equal(formatQtyWithUnit("3", "Pcs"), "3 Pcs");
+  });
+
+  it("strips pack quantity for export unit columns", () => {
+    assert.equal(unitWithoutQuantity("500 GM"), "GM");
+    assert.equal(unitWithoutQuantity("16LTR"), "LTR");
+    assert.equal(unitWithoutQuantity("50 KG"), "KG");
+    assert.equal(unitWithoutQuantity("2.5 L"), "L");
+    assert.equal(unitWithoutQuantity("Pcs"), "Pcs");
+    assert.equal(unitWithoutQuantity("Gram"), "Gram");
+    assert.equal(unitWithoutQuantity("Packet"), "Packet");
+    assert.equal(unitWithoutQuantity(null), "pcs");
+    assert.equal(unitWithoutQuantity("   "), "pcs");
   });
 });

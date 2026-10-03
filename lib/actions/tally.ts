@@ -21,6 +21,7 @@ import { format } from "date-fns";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { getSettings } from "@/lib/settings";
 import { stateNameFromGstin } from "@/lib/gst-states";
+import { unitWithoutQuantity } from "@/lib/units";
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
@@ -110,7 +111,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Description: s.notes ?? "",
       "Challan/Order No.": s.poNumber ?? "",
       Quantity: qty,
-      Unit: s.unit ?? "pcs",
+      Unit: unitWithoutQuantity(s.unit),
       UnitPrice: rate,
       "Tax Percent": gstRate,
       Tax: tax,
@@ -175,7 +176,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Description: p.notes ?? "",
       "Challan/Order No.": "",
       Quantity: qty,
-      Unit: p.unit ?? "pcs",
+      Unit: unitWithoutQuantity(p.unit),
       UnitPrice: rate,
       "Tax Percent": gstRate,
       Tax: tax,
@@ -238,7 +239,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Description: c.reason ?? "",
       "Challan/Order No.": "",
       Quantity: qty,
-      Unit: c.unit ?? "pcs",
+      Unit: unitWithoutQuantity(c.unit),
       UnitPrice: rate,
       "Tax Percent": gstRate,
       Tax: tax,
@@ -301,7 +302,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Description: d.reason ?? "",
       "Challan/Order No.": "",
       Quantity: qty,
-      Unit: d.unit ?? "pcs",
+      Unit: unitWithoutQuantity(d.unit),
       UnitPrice: rate,
       "Tax Percent": gstRate,
       Tax: tax,

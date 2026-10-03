@@ -52,3 +52,16 @@ export function formatQtyWithUnit(
     : String(Math.round(safe));
   return `${shown} ${(unit ?? "Pcs").trim() || "Pcs"}`;
 }
+
+/**
+ * Unit label without any embedded pack quantity, for exports that have a
+ * separate Quantity column (e.g. Tally): "500 GM" → "GM", "16LTR" → "LTR",
+ * "50 KG" → "KG", while plain units ("Pcs", "Gram") pass through
+ * untouched. Never invents data: unparseable input comes back as-is.
+ */
+export function unitWithoutQuantity(unit: string | null | undefined): string {
+  const raw = (unit ?? "").trim();
+  if (!raw) return "pcs";
+  const stripped = raw.replace(/^[\d\s.,×xX/\-]+/, "").trim();
+  return stripped || raw;
+}
