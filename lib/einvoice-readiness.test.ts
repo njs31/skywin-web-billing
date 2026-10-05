@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { einvoiceReadiness, ewayBillReadiness } from "./gst";
+import { einvoiceReadiness, ewayBillReadiness, isValidGstin } from "./gst";
 
 const fullCustomer = {
   gstin: "33ABCDE1234F1Z5",
@@ -25,6 +25,13 @@ describe("einvoiceReadiness", () => {
       eligible: false,
       missing: [],
     });
+  });
+
+  it("switches on automatically only for a GST-registered buyer", () => {
+    assert.equal(isValidGstin("URP"), false);
+    assert.equal(isValidGstin(fullCustomer.gstin), true);
+    assert.equal(einvoiceReadiness({ gstin: "URP" }).eligible, false);
+    assert.equal(einvoiceReadiness(fullCustomer).eligible, true);
   });
 
   it("is eligible with nothing missing for a complete customer", () => {

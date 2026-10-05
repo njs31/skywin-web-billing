@@ -20,6 +20,7 @@ import {
   applyRupeeRounding,
   einvoiceReadiness,
   ewayBillReadiness,
+  isValidGstin,
   EWAY_BILL_THRESHOLD_INTERSTATE,
   EWAY_BILL_THRESHOLD_INTRASTATE_TN,
 } from "@/lib/gst";
@@ -980,7 +981,6 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const transporterGstin = data.transporterGstin?.trim().toUpperCase() || null;
   const distanceKm = data.distanceKm != null ? data.distanceKm.toFixed(1) : null;
   const externalOrderId = data.externalOrderId?.trim() || null;
-  const eInvoiceRequested = data.eInvoiceRequested ?? false;
 
   const executeSale = () =>
     db.transaction(async (tx) => {
@@ -994,6 +994,16 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
         tx,
         data
       );
+
+      let eInvoiceRequested = false;
+      if (finalCustomerId) {
+        const [cust] = await tx
+          .select({ gstin: customers.gstin })
+          .from(customers)
+          .where(eq(customers.id, finalCustomerId))
+          .limit(1);
+        eInvoiceRequested = isValidGstin(cust?.gstin);
+      }
 
       if (data.paymentMode === "credit" && finalCustomerId) {
         // Match getCustomerOutstanding: only subtract UNALLOCATED receipts.
@@ -2218,6 +2228,7 @@ export async function updateSale(input: UpdateSaleInput) {
     );
 
     let interstate = false;
+    let eInvoiceRequested = false;
     if (finalCustomerId) {
       const [cust] = await tx
         .select({ gstin: customers.gstin })
@@ -2225,6 +2236,7 @@ export async function updateSale(input: UpdateSaleInput) {
         .where(eq(customers.id, finalCustomerId))
         .limit(1);
       interstate = isInterstateGst(cust?.gstin, settings.stateCode);
+      eInvoiceRequested = isValidGstin(cust?.gstin);
     }
 
     const billType = sale.billType as "retail" | "wholesale" | "others";
@@ -2313,6 +2325,7 @@ export async function updateSale(input: UpdateSaleInput) {
         transporterGstin: data.transporterGstin?.trim().toUpperCase() || null,
         distanceKm:
           data.distanceKm != null ? data.distanceKm.toFixed(1) : null,
+        eInvoiceRequested,
         // New totals need a fresh push — a past failure is retryable again.
         einvoiceStatus:
           sale.einvoiceStatus === "failed" ? "none" : sale.einvoiceStatus,

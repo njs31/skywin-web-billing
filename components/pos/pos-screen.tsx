@@ -145,7 +145,7 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
   const [transporterName, setTransporterName] = useState("");
   const [transporterGstin, setTransporterGstin] = useState("");
   const [distanceKm, setDistanceKm] = useState("");
-  const [eInvoiceRequested, setEInvoiceRequested] = useState(false);
+
 
   useEffect(() => {
     // Pre-existing prop-to-state sync (not part of the compliance gate
@@ -631,7 +631,6 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
             : undefined,
           distanceKm:
             needsEway && distanceKm.trim() ? Number(distanceKm) : undefined,
-          eInvoiceRequested: eInvoiceRequested || einvoiceLocked,
           items: cart.map((c) => ({
             productId: c.product ? c.product.id : undefined,
             customName: c.product ? undefined : c.name,
@@ -659,7 +658,6 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
         setTransporterName("");
         setVehicleNo("");
         setDispatchedThrough("");
-        setEInvoiceRequested(false);
         if (mode === "credit") setPaymentMode("cash");
         router.push(`/invoices/${sale.id}?print=1`);
       } catch (e) {
@@ -679,20 +677,14 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
-              <input
-                type="checkbox"
-                checked={eInvoiceRequested || einvoiceLocked}
-                onChange={(e) => setEInvoiceRequested(e.target.checked)}
-                disabled={einvoiceLocked}
-                title={
-                  einvoiceLocked
-                    ? "Required: GST-registered customer"
-                    : undefined
-                }
-              />
-              e-Invoice{einvoiceLocked ? " (required)" : ""}
-            </label>
+            {einvoiceLocked && (
+              <span
+                className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800"
+                title="This buyer is GST-registered, so e-invoice is generated automatically."
+              >
+                e-Invoice
+              </span>
+            )}
             <div className="flex rounded-lg border border-slate-200 p-1 bg-white shadow-sm">
               {(["retail", "wholesale", "others"] as const).map((type) => (
                 <button
