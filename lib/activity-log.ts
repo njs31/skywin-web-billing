@@ -48,3 +48,12 @@ export function productUpdatedMessage(
   }
   return `${userName} updated ${productName} (${changes.join(", ")})`;
 }
+
+export function roleChangeMessage(
+  actorName: string,
+  targetName: string,
+  fromRole: string,
+  toRole: string
+): string {
+  return `${actorName} changed ${targetName}'s role from ${fromRole} to ${toRole}`;
+}

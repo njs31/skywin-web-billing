@@ -6,6 +6,7 @@ import {
   getCustomersForMapping,
   createUser,
   deleteUser,
+  updateUserRole,
   getReportingLinesRaw,
   createReportingLine,
   deleteReportingLine,
@@ -21,12 +22,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, UserCheck, ShieldAlert, Trash2, Link as LinkIcon, UserPlus } from "lucide-react";
+import { ROLE_LABELS, SEED_ADMIN_PHONE, type UserRole } from "@/lib/user-roles";
 
 type UserView = {
   id: number;
   name: string;
   phone: string;
-  role: "admin" | "regional_manager" | "sales_officer" | "dealer";
+  role: UserRole;
   customerId: number | null;
   customerName: string | null;
   createdAt: Date;
@@ -63,8 +65,11 @@ export default function UserManagementPage() {
   // Form states
   const [userName, setUserName] = useState("");
   const [userPhone, setUserPhone] = useState("");
-  const [userRole, setUserRole] = useState<"admin" | "regional_manager" | "sales_officer" | "dealer">("sales_officer");
+  const [userRole, setUserRole] = useState<UserRole>("sales_officer");
   const [userCustomerId, setUserCustomerId] = useState("");
+  const [dealerCustomerPick, setDealerCustomerPick] = useState<
+    Record<number, string>
+  >({});
 
   const [rlManagerId, setRlManagerId] = useState("");
   const [rlOfficerId, setRlOfficerId] = useState("");
@@ -120,6 +125,68 @@ export default function UserManagementPage() {
         fetchData();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to create user");
+      }
+    });
+  };
+
+  const handleRoleChange = (user: UserView, nextRole: UserRole) => {
+    setError("");
+    setSuccess("");
+    if (nextRole === user.role) return;
+    const customerId =
+      nextRole === "dealer"
+        ? parseInt(dealerCustomerPick[user.id] || String(user.customerId ?? ""), 10)
+        : null;
+    if (nextRole === "dealer" && !Number.isFinite(customerId)) {
+      setDealerCustomerPick((prev) => ({
+        ...prev,
+        [user.id]: prev[user.id] ?? "",
+      }));
+      setError(
+        `Select a customer for ${user.name} in Linked Customer, then set the role to Dealer.`
+      );
+      return;
+    }
+    if (
+      !confirm(
+        `Change ${user.name} from ${ROLE_LABELS[user.role]} to ${ROLE_LABELS[nextRole]}? They must log out and log in again for the new access to apply.`
+      )
+    ) {
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await updateUserRole({
+          userId: user.id,
+          role: nextRole,
+          customerId: Number.isFinite(customerId) ? customerId : null,
+        });
+        setSuccess(
+          `${user.name} is now ${ROLE_LABELS[nextRole]}. They must log in again.`
+        );
+        fetchData();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to change role");
+      }
+    });
+  };
+
+  const handleDealerCustomerChange = (user: UserView, customerId: string) => {
+    setDealerCustomerPick((prev) => ({ ...prev, [user.id]: customerId }));
+    if (user.role !== "dealer" || !customerId) return;
+    setError("");
+    setSuccess("");
+    startTransition(async () => {
+      try {
+        await updateUserRole({
+          userId: user.id,
+          role: "dealer",
+          customerId: parseInt(customerId, 10),
+        });
+        setSuccess(`Updated customer mapping for ${user.name}.`);
+        fetchData();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to map customer");
       }
     });
   };
@@ -226,7 +293,8 @@ export default function UserManagementPage() {
           User & Mapping Control Panel
         </h1>
         <p className="text-sm text-slate-500">
-          Enforce Role-Based Access Control and manage organizational reporting hierarchies
+          Enforce Role-Based Access Control and manage organizational reporting hierarchies.
+          Change anyone's role in the Users table to promote or demote them.
         </p>
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
           <p className="font-semibold text-slate-800">What each role can do</p>
@@ -317,7 +385,7 @@ export default function UserManagementPage() {
                     id="role"
                     value={userRole}
                     onChange={(e) => {
-                      setUserRole(e.target.value as any);
+                      setUserRole(e.target.value as UserRole);
                       setUserCustomerId("");
                     }}
                     className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500"
@@ -389,30 +457,74 @@ export default function UserManagementPage() {
                         <TableCell className="font-semibold text-slate-800">{user.name}</TableCell>
                         <TableCell className="text-slate-600">{user.phone}</TableCell>
                         <TableCell className="capitalize text-slate-600">
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            user.role === "admin"
-                              ? "bg-rose-50 text-rose-700 border border-rose-200"
-                              : user.role === "regional_manager"
-                              ? "bg-blue-50 text-blue-700 border border-blue-200"
-                              : user.role === "sales_officer"
-                              ? "bg-purple-50 text-purple-700 border border-purple-200"
-                              : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          }`}>
-                            {user.role.replace("_", " ")}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-slate-600">
-                          {user.customerName ? (
-                            <span className="flex items-center gap-1 text-emerald-700">
-                              <LinkIcon className="h-3 w-3" />
-                              {user.customerName}
+                          {user.phone === SEED_ADMIN_PHONE ? (
+                            <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                              {ROLE_LABELS[user.role]}
                             </span>
                           ) : (
-                            <span className="text-slate-400 text-xs">-</span>
+                            <select
+                              aria-label={`Role for ${user.name}`}
+                              value={user.role}
+                              disabled={isPending}
+                              onChange={(e) =>
+                                handleRoleChange(
+                                  user,
+                                  e.target.value as UserRole
+                                )
+                              }
+                              className={`h-8 rounded-md border bg-white px-2 text-xs font-semibold shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500 ${
+                                user.role === "admin"
+                                  ? "border-rose-200 text-rose-700"
+                                  : user.role === "regional_manager"
+                                    ? "border-blue-200 text-blue-700"
+                                    : user.role === "sales_officer"
+                                      ? "border-purple-200 text-purple-700"
+                                      : "border-emerald-200 text-emerald-700"
+                              }`}
+                            >
+                              {(Object.keys(ROLE_LABELS) as UserRole[]).map(
+                                (role) => (
+                                  <option key={role} value={role}>
+                                    {ROLE_LABELS[role]}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-slate-600">
+                          {user.phone === SEED_ADMIN_PHONE ? (
+                            <span className="text-xs text-slate-400">-</span>
+                          ) : user.role === "dealer" ||
+                            dealerCustomerPick[user.id] !== undefined ? (
+                            <select
+                              aria-label={`Customer for ${user.name}`}
+                              value={
+                                dealerCustomerPick[user.id] ??
+                                (user.customerId ? String(user.customerId) : "")
+                              }
+                              disabled={isPending}
+                              onChange={(e) =>
+                                handleDealerCustomerChange(
+                                  user,
+                                  e.target.value
+                                )
+                              }
+                              className="h-8 max-w-[180px] rounded-md border border-slate-200 bg-white px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500"
+                            >
+                              <option value="">-- Customer --</option>
+                              {customersList.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
                           )}
                         </TableCell>
                         <TableCell>
-                          {user.phone !== "9999999999" && (
+                          {user.phone !== SEED_ADMIN_PHONE && (
                             <Button
                               variant="ghost"
                               size="icon"

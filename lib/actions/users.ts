@@ -5,6 +5,7 @@ import { users, reportingLines, dealerMappings, customers } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "./auth";
+import { SEED_ADMIN_PHONE } from "@/lib/user-roles";
 
 async function verifyAdmin() {
   await requireAdmin();
@@ -75,8 +76,113 @@ export async function createUser(data: {
 
 export async function deleteUser(id: number) {
   await verifyAdmin();
+  const [target] = await db
+    .select({ phone: users.phone })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
+  if (target?.phone === SEED_ADMIN_PHONE) {
+    throw new Error("The primary administrator account cannot be deleted.");
+  }
   await db.delete(users).where(eq(users.id, id));
   revalidatePath("/users");
+}
+
+export async function updateUserRole(data: {
+  userId: number;
+  role: "admin" | "regional_manager" | "sales_officer" | "dealer";
+  customerId?: number | null;
+}) {
+  const actor = await requireAdmin();
+  const { roleLabel, validateRoleChange, isUserRole } = await import(
+    "@/lib/user-roles"
+  );
+  if (!isUserRole(data.role)) {
+    throw new Error("Unknown role.");
+  }
+
+  const [target] = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      phone: users.phone,
+      role: users.role,
+      customerId: users.customerId,
+    })
+    .from(users)
+    .where(eq(users.id, data.userId))
+    .limit(1);
+  if (!target) throw new Error("User not found.");
+  if (!isUserRole(target.role)) {
+    throw new Error("Unknown current role.");
+  }
+
+  const customerId =
+    data.role === "dealer" ? data.customerId ?? target.customerId : null;
+
+  const [{ adminCount }] = await db
+    .select({ adminCount: sql<number>`count(*)::int` })
+    .from(users)
+    .where(eq(users.role, "admin"));
+
+  const problem = validateRoleChange({
+    targetPhone: target.phone,
+    currentRole: target.role,
+    newRole: data.role,
+    customerId,
+    adminCount: Number(adminCount ?? 0),
+  });
+  if (problem) throw new Error(problem);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({
+        role: data.role,
+        customerId,
+      })
+      .where(eq(users.id, data.userId));
+
+    if (data.role !== "regional_manager") {
+      await tx
+        .delete(reportingLines)
+        .where(eq(reportingLines.managerId, data.userId));
+    }
+    if (data.role !== "sales_officer") {
+      await tx
+        .delete(reportingLines)
+        .where(eq(reportingLines.officerId, data.userId));
+      await tx
+        .delete(dealerMappings)
+        .where(eq(dealerMappings.officerId, data.userId));
+    }
+    if (data.role !== "dealer") {
+      await tx
+        .delete(dealerMappings)
+        .where(eq(dealerMappings.dealerId, data.userId));
+    }
+  });
+
+  if (target.role !== data.role) {
+    const { recordActivity } = await import("@/lib/queries/activity-logs");
+    const name = actor.name.trim() || actor.phone;
+    const { roleChangeMessage } = await import("@/lib/activity-log");
+    await recordActivity({
+      action: "user.role",
+      message: roleChangeMessage(
+        name,
+        target.name,
+        roleLabel(target.role),
+        roleLabel(data.role)
+      ),
+      entityType: "user",
+      entityId: data.userId,
+      actor: { id: actor.id, name },
+    });
+  }
+
+  revalidatePath("/users");
+  revalidatePath("/logs");
 }
 
 export async function getReportingLines() {

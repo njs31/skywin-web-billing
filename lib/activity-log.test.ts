@@ -4,6 +4,7 @@ import {
   formatSignedQty,
   labelsPrintedMessage,
   productUpdatedMessage,
+  roleChangeMessage,
   stockDeltaMessage,
   stockSetMessage,
 } from "./activity-log";
@@ -46,5 +47,12 @@ describe("activity log sentences", () => {
     assert.equal(formatSignedQty(2), "+2");
     assert.equal(formatSignedQty(-2), "-2");
     assert.equal(formatSignedQty(0), "0");
+  });
+
+  it("says who promoted or demoted whom", () => {
+    assert.equal(
+      roleChangeMessage("Jai", "Kumar", "Sales Officer", "Admin"),
+      "Jai changed Kumar's role from Sales Officer to Admin"
+    );
   });
 });
