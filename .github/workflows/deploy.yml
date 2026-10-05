@@ -50,4 +50,7 @@ jobs:
           script: |
             set -e
             cd /root/skywin-bill
-            docker compose up -d --build
+            docker compose build
+            ids=$(docker ps -aq --filter name=skywin-app || true)
+            if [ -n "$ids" ]; then docker rm -f $ids; fi
+            docker compose up -d --remove-orphans
