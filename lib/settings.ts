@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS = {
   businessLocality: "Kumbakonam",
   businessPin: "612401",
   defaultOperator: "Counter",
+  landline: "0435-2424899",
   invoicePrefix: "INV",
   allowNegativeStock: "false",
   defaultGstRetail: "18",

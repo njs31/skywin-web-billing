@@ -228,6 +228,27 @@ export default function UserManagementPage() {
         <p className="text-sm text-slate-500">
           Enforce Role-Based Access Control and manage organizational reporting hierarchies
         </p>
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+          <p className="font-semibold text-slate-800">What each role can do</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            <li>
+              <strong>Admin</strong> — full access including users, settings,
+              cancelling and editing invoices.
+            </li>
+            <li>
+              <strong>Regional Manager</strong> — sales, purchases, products,
+              and customers under their officers.
+            </li>
+            <li>
+              <strong>Sales Officer</strong> — billing, customers, products, and
+              receipts for mapped dealers. No purchases or suppliers.
+            </li>
+            <li>
+              <strong>Dealer</strong> — POS, their own invoices, and outstanding
+              only.
+            </li>
+          </ul>
+        </div>
       </div>
 
       {error && (

@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { desc, eq, sql, asc, and, gte, isNotNull, count } from "drizzle-orm";
 import { z } from "zod";
+import { allocateReceiptVoucherNo } from "@/lib/queries/receipt-voucher";
 
 const allocationSchema = z.object({
   saleId: z.number().optional(),
@@ -64,6 +65,8 @@ export async function createPartyPayment(input: z.infer<typeof paymentSchema>) {
   }
 
   const payment = await db.transaction(async (tx) => {
+    const voucherNo =
+      data.type === "receipt" ? await allocateReceiptVoucherNo(tx) : null;
     const [created] = await tx
       .insert(partyPayments)
       .values({
@@ -74,6 +77,7 @@ export async function createPartyPayment(input: z.infer<typeof paymentSchema>) {
         paymentMode: data.paymentMode,
         referenceNo: data.referenceNo,
         notes: data.notes,
+        voucherNo,
       })
       .returning();
 
@@ -280,6 +284,7 @@ export async function getReceipts(
       paymentMode: partyPayments.paymentMode,
       referenceNo: partyPayments.referenceNo,
       notes: partyPayments.notes,
+      voucherNo: partyPayments.voucherNo,
       customerName: customers.name,
       allocatedInvoices: sql<string>`coalesce((
         select string_agg(s.invoice_no, ', ' order by s.invoice_no)
@@ -354,6 +359,7 @@ export async function getPartyPaymentById(id: number) {
       paymentMode: partyPayments.paymentMode,
       referenceNo: partyPayments.referenceNo,
       notes: partyPayments.notes,
+      voucherNo: partyPayments.voucherNo,
       customerId: partyPayments.customerId,
       supplierId: partyPayments.supplierId,
       customerName: customers.name,

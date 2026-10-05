@@ -23,7 +23,7 @@ export async function updatePurchase(
 }
 
 export async function getPurchaseReportData(fromDate: string, toDate: string) {
-  await requireUser();
+  await requirePurchasingAccess();
   return getPurchaseReport(fromDate, toDate);
 }
 

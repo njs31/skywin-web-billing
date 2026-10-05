@@ -336,3 +336,48 @@ export function isValidGstin(gstin: string | null | undefined): boolean {
     gstin.trim().toUpperCase()
   );
 }
+
+const PLACEHOLDER_GSTINS = new Set([
+  "URP",
+  "UNREGISTERED",
+  "UNREGISTERED PERSON",
+  "NA",
+  "N/A",
+  "NIL",
+  "NONE",
+  "-",
+  "0",
+]);
+
+/** URP / empty / other unregistered placeholders — not real GSTINs. */
+export function isPlaceholderGstin(gstin: string | null | undefined): boolean {
+  const v = gstin?.trim().toUpperCase() || "";
+  return !v || PLACEHOLDER_GSTINS.has(v);
+}
+
+/**
+ * Normalize a typed GSTIN. Empty and URP-style placeholders are kept
+ * (and are never unique). Anything else must be a real 15-character GSTIN.
+ */
+export function normalizeEnteredGstin(
+  gstin: string | null | undefined
+): string | null {
+  const v = gstin?.trim().toUpperCase() || "";
+  if (!v) return null;
+  if (isPlaceholderGstin(v)) return v;
+  if (!isValidGstin(v)) {
+    throw new Error(
+      v.length === 15
+        ? `GSTIN "${v}" is not a valid GST number.`
+        : "GSTIN must be a valid 15-character GST number, or URP for unregistered persons."
+    );
+  }
+  return v;
+}
+
+/** Duplicate-company rule applies only to real GSTINs, never URP. */
+export function gstinRequiresUniqueness(
+  gstin: string | null | undefined
+): boolean {
+  return isValidGstin(gstin);
+}

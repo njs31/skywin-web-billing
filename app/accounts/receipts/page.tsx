@@ -17,8 +17,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ReceiptForm } from "@/components/accounts/receipt-form";
+import { AdvanceReceiptForm } from "@/components/accounts/advance-receipt-form";
 import { ReceiptDateFilter } from "@/components/accounts/receipt-date-filter";
 import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
+import { displayPaymentVoucherNo } from "@/lib/financial-year";
+import { peekNextReceiptVoucherNo } from "@/lib/queries/receipt-voucher";
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const cleanDate = (value?: string) => (value && YMD.test(value) ? value : undefined);
@@ -34,10 +37,11 @@ export default async function ReceiptsPage({
   const to = cleanDate(toParam);
   const filters = { from, to };
 
-  const [receipts, totalCount, customers] = await Promise.all([
+  const [receipts, totalCount, customers, nextVoucherNo] = await Promise.all([
     getReceipts(page, RECEIPTS_PAGE_SIZE, filters),
     getReceiptCount(filters),
     getCustomers(),
+    peekNextReceiptVoucherNo(),
   ]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / RECEIPTS_PAGE_SIZE));
@@ -57,7 +61,8 @@ export default async function ReceiptsPage({
       <div>
         <h1 className="text-2xl font-bold">Receipts</h1>
         <p className="text-sm text-slate-500">
-          Collect payments from customers against outstanding
+          Collect payments from customers against outstanding, or record an
+          advance on account.
         </p>
       </div>
 
@@ -66,7 +71,19 @@ export default async function ReceiptsPage({
           <CardTitle className="text-base">Record Receipt</CardTitle>
         </CardHeader>
         <CardContent>
-          <ReceiptForm customers={customers} />
+          <ReceiptForm customers={customers} nextVoucherNo={nextVoucherNo} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Advance Receipt</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AdvanceReceiptForm
+            customers={customers}
+            nextVoucherNo={nextVoucherNo}
+          />
         </CardContent>
       </Card>
 
@@ -93,6 +110,7 @@ export default async function ReceiptsPage({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Voucher</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Mode</TableHead>
@@ -105,6 +123,13 @@ export default async function ReceiptsPage({
               <TableBody>
                 {receipts.map((r) => (
                   <TableRow key={r.id}>
+                    <TableCell className="whitespace-nowrap font-mono text-xs">
+                      {displayPaymentVoucherNo({
+                        type: "receipt",
+                        id: r.id,
+                        voucherNo: r.voucherNo,
+                      })}
+                    </TableCell>
                     <TableCell>
                       {new Date(r.date).toLocaleDateString("en-IN")}
                     </TableCell>
@@ -112,7 +137,7 @@ export default async function ReceiptsPage({
                     <TableCell className="capitalize">{r.paymentMode}</TableCell>
                     <TableCell>{r.referenceNo ?? "-"}</TableCell>
                     <TableCell className="max-w-xs text-xs text-slate-600">
-                      {r.allocatedInvoices || "-"}
+                      {r.allocatedInvoices || "Advance"}
                     </TableCell>
                     <TableCell className="text-right font-semibold text-emerald-700">
                       {formatCurrency(r.amount)}

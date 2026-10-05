@@ -28,6 +28,7 @@ export default async function ReceiptDetailPage({
     phone: settings.phone,
     email: settings.email,
     gstin: settings.gstin,
+    landline: settings.landline,
   };
 
   const voucher = {
@@ -38,6 +39,7 @@ export default async function ReceiptDetailPage({
     paymentMode: payment.paymentMode,
     referenceNo: payment.referenceNo,
     notes: payment.notes,
+    voucherNo: payment.voucherNo,
     partyName: payment.customerName || "Customer",
     partyPhone: payment.customerPhone,
     partyGstin: payment.customerGstin,

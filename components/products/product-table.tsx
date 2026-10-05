@@ -18,6 +18,7 @@ import {
 
 import { Pencil, Trash2, Check, X, Layers } from "lucide-react";
 import { BatchEditor } from "@/components/products/batch-editor";
+import { ProductChangeLog } from "@/components/products/product-change-log";
 import { PrintLabelButton } from "@/components/products/print-label-button";
 import { UNIT_OPTIONS } from "@/lib/units";
 import { isInventoryPinRequired, verifyInventoryAdminPin } from "@/lib/actions/billing";
@@ -425,6 +426,7 @@ export function ProductTable({
               <TableRow key={`batches-${product.id}`} className="bg-slate-50/70">
                 <TableCell colSpan={12} className="p-0">
                   <BatchEditor productId={product.id} />
+                  <ProductChangeLog productId={product.id} />
                 </TableCell>
               </TableRow>
             )}

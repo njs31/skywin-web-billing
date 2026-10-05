@@ -12,6 +12,14 @@ import {
   lineDiscountPercent,
   totalLineDiscount,
 } from "@/lib/invoice-discount";
+import {
+  DEFAULT_LANDLINE,
+  PRINT_LOGO_SRC,
+  PRINT_TRADE_NAME,
+  printPhoneLine,
+  saleRateBracket,
+  thankYouMessage,
+} from "@/lib/print-branding";
 
 type InvoiceSale = {
   invoiceNo: string;
@@ -88,6 +96,7 @@ type InvoiceTemplateProps = {
     bankAccountNo?: string;
     bankIfsc?: string;
     termsOfDelivery?: string;
+    landline?: string;
   };
   sale: InvoiceSale;
   items: InvoiceItem[];
@@ -106,6 +115,21 @@ type HsnRow = {
 
 function discPercent(item: InvoiceItem): number {
   return lineDiscountPercent(item);
+}
+
+function printPhones(business: InvoiceTemplateProps["business"]) {
+  return printPhoneLine(business.phone, business.landline ?? DEFAULT_LANDLINE);
+}
+
+function PrintLogo({ className }: { className?: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={PRINT_LOGO_SRC}
+      alt="Skywin"
+      className={className ?? "mx-auto mb-1 h-10 w-auto object-contain"}
+    />
+  );
 }
 
 function paymentLabel(sale: InvoiceSale): string {
@@ -271,10 +295,8 @@ function WholesaleInvoiceLayout({
         <div className="grid grid-cols-2 border-b border-slate-900">
           <div className="border-r border-slate-900">
             <div className="border-b border-slate-900 p-2 text-[11px] leading-snug">
-              <p className="text-sm font-bold uppercase">{business.name}</p>
-              {business.tagline && (
-                <p className="font-semibold">{business.tagline}</p>
-              )}
+              <PrintLogo className="mb-1 h-10 w-auto object-contain" />
+              <p className="text-sm font-bold uppercase">{PRINT_TRADE_NAME}</p>
               <p>{business.address}</p>
               <p>
                 GSTIN/UIN: {business.gstin}
@@ -283,7 +305,7 @@ function WholesaleInvoiceLayout({
                 State Name : {business.state}, Code : {business.stateCode}
               </p>
               <p>E-Mail : {business.email}</p>
-              <p>Phone: {business.phone}</p>
+              <p>Phone: {printPhones(business)}</p>
             </div>
             <PartyBlock
               label="Consignee (Ship to)"
@@ -391,7 +413,10 @@ function WholesaleInvoiceLayout({
                     {disc > 0 ? formatNumber(disc, 2) : ""}
                   </td>
                   <td className="px-1 py-1 text-right">
-                    {formatNumber(item.amount, 2)}
+                    <p>{formatNumber(item.amount, 2)}</p>
+                    <p className="text-[8px] leading-tight text-slate-500">
+                      {saleRateBracket(item.rate, item.gstRate)}
+                    </p>
                   </td>
                 </tr>
               );
@@ -673,13 +698,16 @@ function WholesaleInvoiceLayout({
             </p>
           </div>
           <div className="flex flex-col justify-between p-2 text-right">
-            <p className="font-semibold">for {business.name}</p>
+            <p className="font-semibold">for {PRINT_TRADE_NAME}</p>
             <p className="mt-10 font-semibold">Authorised Signatory</p>
           </div>
         </div>
       </div>
 
-      <p className="mt-2 text-center text-[10px] text-slate-500">
+      <p className="mt-2 text-center text-[10px] font-semibold">
+        {thankYouMessage()}
+      </p>
+      <p className="mt-1 text-center text-[10px] text-slate-500">
         This is a Computer Generated Invoice
       </p>
     </div>
@@ -736,11 +764,11 @@ function RetailReceiptLayout({
         </p>
       )}
       <div className="text-center">
-        <p className="text-sm font-bold uppercase">{business.name}</p>
-        {business.tagline && <p className="text-[10px]">{business.tagline}</p>}
+        <PrintLogo className="mx-auto mb-1 h-9 w-auto object-contain" />
+        <p className="text-sm font-bold uppercase">{PRINT_TRADE_NAME}</p>
         {business.address && <p className="text-[10px]">{business.address}</p>}
         <p className="text-[10px]">GSTIN: {business.gstin}</p>
-        <p className="text-[10px]">Ph: {business.phone}</p>
+        <p className="text-[10px]">Ph: {printPhones(business)}</p>
       </div>
 
       <div className={dash} />
@@ -755,6 +783,9 @@ function RetailReceiptLayout({
       {customer && <ReceiptRow label="Customer" value={customer} />}
       {sale.customerPhone && <ReceiptRow label="Phone" value={sale.customerPhone} />}
       {sale.customerGstin && <ReceiptRow label="GSTIN" value={sale.customerGstin} />}
+      {sale.customerVillage && (
+        <ReceiptRow label="Area" value={sale.customerVillage} />
+      )}
       {sale.operatorName && <ReceiptRow label="Billed by" value={sale.operatorName} />}
       {transport.map((t) => (
         <p key={t} className="text-[10px]">
@@ -787,7 +818,12 @@ function RetailReceiptLayout({
                 </td>
                 <td className="py-0.5 pl-2 text-right">{formatNumber(item.rate, 2)}</td>
                 <td className="py-0.5 pl-2 text-right whitespace-nowrap">{disc || "—"}</td>
-                <td className="py-0.5 pl-2 text-right">{formatNumber(item.amount, 2)}</td>
+                <td className="py-0.5 pl-2 text-right">
+                  <p>{formatNumber(item.amount, 2)}</p>
+                  <p className="text-[8px] leading-tight text-slate-500">
+                    {saleRateBracket(item.rate, item.gstRate)}
+                  </p>
+                </td>
               </tr>
             );
           })}
@@ -853,6 +889,9 @@ function RetailReceiptLayout({
       <div className={dash} />
       <p className="text-center text-[10px] font-semibold">
         Sold items cannot be returned or exchanged
+      </p>
+      <p className="mt-1 text-center text-[10px] font-semibold">
+        {thankYouMessage()}
       </p>
       <p className="mt-1 text-center text-[10px] text-slate-500">
         This is a Computer Generated Invoice

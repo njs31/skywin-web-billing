@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildIrnPayload,
   formatNicDate,
+  isCreditNoteEinvoiceEligible,
   nicAmount,
   stateCodeOfGstin,
   uqcForUnit,
@@ -225,5 +226,58 @@ describe("buildIrnPayload", () => {
 
     const mismatch = sale({ grandTotal: 5000 });
     assert.throws(() => buildIrnPayload(mismatch, seller), /does not foot/);
+  });
+});
+
+describe("credit note e-invoice", () => {
+  it("is eligible only for wholesale/others with a real GSTIN", () => {
+    assert.equal(
+      isCreditNoteEinvoiceEligible({
+        billType: "wholesale",
+        customerGstin: "33ABCDE1234F1Z5",
+      }),
+      true
+    );
+    assert.equal(
+      isCreditNoteEinvoiceEligible({
+        billType: "others",
+        customerGstin: "33ABCDE1234F1Z5",
+      }),
+      true
+    );
+    assert.equal(
+      isCreditNoteEinvoiceEligible({
+        billType: "retail",
+        customerGstin: "33ABCDE1234F1Z5",
+      }),
+      false
+    );
+    assert.equal(
+      isCreditNoteEinvoiceEligible({
+        billType: "wholesale",
+        customerGstin: "URP",
+      }),
+      false
+    );
+  });
+
+  it("builds Typ CRN with the original invoice as preceding doc", () => {
+    const payload = buildIrnPayload(sale({ invoiceNo: "SR/0001/26-27" }), seller, null, {
+      docType: "CRN",
+      preceding: {
+        invoiceNo: "SKYA/0385/26-27",
+        date: new Date(2026, 8, 1),
+        irn: "abcd-irn",
+      },
+    });
+    const doc = payload.DocDtls as { Typ: string; No: string };
+    assert.equal(doc.Typ, "CRN");
+    assert.equal(doc.No, "SR/0001/26-27");
+    const ref = payload.RefDtls as {
+      PrecDocDtls: Array<{ InvNo: string; InvDt: string; OthRefNo?: string }>;
+    };
+    assert.equal(ref.PrecDocDtls[0].InvNo, "SKYA/0385/26-27");
+    assert.equal(ref.PrecDocDtls[0].InvDt, "01/09/2026");
+    assert.equal(ref.PrecDocDtls[0].OthRefNo, "abcd-irn");
   });
 });

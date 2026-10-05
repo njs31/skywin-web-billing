@@ -368,9 +368,17 @@ export const saleReturns = pgTable(
     subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
     cgst: numeric("cgst", { precision: 14, scale: 2 }).default("0").notNull(),
     sgst: numeric("sgst", { precision: 14, scale: 2 }).default("0").notNull(),
+    igst: numeric("igst", { precision: 14, scale: 2 }).default("0").notNull(),
     grandTotal: numeric("grand_total", { precision: 14, scale: 2 }).notNull(),
     reason: text("reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    einvoiceStatus: text("einvoice_status").default("none").notNull(),
+    irn: text("irn"),
+    ackNo: text("ack_no"),
+    ackDate: timestamp("ack_date"),
+    signedQr: text("signed_qr"),
+    einvoiceError: text("einvoice_error"),
+    einvoiceRaw: text("einvoice_raw"),
   },
   (table) => ({
     customerIdIdx: index("sale_returns_customer_id_idx").on(table.customerId),
@@ -510,9 +518,12 @@ export const partyPayments = pgTable(
     notes: text("notes"),
     date: timestamp("date").defaultNow().notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    /** FY series for receipts, e.g. RCP/0001/26-27. Null on legacy rows. */
+    voucherNo: text("voucher_no"),
   },
   (table) => ({
     customerIdIdx: index("party_payments_customer_id_idx").on(table.customerId),
+    voucherNoIdx: uniqueIndex("party_payments_voucher_no_idx").on(table.voucherNo),
   })
 );
 
@@ -701,6 +712,23 @@ export const dealerMappings = pgTable("dealer_mappings", {
     .notNull(),
 });
 
+export const productChangeLogs = pgTable(
+  "product_change_logs",
+  {
+    id: serial("id").primaryKey(),
+    productId: integer("product_id")
+      .references(() => products.id)
+      .notNull(),
+    userId: integer("user_id").references(() => users.id),
+    userName: text("user_name").notNull(),
+    changedAt: timestamp("changed_at").defaultNow().notNull(),
+    summary: text("summary").notNull(),
+  },
+  (table) => ({
+    productIdIdx: index("product_change_logs_product_id_idx").on(table.productId),
+  })
+);
+
 /**
  * One row per label print job that actually fed stickers — the source of
  * the "labels printed today" count on the Products page. Browser-direct
@@ -740,3 +768,4 @@ export type User = typeof users.$inferSelect;
 export type ReportingLine = typeof reportingLines.$inferSelect;
 export type DealerMapping = typeof dealerMappings.$inferSelect;
 export type LabelPrint = typeof labelPrints.$inferSelect;
+export type ProductChangeLog = typeof productChangeLogs.$inferSelect;

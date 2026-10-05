@@ -21,7 +21,7 @@ import {
   getIndianFinancialYearBounds,
   formatSaleReturnNo,
 } from "@/lib/financial-year";
-import { isValidGstin } from "@/lib/gst";
+import { gstinRequiresUniqueness, isValidGstin } from "@/lib/gst";
 
 type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -131,17 +131,19 @@ async function maybeUpdateCustomerGstin(
 ) {
   if (!customerId || !customerGstin) return;
   const { customers } = await import("@/db/schema");
-  const [existingGst] = await tx
-    .select()
-    .from(customers)
-    .where(
-      sql`upper(${customers.gstin}) = ${customerGstin} AND ${customers.id} <> ${customerId}`
-    )
-    .limit(1);
-  if (existingGst) {
-    throw new Error(
-      `GSTIN "${customerGstin}" is already registered to "${existingGst.name}".`
-    );
+  if (gstinRequiresUniqueness(customerGstin)) {
+    const [existingGst] = await tx
+      .select()
+      .from(customers)
+      .where(
+        sql`upper(${customers.gstin}) = ${customerGstin} AND ${customers.id} <> ${customerId}`
+      )
+      .limit(1);
+    if (existingGst) {
+      throw new Error(
+        `GSTIN "${customerGstin}" is already registered to "${existingGst.name}".`
+      );
+    }
   }
 
   await tx
@@ -291,6 +293,7 @@ export async function createSaleReturn(input: z.infer<typeof createReturnSchema>
         subtotal: gst.subtotal.toFixed(2),
         cgst: gst.cgst.toFixed(2),
         sgst: gst.sgst.toFixed(2),
+        igst: gst.igst.toFixed(2),
         grandTotal: gst.grandTotal.toFixed(2),
         reason: data.reason,
       })
@@ -362,6 +365,7 @@ export async function updateSaleReturn(
         subtotal: gst.subtotal.toFixed(2),
         cgst: gst.cgst.toFixed(2),
         sgst: gst.sgst.toFixed(2),
+        igst: gst.igst.toFixed(2),
         grandTotal: gst.grandTotal.toFixed(2),
         reason: data.reason ?? null,
       })
@@ -432,13 +436,27 @@ export async function getSaleReturnById(id: number) {
       subtotal: saleReturns.subtotal,
       cgst: saleReturns.cgst,
       sgst: saleReturns.sgst,
+      igst: saleReturns.igst,
       grandTotal: saleReturns.grandTotal,
       reason: saleReturns.reason,
       createdAt: saleReturns.createdAt,
+      einvoiceStatus: saleReturns.einvoiceStatus,
+      irn: saleReturns.irn,
+      ackNo: saleReturns.ackNo,
+      ackDate: saleReturns.ackDate,
+      signedQr: saleReturns.signedQr,
+      einvoiceError: saleReturns.einvoiceError,
       customerName: customers.name,
       customerPhone: customers.phone,
       customerAddress: customers.address,
+      customerPinCode: customers.pinCode,
+      customerVillage: customers.village,
+      customerTaluk: customers.taluk,
+      customerDistrict: customers.district,
       saleInvoiceNo: sales.invoiceNo,
+      saleDate: sales.date,
+      saleBillType: sales.billType,
+      saleIrn: sales.irn,
     })
     .from(saleReturns)
     .leftJoin(sales, eq(saleReturns.saleId, sales.id))
@@ -466,6 +484,7 @@ export async function getSaleReturnById(id: number) {
       discountValue: saleReturnItems.discountValue,
       gstRate: saleReturnItems.gstRate,
       amount: saleReturnItems.amount,
+      unit: products.unit,
       hsnCode: sql<string>`coalesce(${saleReturnItems.hsnCode}, ${products.hsnCode})`,
       saleRate: products.saleRate,
       wholesaleRate: products.wholesaleRate,

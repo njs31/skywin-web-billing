@@ -2,6 +2,10 @@ import { db } from "@/db";
 import { customers, sales, saleReturns } from "@/db/schema";
 import { asc, eq, ilike, or, sql, desc, and, isNotNull, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import {
+  gstinRequiresUniqueness,
+  normalizeEnteredGstin,
+} from "@/lib/gst";
 
 export async function getCustomers(search?: string) {
   const { getScopedCustomerIds } = await import("@/lib/actions/auth");
@@ -146,8 +150,8 @@ export async function createCustomer(input: z.infer<typeof customerSchema>) {
   const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
   const data = customerSchema.parse(input);
 
-  const cleanGst = data.gstin?.trim().toUpperCase() || null;
-  if (cleanGst) {
+  const cleanGst = normalizeEnteredGstin(data.gstin);
+  if (gstinRequiresUniqueness(cleanGst)) {
     const existing = await db
       .select()
       .from(customers)
@@ -192,8 +196,8 @@ export async function updateCustomer(
   const { ne } = await import("drizzle-orm");
   const data = customerSchema.parse(input);
 
-  const cleanGst = data.gstin?.trim().toUpperCase() || null;
-  if (cleanGst) {
+  const cleanGst = normalizeEnteredGstin(data.gstin);
+  if (gstinRequiresUniqueness(cleanGst)) {
     const existing = await db
       .select()
       .from(customers)

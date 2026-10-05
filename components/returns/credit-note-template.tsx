@@ -1,4 +1,12 @@
 import { formatCurrency, formatDateTimeIST, formatNumber } from "@/lib/utils";
+import {
+  DEFAULT_LANDLINE,
+  PRINT_LOGO_SRC,
+  PRINT_TRADE_NAME,
+  printPhoneLine,
+  saleRateBracket,
+  thankYouMessage,
+} from "@/lib/print-branding";
 
 type CreditNote = {
   returnNo: string;
@@ -13,6 +21,7 @@ type CreditNote = {
   cgst: string;
   sgst: string;
   grandTotal: string;
+  irn?: string | null;
 };
 
 type CreditNoteItem = {
@@ -38,7 +47,9 @@ type CreditNoteTemplateProps = {
     gstin: string;
     state: string;
     stateCode: string;
+    landline?: string;
   };
+  einvoiceQrUrl?: string | null;
   creditNote: CreditNote;
   items: CreditNoteItem[];
 };
@@ -47,16 +58,26 @@ export function CreditNoteTemplate({
   business,
   creditNote,
   items,
+  einvoiceQrUrl,
 }: CreditNoteTemplateProps) {
+  const phones = printPhoneLine(
+    business.phone,
+    business.landline ?? DEFAULT_LANDLINE
+  );
   return (
     <div className="mx-auto max-w-3xl print-sheet bg-white p-8 text-sm text-slate-900 print:p-4 border shadow-sm">
       {/* Business Header */}
       <div className="border-b-2 border-slate-900 pb-4 text-center">
-        <h1 className="text-xl font-bold uppercase">{business.name}</h1>
-        <h2 className="text-lg font-semibold">{business.tagline}</h2>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={PRINT_LOGO_SRC}
+          alt="Skywin"
+          className="mx-auto mb-2 h-12 w-auto object-contain"
+        />
+        <h1 className="text-xl font-bold uppercase">{PRINT_TRADE_NAME}</h1>
         <p className="mt-2 text-xs">{business.address}</p>
         <p className="text-xs">
-          Phone: {business.phone} | {business.email}
+          Phone: {phones} | {business.email}
         </p>
         <p className="text-xs font-semibold">GSTIN: {business.gstin}</p>
       </div>
@@ -162,7 +183,10 @@ export function CreditNoteTemplate({
                 {formatNumber(item.gstRate, 0)}%
               </td>
               <td className="px-2 py-2 text-right">
-                {formatCurrency(item.amount)}
+                <p>{formatCurrency(item.amount)}</p>
+                <p className="text-[8px] text-slate-500">
+                  {saleRateBracket(item.rate, item.gstRate)}
+                </p>
               </td>
             </tr>
             );
@@ -199,8 +223,25 @@ export function CreditNoteTemplate({
         </div>
       </div>
 
-      <p className="mt-8 text-center text-xs text-slate-500">
-        Thank you for shopping at {business.tagline}
+      {einvoiceQrUrl && (
+        <div className="mt-4 flex flex-col items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={einvoiceQrUrl}
+            alt="Credit note QR"
+            className="h-[64px] w-[64px]"
+          />
+          <p className="text-[9px] font-semibold">e-Invoice</p>
+          {creditNote.irn && (
+            <p className="max-w-[64mm] break-all text-center text-[7px] leading-tight">
+              IRN: {creditNote.irn}
+            </p>
+          )}
+        </div>
+      )}
+
+      <p className="mt-8 text-center text-xs font-semibold">
+        {thankYouMessage()}
       </p>
     </div>
   );

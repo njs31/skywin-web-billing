@@ -2,7 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { generateIrn, cancelIrn } from "@/lib/actions/einvoice";
+import {
+  generateIrn,
+  generateCreditNoteIrn,
+  cancelIrn,
+} from "@/lib/actions/einvoice";
 import { Button } from "@/components/ui/button";
 
 const CANCEL_WINDOW_HOURS = 24;
@@ -20,12 +24,14 @@ function cancelWindowHoursLeft(ackDate: string | null): number | null {
 
 export function PushEinvoiceButton({
   saleId,
+  creditNoteId,
   irn,
   einvoiceStatus,
   einvoiceError,
   ackDate,
 }: {
-  saleId: number;
+  saleId?: number;
+  creditNoteId?: number;
   irn: string | null;
   einvoiceStatus: string;
   einvoiceError: string | null;
@@ -43,7 +49,9 @@ export function PushEinvoiceButton({
     setError("");
     startTransition(async () => {
       try {
-        await generateIrn(saleId);
+        if (creditNoteId) await generateCreditNoteIrn(creditNoteId);
+        else if (saleId) await generateIrn(saleId);
+        else throw new Error("Nothing to push.");
         router.refresh();
       } catch (e) {
         // Next.js redacts a thrown Server Action error's real message in
@@ -61,6 +69,7 @@ export function PushEinvoiceButton({
     setError("");
     startTransition(async () => {
       try {
+        if (!saleId) throw new Error("Credit-note IRN cancel is not available here.");
         await cancelIrn(saleId, reason);
         setCancelling(false);
         router.refresh();
@@ -77,7 +86,7 @@ export function PushEinvoiceButton({
         <span className="rounded bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-700">
           IRN {irn.slice(0, 10)}…
         </span>
-        {!cancelling ? (
+        {creditNoteId ? null : !cancelling ? (
           ackDate && hoursLeft === null ? (
             <span className="text-[11px] text-slate-400">
               Cancel window closed (24h)

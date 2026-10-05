@@ -1,9 +1,13 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
-import { products, categories, productBatches, stockMovements, sales, saleItems } from "@/db/schema";
+import { products, categories, productBatches, stockMovements, sales, saleItems, productChangeLogs } from "@/db/schema";
 import { ilike, or, sql, asc, desc, eq, and, gt, inArray, gte, lte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { parseSkuFromName } from "@/lib/gst";
+import {
+  diffProductFields,
+  hasProductChanges,
+} from "@/lib/product-changelog";
 
 const CACHE_TAG = {
   products: "products",
@@ -365,7 +369,8 @@ export async function updateProduct(
     expiryDate?: string | null;
     name?: string;
     unit?: string;
-  }
+  },
+  actor?: { userId?: number | null; userName: string }
 ) {
   if (data.hsnCode !== undefined && !data.hsnCode.trim()) {
     throw new Error("HSN code is mandatory and cannot be empty.");
@@ -381,16 +386,17 @@ export async function updateProduct(
   }
   const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
 
+  const [before] = await db
+    .select()
+    .from(products)
+    .where(eq(products.id, id))
+    .limit(1);
+  if (!before) throw new Error("Product not found");
+
   // Capture current stock before other updates so batch sync uses the right delta.
   let stockDelta: number | null = null;
   if (data.stockQty !== undefined) {
-    const [current] = await db
-      .select({ stockQty: products.stockQty })
-      .from(products)
-      .where(eq(products.id, id))
-      .limit(1);
-    if (!current) throw new Error("Product not found");
-    const currentQty = parseFloat(current.stockQty ?? "0");
+    const currentQty = parseFloat(before.stockQty ?? "0");
     stockDelta = Math.round((data.stockQty - currentQty) * 100) / 100;
   }
 
@@ -448,10 +454,51 @@ export async function updateProduct(
     await adjustStock(id, stockDelta, "Stock edited from Products page");
   }
 
+  if (actor?.userName) {
+    const after = {
+      name: data.name ?? before.name,
+      saleRate: data.saleRate,
+      purchaseRate: data.purchaseRate ?? before.purchaseRate,
+      wholesaleRate: data.wholesaleRate ?? before.wholesaleRate,
+      gstRate: data.gstRate,
+      stockQty: data.stockQty ?? before.stockQty,
+      reorderLevel: data.reorderLevel ?? before.reorderLevel,
+      mrp: data.mrp === undefined ? before.mrp : data.mrp,
+      discountPercent: data.discountPercent ?? before.discountPercent,
+      hsnCode: data.hsnCode ?? before.hsnCode,
+      barcode: data.barcode ?? before.barcode,
+      expiryDate: data.expiryDate === undefined ? before.expiryDate : data.expiryDate,
+      unit: data.unit ?? before.unit,
+    };
+    const summary = diffProductFields(before as Record<string, unknown>, after);
+    if (hasProductChanges(summary)) {
+      await db.insert(productChangeLogs).values({
+        productId: id,
+        userId: actor.userId ?? null,
+        userName: actor.userName,
+        summary: JSON.stringify(summary),
+      });
+    }
+  }
+
   revalidateTag("products", "max");
   revalidatePath("/products");
   revalidatePath("/pos");
   revalidatePath("/stock");
+}
+
+export async function getProductChangeLogs(productId: number, limit = 20) {
+  return db
+    .select({
+      id: productChangeLogs.id,
+      userName: productChangeLogs.userName,
+      changedAt: productChangeLogs.changedAt,
+      summary: productChangeLogs.summary,
+    })
+    .from(productChangeLogs)
+    .where(eq(productChangeLogs.productId, productId))
+    .orderBy(desc(productChangeLogs.changedAt))
+    .limit(limit);
 }
 
 /** Batches for one product, newest first — for the per-batch edit UI. */

@@ -16,7 +16,7 @@
  * - TranDtls.SupTyp "B2B"    — only B2B is gated in (loadActiveB2bSale).
  * - TranDtls.RegRev "N"      — reverse charge not modeled (limitation).
  * - TranDtls.IgstOnIntra "N" — intra-state IGST not used (limitation).
- * - DocDtls.Typ "INV"        — only invoices; CRN/DBN unsupported.
+ * - DocDtls.Typ "INV"|"CRN"  — invoices and credit notes (wholesale/others).
  * - DocDtls.No               — invoice_no verbatim, official 16-char pattern.
  * - DocDtls.Dt               — DD/MM/YYYY from sales.date.
  * - SellerDtls.*             — settings/businessLocality/businessPin (all mandatory).
@@ -77,6 +77,19 @@ export type IrnSeller = {
   stateCode: string;
   locality: string;
   pin: string;
+};
+
+export type IrnDocType = "INV" | "CRN";
+
+export type IrnPrecedingDoc = {
+  invoiceNo: string;
+  date: Date;
+  irn?: string | null;
+};
+
+export type IrnPayloadOptions = {
+  docType?: IrnDocType;
+  preceding?: IrnPrecedingDoc | null;
 };
 
 export type IrnDispatch = {
@@ -183,10 +196,19 @@ function required(value: string | null | undefined, what: string): string {
   return v;
 }
 
+export function isCreditNoteEinvoiceEligible(args: {
+  billType?: string | null;
+  customerGstin?: string | null;
+}): boolean {
+  const type = args.billType ?? "";
+  return (type === "wholesale" || type === "others") && isValidGstin(args.customerGstin);
+}
+
 export function buildIrnPayload(
   sale: IrnSale,
   seller: IrnSeller,
-  dispatch: IrnDispatch = null
+  dispatch: IrnDispatch = null,
+  options: IrnPayloadOptions = {}
 ): Record<string, unknown> {
   const buyerGstin = required(sale.buyer.gstin, "buyer GSTIN").toUpperCase();
   if (!isValidGstin(buyerGstin)) {
@@ -322,7 +344,11 @@ export function buildIrnPayload(
       EcmGstin: null,
       IgstOnIntra: "N",
     },
-    DocDtls: { Typ: "INV", No: docNo, Dt: formatNicDate(sale.date) },
+    DocDtls: {
+      Typ: options.docType ?? "INV",
+      No: docNo,
+      Dt: formatNicDate(sale.date),
+    },
     SellerDtls: {
       Gstin: seller.gstin.toUpperCase(),
       LglNm: seller.name.slice(0, 100),
@@ -362,6 +388,20 @@ export function buildIrnPayload(
       TotInvVal: grandTotal,
     },
   };
+
+  if (options.preceding?.invoiceNo?.trim()) {
+    payload.RefDtls = {
+      PrecDocDtls: [
+        {
+          InvNo: options.preceding.invoiceNo.trim().slice(0, 16),
+          InvDt: formatNicDate(options.preceding.date),
+          ...(options.preceding.irn
+            ? { OthRefNo: options.preceding.irn }
+            : {}),
+        },
+      ],
+    };
+  }
 
   // Same-call e-way bill: only when there's actually something to move on.
   const distance = num(dispatch?.distanceKm);

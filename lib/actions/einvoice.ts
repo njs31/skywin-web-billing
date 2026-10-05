@@ -11,8 +11,9 @@
  */
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { sales } from "@/db/schema";
+import { sales, saleReturns } from "@/db/schema";
 import { getSaleById } from "@/lib/queries/sales";
+import { getSaleReturnById } from "@/lib/queries/returns";
 import { isWithinReportingWindow } from "@/lib/queries/einvoice";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { getSettings } from "@/lib/settings";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/whitebooks/client";
 import {
   buildIrnPayload,
+  isCreditNoteEinvoiceEligible,
   type IrnDispatch,
   type IrnSale,
   type IrnSeller,
@@ -211,6 +213,117 @@ export async function generateIrn(
     return { irn, ackNo };
   } catch (error) {
     return failIrn(saleId, sale.invoiceNo, error);
+  }
+}
+
+async function failCreditNoteIrn(
+  returnId: number,
+  returnNo: string,
+  error: unknown
+): Promise<never> {
+  const message = whitebooksErrorMessage(error);
+  await db
+    .update(saleReturns)
+    .set({ einvoiceStatus: "failed", einvoiceError: message.slice(0, 500) })
+    .where(eq(saleReturns.id, returnId));
+  throw new Error(`${returnNo}: ${message}`);
+}
+
+/** Generates the e-Invoice/IRN for a wholesale/others credit note. */
+export async function generateCreditNoteIrn(
+  returnId: number
+): Promise<{ irn: string; ackNo: string }> {
+  await requireNonDealer();
+  const creditNote = await getSaleReturnById(returnId);
+  if (!creditNote) throw new Error("Credit note not found.");
+  if (creditNote.irn) {
+    throw new Error(`${creditNote.returnNo} already has an IRN — can't push twice.`);
+  }
+  if (
+    !isCreditNoteEinvoiceEligible({
+      billType: creditNote.saleBillType,
+      customerGstin: creditNote.customerGstin,
+    })
+  ) {
+    throw new Error(
+      `${creditNote.returnNo}: e-Invoicing applies only to Wholesale & Others credit notes with a valid GSTIN.`
+    );
+  }
+  if (!withinReportingWindow(new Date(creditNote.date))) {
+    throw new Error(
+      `${creditNote.returnNo} is older than the IRP's 30-day reporting window.`
+    );
+  }
+
+  const cfg = getWhitebooksConfig();
+  await db
+    .update(saleReturns)
+    .set({ einvoiceStatus: "pending", einvoiceError: null })
+    .where(eq(saleReturns.id, returnId));
+
+  try {
+    const payload = buildIrnPayload(
+      {
+        invoiceNo: creditNote.returnNo,
+        date: new Date(creditNote.date),
+        grandTotal: creditNote.grandTotal,
+        billDiscount: 0,
+        buyer: {
+          name: creditNote.customerName,
+          gstin: creditNote.customerGstin,
+          address: creditNote.customerAddress,
+          pinCode: creditNote.customerPinCode,
+          phone: creditNote.customerPhone,
+          village: creditNote.customerVillage,
+          taluk: creditNote.customerTaluk,
+          district: creditNote.customerDistrict,
+        },
+        items: creditNote.items.map((it) => ({
+          name: it.customName?.trim() || it.productName || "Item",
+          hsnCode: it.hsnCode,
+          qty: it.qty,
+          rate: it.rate,
+          discountType: it.discountType,
+          discountValue: it.discountValue ?? it.discountPercent,
+          gstRate: it.gstRate,
+          unit: it.unit,
+          amount: it.amount,
+        })),
+      },
+      await sellerFromSettings(),
+      null,
+      {
+        docType: "CRN",
+        preceding: creditNote.saleInvoiceNo
+          ? {
+              invoiceNo: creditNote.saleInvoiceNo,
+              date: creditNote.saleDate
+                ? new Date(creditNote.saleDate)
+                : new Date(creditNote.date),
+              irn: creditNote.saleIrn,
+            }
+          : null,
+      }
+    );
+    const data = await wbGenerateIrn(cfg, payload);
+    const irn = String(data.Irn ?? "");
+    if (!irn) throw new Error("IRP returned no IRN.");
+    const ackNo = String(data.AckNo ?? "");
+    await db
+      .update(saleReturns)
+      .set({
+        einvoiceStatus: "pushed",
+        irn,
+        ackNo: ackNo || null,
+        ackDate: parseIrpDate(data.AckDt),
+        signedQr: typeof data.SignedQRCode === "string" ? data.SignedQRCode : null,
+        einvoiceError: null,
+        einvoiceRaw: JSON.stringify(data),
+      })
+      .where(eq(saleReturns.id, returnId));
+    return { irn, ackNo };
+  } catch (error) {
+    return failCreditNoteIrn(returnId, creditNote.returnNo, error);
   }
 }
 

@@ -29,7 +29,13 @@ type OutstandingSale = {
   balance: string;
 };
 
-export function ReceiptForm({ customers }: { customers: Customer[] }) {
+export function ReceiptForm({
+  customers,
+  nextVoucherNo,
+}: {
+  customers: Customer[];
+  nextVoucherNo?: string;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [customerId, setCustomerId] = useState("");
@@ -147,6 +153,15 @@ export function ReceiptForm({ customers }: { customers: Customer[] }) {
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {nextVoucherNo ? (
+          <div>
+            <Label>Voucher number</Label>
+            <Input value={nextVoucherNo} readOnly className="bg-slate-50 font-mono" />
+            <p className="mt-1 text-[10px] text-slate-500">
+              Assigned on save — may skip ahead if another receipt is recorded first.
+            </p>
+          </div>
+        ) : null}
         <div>
           <Label>Customer *</Label>
           <Select value={customerId} onValueChange={setCustomerId}>

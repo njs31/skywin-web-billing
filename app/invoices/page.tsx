@@ -2,26 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSalesFiltered, parseSaleListParams } from "@/lib/queries/sales";
 import { getCurrentUser } from "@/lib/actions/auth";
-import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 import { SalesReport } from "@/components/invoices/sales-report";
 import { InvoiceToolbar } from "@/components/invoices/invoice-toolbar";
-import { InvoicesPagination } from "@/components/invoices/invoices-pagination";
-import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
+import { InvoiceBulkList } from "@/components/invoices/invoice-bulk-list";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-
-function statusTone(cancelled: boolean, status: string): string {
-  if (cancelled) return "bg-red-500";
-  if (status === "Paid") return "bg-emerald-500";
-  return "bg-amber-500";
-}
 
 export default async function InvoicesPage({
   searchParams,
@@ -127,106 +111,19 @@ export default async function InvoicesPage({
             )}
           </div>
         ) : (
-          <>
-            <Table className="[&_td]:py-2.5 [&_th]:h-9">
-              <TableHeader className="bg-slate-50">
-                <TableRow>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sales.map((sale) => {
-                  const paid = Number(sale.paidAmount ?? 0);
-                  const grand = Number(sale.grandTotal ?? 0);
-                  const cancelled = sale.status === "cancelled";
-                  const status = cancelled
-                    ? "Cancelled"
-                    : sale.paymentMode === "credit" && paid < grand - 0.01
-                      ? paid > 0
-                        ? "Partial"
-                        : "Pending"
-                      : "Paid";
-                  return (
-                    <TableRow
-                      key={sale.id}
-                      className={cancelled ? "opacity-60" : undefined}
-                    >
-                      <TableCell
-                        className={`whitespace-nowrap text-sm font-medium ${cancelled ? "line-through" : ""}`}
-                      >
-                        {sale.invoiceNo}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs capitalize text-slate-500">
-                        {sale.billType}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-[13px] text-slate-600">
-                        {formatDateTimeIST(sale.date)}
-                      </TableCell>
-                      <TableCell className="max-w-44 truncate text-sm">
-                        {sale.customerName ?? "—"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm capitalize text-slate-600">
-                        {sale.paymentMode}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1.5 text-[13px] font-medium ${
-                            cancelled
-                              ? "text-red-600"
-                              : status === "Paid"
-                                ? "text-emerald-700"
-                                : "text-amber-700"
-                          }`}
-                        >
-                          <span
-                            aria-hidden
-                            className={`h-1.5 w-1.5 rounded-full ${statusTone(cancelled, status)}`}
-                          />
-                          {status}
-                        </span>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right text-sm font-semibold tabular-nums">
-                        {formatCurrency(sale.grandTotal)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button asChild size="sm" variant="ghost">
-                            <Link href={`/invoices/${sale.id}`}>View</Link>
-                          </Button>
-                          {isAdmin && !cancelled && (
-                            <Button asChild size="sm" variant="ghost">
-                              <Link href={`/invoices/${sale.id}/edit`}>Edit</Link>
-                            </Button>
-                          )}
-                          <PrintSizeMenu href={`/invoices/${sale.id}`} />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-            <InvoicesPagination
-              filter={{
-                q: filter.q,
-                billType: filter.billType,
-                day: filter.day,
-                sort: filter.sort,
-              }}
-              page={filter.page}
-              pageSize={filter.pageSize}
-              total={total}
-            />
-          </>
+          <InvoiceBulkList
+            sales={sales}
+            isAdmin={isAdmin}
+            filter={{
+              q: filter.q,
+              billType: filter.billType,
+              day: filter.day,
+              sort: filter.sort,
+            }}
+            page={filter.page}
+            pageSize={filter.pageSize}
+            total={total}
+          />
         )}
       </section>
     </div>

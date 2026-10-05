@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FileCheck2 } from "lucide-react";
 import {
   getEinvoiceCandidates,
+  getCreditNoteEinvoiceCandidates,
   einvoiceMissingFields,
   isValidGstin,
 } from "@/lib/queries/einvoice";
@@ -20,7 +21,10 @@ import { PushEinvoiceButton } from "@/components/einvoice/push-einvoice-button";
 import { IrnVerifyButton } from "@/components/einvoice/irn-verify-button";
 
 export default async function EinvoicePage() {
-  const rows = await getEinvoiceCandidates();
+  const [rows, creditNotes] = await Promise.all([
+    getEinvoiceCandidates(),
+    getCreditNoteEinvoiceCandidates(),
+  ]);
   // Unlike the e-Way Bill page, this one only ever concerns GST-registered
   // (B2B) customers — e-Invoicing doesn't apply to an unregistered
   // customer no matter what else is true, so they're excluded here
@@ -28,6 +32,10 @@ export default async function EinvoicePage() {
   const eligible = rows.filter((r) => isValidGstin(r.customerGstin));
   const needsPush = eligible.filter((r) => !r.irn || r.einvoiceStatus === "failed");
   const done = eligible.filter((r) => r.irn && r.einvoiceStatus !== "failed");
+  const cnNeedsPush = creditNotes.filter(
+    (r) => !r.irn || r.einvoiceStatus === "failed"
+  );
+  const cnDone = creditNotes.filter((r) => r.irn && r.einvoiceStatus !== "failed");
 
   return (
     <div className="space-y-6 p-6">
@@ -132,6 +140,132 @@ export default async function EinvoicePage() {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Credit notes pending ({cnNeedsPush.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {cnNeedsPush.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">
+              No Wholesale & Others credit notes waiting for an IRN.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Credit note #</TableHead>
+                  <TableHead>Against</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Readiness</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {cnNeedsPush.map((row) => {
+                  const missing = einvoiceMissingFields(row);
+                  return (
+                    <TableRow key={`cn-${row.id}`}>
+                      <TableCell className="font-medium">{row.returnNo}</TableCell>
+                      <TableCell className="text-xs">{row.saleInvoiceNo}</TableCell>
+                      <TableCell>{formatDateIST(row.date)}</TableCell>
+                      <TableCell>{row.customerName}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(row.grandTotal)}
+                      </TableCell>
+                      <TableCell>
+                        {row.einvoiceStatus === "failed" ? (
+                          <span className="rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                            Push failed — fix and retry
+                          </span>
+                        ) : missing.length === 0 ? (
+                          <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            Ready to push
+                          </span>
+                        ) : (
+                          <span className="text-xs text-amber-700">
+                            Missing: {missing.join(", ")}
+                          </span>
+                        )}
+                        {row.einvoiceStatus === "failed" && row.einvoiceError && (
+                          <p className="max-w-[240px] text-[11px] text-red-600">
+                            {row.einvoiceError}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {missing.length > 0 && row.customerId ? (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link href={`/customers/${row.customerId}`}>
+                              Fix customer details
+                            </Link>
+                          </Button>
+                        ) : (
+                          <PushEinvoiceButton
+                            creditNoteId={row.id}
+                            irn={row.irn}
+                            einvoiceStatus={row.einvoiceStatus}
+                            einvoiceError={row.einvoiceError}
+                            ackDate={row.ackDate?.toISOString() ?? null}
+                          />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {cnDone.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Credit notes pushed ({cnDone.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Credit note #</TableHead>
+                  <TableHead>Against</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">IRN</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {cnDone.map((row) => (
+                  <TableRow key={`cn-done-${row.id}`}>
+                    <TableCell className="font-medium">{row.returnNo}</TableCell>
+                    <TableCell className="text-xs">{row.saleInvoiceNo}</TableCell>
+                    <TableCell>{row.customerName}</TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(row.grandTotal)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <PushEinvoiceButton
+                        creditNoteId={row.id}
+                        irn={row.irn}
+                        einvoiceStatus={row.einvoiceStatus}
+                        einvoiceError={row.einvoiceError}
+                        ackDate={row.ackDate?.toISOString() ?? null}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {done.length > 0 && (
         <Card>

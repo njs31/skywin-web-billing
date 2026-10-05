@@ -25,6 +25,7 @@ import {
 } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR } from "@/lib/financial-year";
+import { allocateReceiptVoucherNo } from "@/lib/queries/receipt-voucher";
 import { format } from "date-fns";
 import { desc, asc, eq, ne, gte, lt, lte, sql, and, inArray } from "drizzle-orm";
 
@@ -659,6 +660,7 @@ export async function createAutoReceipts(
     upiAmount: args.upiAmount,
   });
   for (const part of receiptParts) {
+    const voucherNo = await allocateReceiptVoucherNo(tx);
     const [payment] = await tx
       .insert(partyPayments)
       .values({
@@ -668,6 +670,7 @@ export async function createAutoReceipts(
         paymentMode: part.paymentMode,
         referenceNo: args.invoiceNo,
         notes: `Auto receipt for ${args.invoiceNo} (${part.paymentMode.toUpperCase()})`,
+        voucherNo,
       })
       .returning();
     await tx.insert(partyPaymentAllocations).values({

@@ -38,6 +38,7 @@ export async function createSaleReturn(
   input: Parameters<typeof createSaleReturnMutation>[0]
 ) {
   await requireNonDealer();
+  if (input.customerId) await assertCustomerAccess(input.customerId);
   return createSaleReturnMutation(input);
 }
 
@@ -46,6 +47,7 @@ export async function updateSaleReturn(
   input: Parameters<typeof updateSaleReturnMutation>[1]
 ) {
   await requireNonDealer();
+  if (input.customerId) await assertCustomerAccess(input.customerId);
   return updateSaleReturnMutation(id, input);
 }
 
@@ -62,6 +64,14 @@ export async function createPartyPayment(
   await requireUser();
   await assertCustomerAccess(input.customerId);
   return createPartyPaymentMutation(input);
+}
+
+export async function getNextReceiptVoucherNo() {
+  await requireUser();
+  const { peekNextReceiptVoucherNo } = await import(
+    "@/lib/queries/receipt-voucher"
+  );
+  return peekNextReceiptVoucherNo();
 }
 
 export async function adjustStock(
@@ -100,6 +110,12 @@ export async function updateSettings(
       if (currentPin !== storedPin) {
         throw new Error("Current PIN is incorrect. Please enter the correct current PIN.");
       }
+    }
+  }
+  if (input.gstin !== undefined) {
+    const { isValidGstin } = await import("@/lib/gst");
+    if (!isValidGstin(input.gstin)) {
+      throw new Error("Business GSTIN must be a valid 15-character GST number.");
     }
   }
   return updateSettingsMutation(input);

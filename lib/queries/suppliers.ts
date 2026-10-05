@@ -4,6 +4,7 @@ import { partyPayments, purchaseReturns, purchases, suppliers } from "@/db/schem
 import { asc, count, eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { isUniqueViolation } from "@/lib/db-errors";
+import { isPlaceholderGstin, isValidGstin } from "@/lib/gst";
 
 export const getAllSuppliers = unstable_cache(
   async () => db.select().from(suppliers).orderBy(asc(suppliers.name)),
@@ -101,8 +102,8 @@ function normalizeSupplierFields(input: CreateSupplierInput) {
   const pan = parsed.pan?.toUpperCase() || null;
   const phone = parsed.phone?.replace(/\D/g, "") || null;
 
-  if (gstin && !/^[0-9A-Z]{15}$/.test(gstin)) {
-    throw new Error("GSTIN must be a valid 15-character GST number");
+  if (gstin && !isPlaceholderGstin(gstin) && !isValidGstin(gstin)) {
+    throw new Error("GSTIN must be a valid 15-character GST number, or URP");
   }
   if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) {
     throw new Error("PAN must be a valid 10-character PAN (e.g. ABCDE1234F)");

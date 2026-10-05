@@ -7,6 +7,7 @@ import {
   updateProduct as updateProductQuery,
   deleteProduct as deleteProductQuery,
   getProductBatches as getProductBatchesQuery,
+  getProductChangeLogs as getProductChangeLogsQuery,
   updateBatch as updateBatchQuery,
   getAllProductsForExport,
   getProductsExportForDateRange,
@@ -16,7 +17,7 @@ import {
   importStockFromRows as importStockFromRowsQuery,
   type StockImportRow,
 } from "@/lib/queries/stock-import";
-import { requireNonDealer, requireUser } from "@/lib/actions/auth";
+import { getCurrentUser, requireNonDealer, requireUser } from "@/lib/actions/auth";
 
 export async function getStockExportData() {
   await requireNonDealer();
@@ -70,7 +71,16 @@ export async function updateProduct(
   }
 ) {
   await requireNonDealer();
-  return updateProductQuery(id, data);
+  const user = await getCurrentUser();
+  return updateProductQuery(id, data, {
+    userId: user?.id ?? null,
+    userName: user?.name?.trim() || "Unknown",
+  });
+}
+
+export async function getProductChangeLogs(productId: number) {
+  await requireNonDealer();
+  return getProductChangeLogsQuery(productId);
 }
 
 export async function getProductBatches(productId: number) {

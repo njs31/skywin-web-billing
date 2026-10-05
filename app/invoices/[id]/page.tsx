@@ -63,6 +63,7 @@ export default async function InvoiceDetailPage({
     bankAccountNo: settings.bankAccountNo,
     bankIfsc: settings.bankIfsc,
     termsOfDelivery: settings.termsOfDelivery,
+    landline: settings.landline,
   };
 
   // Once a real IRN exists, print a QR code *encoding* the IRP-signed

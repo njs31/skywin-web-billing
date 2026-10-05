@@ -36,7 +36,9 @@ export const IRP_DOC_NO_PATTERN = /^([a-zA-Z1-9]{1}[a-zA-Z0-9/-]{0,15})$/;
 export function isIrpCompatibleDocNo(value: string | null | undefined): boolean {
   const v = (value ?? "").trim();
   return v.length >= 1 && v.length <= 16 && IRP_DOC_NO_PATTERN.test(v);
-}export function nextWholesaleSequence(maxExistingSeq = 0) {
+}
+
+export function nextWholesaleSequence(maxExistingSeq = 0) {
   return Math.max(maxExistingSeq, WHOLESALE_INVOICE_SEQ_FLOOR) + 1;
 }
 
@@ -49,4 +51,20 @@ export function formatWholesaleInvoiceNo(seq: number, fyShortLabel: string) {
 export const SALE_RETURN_PREFIX = "SR";
 export function formatSaleReturnNo(seq: number, fyShortLabel: string) {
   return `${SALE_RETURN_PREFIX}/${String(seq).padStart(4, "0")}/${fyShortLabel}`;
+}
+
+/** Receipt voucher series, continuous per financial year: e.g. RCP/0001/26-27 */
+export const RECEIPT_VOUCHER_PREFIX = "RCP";
+export function formatReceiptVoucherNo(seq: number, fyShortLabel: string) {
+  return `${RECEIPT_VOUCHER_PREFIX}/${String(seq).padStart(4, "0")}/${fyShortLabel}`;
+}
+
+/** Printed voucher: stored series, or legacy RCP-{id} / PAY-{id}. */
+export function displayPaymentVoucherNo(args: {
+  type: "receipt" | "payment";
+  id: number;
+  voucherNo?: string | null;
+}) {
+  if (args.voucherNo?.trim()) return args.voucherNo.trim();
+  return args.type === "receipt" ? `RCP-${args.id}` : `PAY-${args.id}`;
 }

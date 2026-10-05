@@ -1,4 +1,12 @@
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
+import {
+  DEFAULT_LANDLINE,
+  PRINT_LOGO_SRC,
+  PRINT_TRADE_NAME,
+  printPhoneLine,
+  thankYouMessage,
+} from "@/lib/print-branding";
+import { displayPaymentVoucherNo } from "@/lib/financial-year";
 
 export type PaymentVoucher = {
   id: number;
@@ -8,6 +16,7 @@ export type PaymentVoucher = {
   paymentMode: string;
   referenceNo?: string | null;
   notes?: string | null;
+  voucherNo?: string | null;
   partyName: string;
   partyPhone?: string | null;
   partyGstin?: string | null;
@@ -27,6 +36,7 @@ type PaymentVoucherTemplateProps = {
     phone: string;
     email: string;
     gstin: string;
+    landline?: string;
   };
   voucher: PaymentVoucher;
 };
@@ -36,18 +46,36 @@ export function PaymentVoucherTemplate({
   voucher,
 }: PaymentVoucherTemplateProps) {
   const isReceipt = voucher.type === "receipt";
-  const voucherNo = isReceipt ? `RCP-${voucher.id}` : `PAY-${voucher.id}`;
-  const title = isReceipt ? "RECEIPT VOUCHER" : "PAYMENT VOUCHER";
+  const isAdvance = isReceipt && voucher.allocations.length === 0;
+  const voucherNo = displayPaymentVoucherNo({
+    type: voucher.type,
+    id: voucher.id,
+    voucherNo: voucher.voucherNo,
+  });
+  const title = isAdvance
+    ? "ADVANCE RECEIPT"
+    : isReceipt
+      ? "RECEIPT VOUCHER"
+      : "PAYMENT VOUCHER";
   const partyLabel = isReceipt ? "Received from" : "Paid to";
+  const phones = printPhoneLine(
+    business.phone,
+    business.landline ?? DEFAULT_LANDLINE
+  );
 
   return (
     <div className="mx-auto max-w-3xl print-sheet bg-white p-8 text-sm text-slate-900 print:p-4 border shadow-sm">
       <div className="border-b-2 border-slate-900 pb-4 text-center">
-        <h1 className="text-xl font-bold uppercase">{business.name}</h1>
-        <h2 className="text-lg font-semibold">{business.tagline}</h2>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={PRINT_LOGO_SRC}
+          alt="Skywin"
+          className="mx-auto mb-2 h-12 w-auto object-contain"
+        />
+        <h1 className="text-xl font-bold uppercase">{PRINT_TRADE_NAME}</h1>
         <p className="mt-2 text-xs">{business.address}</p>
         <p className="text-xs">
-          Phone: {business.phone} | {business.email}
+          Phone: {phones} | {business.email}
         </p>
         <p className="text-xs font-semibold">GSTIN: {business.gstin}</p>
       </div>
@@ -135,6 +163,9 @@ export function PaymentVoucherTemplate({
           <p>Authorized Signatory</p>
         </div>
       </div>
+      <p className="mt-6 text-center text-xs text-slate-500">
+        {thankYouMessage()}
+      </p>
     </div>
   );
 }

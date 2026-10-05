@@ -40,6 +40,7 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             tagline: fd.get("tagline") as string,
             address: fd.get("address") as string,
             phone: fd.get("phone") as string,
+            landline: fd.get("landline") as string,
             email: fd.get("email") as string,
             gstin: fd.get("gstin") as string,
             businessLocality: fd.get("businessLocality") as string,
@@ -94,6 +95,10 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
             <div>
               <Label>Phone</Label>
               <Input name="phone" defaultValue={settings.phone} />
+            </div>
+            <div>
+              <Label>Landline</Label>
+              <Input name="landline" defaultValue={settings.landline} />
             </div>
             <div>
               <Label>Email</Label>

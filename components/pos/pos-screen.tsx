@@ -29,6 +29,8 @@ import {
   getProductRate,
   getBatchBillingRate,
   isInterstateGst,
+  isPlaceholderGstin,
+  isValidGstin,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { checkBelowCost } from "@/lib/pricing";
@@ -37,6 +39,7 @@ import {
   ewayBillReadiness,
 } from "@/lib/gst";
 import { isMeasuredUnit, UNIT_OPTIONS } from "@/lib/units";
+import { saleRateBracket } from "@/lib/print-branding";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
@@ -553,6 +556,16 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
       upiAmount = 0;
     }
 
+    const typedTransporterGstin = transporterGstin.trim();
+    if (
+      typedTransporterGstin &&
+      !isPlaceholderGstin(typedTransporterGstin) &&
+      !isValidGstin(typedTransporterGstin)
+    ) {
+      setError("Transporter GSTIN must be 15 characters, or leave it blank.");
+      return;
+    }
+
     setError("");
     startTransition(async () => {
       try {
@@ -882,16 +895,21 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                           {item.batchExpiry ? ` · Exp ${item.batchExpiry}` : ""}
                         </p>
                       ) : null}
-                      <p className="text-sm font-semibold text-slate-900">
-                        {formatCurrency(
-                          calculateLineAmount(
-                            item.qty,
-                            item.rate,
-                            item.discountValue,
-                            item.discountType
-                          )
-                        )}
-                      </p>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {formatCurrency(
+                            calculateLineAmount(
+                              item.qty,
+                              item.rate,
+                              item.discountValue,
+                              item.discountType
+                            )
+                          )}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {saleRateBracket(item.rate, item.gstRate)}
+                        </p>
+                      </div>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Button

@@ -11,8 +11,9 @@
  */
 import { and, desc, eq, gte } from "drizzle-orm";
 import { db } from "@/db";
-import { sales, customers } from "@/db/schema";
+import { sales, customers, saleReturns } from "@/db/schema";
 import { isValidGstin } from "@/lib/gst";
+import { isCreditNoteEinvoiceEligible } from "@/lib/whitebooks/irn-payload";
 
 export { isValidGstin };
 
@@ -175,6 +176,62 @@ export function einvoiceMissingFields(row: {
  * left optional since a transporter may not be GST-registered.
  * Empty array = ready to push.
  */
+export type CreditNoteEinvoiceRow = {
+  id: number;
+  returnNo: string;
+  date: Date;
+  grandTotal: string;
+  customerId: number | null;
+  customerName: string | null;
+  customerGstin: string | null;
+  customerAddress: string | null;
+  customerDistrict: string | null;
+  customerPinCode: string | null;
+  saleBillType: string | null;
+  saleInvoiceNo: string | null;
+  einvoiceStatus: string;
+  irn: string | null;
+  ackDate: Date | null;
+  einvoiceError: string | null;
+};
+
+export async function getCreditNoteEinvoiceCandidates(): Promise<
+  CreditNoteEinvoiceRow[]
+> {
+  const rows = await db
+    .select({
+      id: saleReturns.id,
+      returnNo: saleReturns.returnNo,
+      date: saleReturns.date,
+      grandTotal: saleReturns.grandTotal,
+      customerId: saleReturns.customerId,
+      customerName: customers.name,
+      customerGstin: customers.gstin,
+      customerAddress: customers.address,
+      customerDistrict: customers.district,
+      customerPinCode: customers.pinCode,
+      saleBillType: sales.billType,
+      saleInvoiceNo: sales.invoiceNo,
+      einvoiceStatus: saleReturns.einvoiceStatus,
+      irn: saleReturns.irn,
+      ackDate: saleReturns.ackDate,
+      einvoiceError: saleReturns.einvoiceError,
+    })
+    .from(saleReturns)
+    .innerJoin(sales, eq(saleReturns.saleId, sales.id))
+    .leftJoin(customers, eq(saleReturns.customerId, customers.id))
+    .where(eq(sales.status, "active"))
+    .orderBy(desc(saleReturns.date))
+    .limit(200);
+
+  return rows.filter((row) =>
+    isCreditNoteEinvoiceEligible({
+      billType: row.saleBillType,
+      customerGstin: row.customerGstin,
+    })
+  );
+}
+
 export function ewayBillMissingFields(row: {
   vehicleNo: string | null;
   transporterName: string | null;

@@ -104,9 +104,9 @@ export function CustomerForm({
       </div>
       <div>
         <Label>GSTIN</Label>
-        <Input name="gstin" placeholder="15-character GST number" />
+        <Input name="gstin" placeholder="15-character GSTIN or URP" />
         <p className="mt-1 text-[10px] text-slate-500">
-          Only one company is allowed per GST number.
+          Real GSTINs must be 15 characters. URP can be used for more than one unregistered customer.
         </p>
       </div>
       <div>

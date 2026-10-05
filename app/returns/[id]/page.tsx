@@ -1,10 +1,24 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import QRCode from "qrcode";
 import { getSaleReturnById } from "@/lib/queries/returns";
 import { getSettings } from "@/lib/settings";
 import { CreditNoteTemplate } from "@/components/returns/credit-note-template";
 import { PrintButton } from "@/components/invoice/print-button";
 import { Button } from "@/components/ui/button";
+
+async function invoiceQrDataUrl(payload: string) {
+  try {
+    return await QRCode.toDataURL(payload, {
+      margin: 0,
+      width: 256,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+  } catch {
+    return null;
+  }
+}
 
 export default async function CreditNoteDetailPage({
   params,
@@ -31,6 +45,7 @@ export default async function CreditNoteDetailPage({
     gstin: settings.gstin,
     state: settings.state,
     stateCode: settings.stateCode,
+    landline: settings.landline,
   };
 
   return (
@@ -59,6 +74,11 @@ export default async function CreditNoteDetailPage({
         business={business}
         creditNote={creditNote}
         items={creditNote.items}
+        einvoiceQrUrl={
+          creditNote.irn && creditNote.einvoiceStatus !== "cancelled" && creditNote.signedQr
+            ? await invoiceQrDataUrl(creditNote.signedQr)
+            : null
+        }
       />
     </div>
   );

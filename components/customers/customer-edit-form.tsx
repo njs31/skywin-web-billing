@@ -121,7 +121,11 @@ export function CustomerEditForm({ customer }: { customer: Customer }) {
         </div>
         <div>
           <Label>GST Number</Label>
-          <Input value={gstin} onChange={(e) => setGstin(e.target.value)} />
+          <Input
+            value={gstin}
+            onChange={(e) => setGstin(e.target.value.toUpperCase())}
+            placeholder="15-character GSTIN or URP"
+          />
         </div>
         <div>
           <Label>Acre</Label>
