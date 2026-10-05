@@ -36,7 +36,7 @@ export async function proxy(request: NextRequest) {
     }
 
     if (role === "dealer") {
-      const allowedPaths = ["/", "/pos", "/invoices", "/accounts/outstanding"];
+      const allowedPaths = ["/", "/pos", "/invoices", "/accounts/outstanding", "/accounts/credit"];
       const isAllowed = allowedPaths.some(
         (path) => pathname === path || pathname.startsWith(path + "/")
       );

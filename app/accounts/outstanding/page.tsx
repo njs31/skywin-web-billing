@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCustomersWithOutstanding } from "@/lib/queries/customers";
 import {
   getSuppliersWithOutstanding,
@@ -68,7 +69,14 @@ export default async function OutstandingPage() {
                 <TableBody>
                   {customers.map((c) => (
                     <TableRow key={c.id}>
-                      <TableCell>{c.name}</TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/accounts/credit?q=${encodeURIComponent(c.name)}`}
+                          className="text-emerald-700 hover:underline"
+                        >
+                          {c.name}
+                        </Link>
+                      </TableCell>
                       <TableCell className="text-right font-semibold">
                         {formatCurrency(c.outstanding)}
                       </TableCell>

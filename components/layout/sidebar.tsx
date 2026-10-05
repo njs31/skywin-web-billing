@@ -87,6 +87,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/accounts/receipts", label: "Receipts", icon: Wallet },
       { href: "/accounts/payments", label: "Payments", icon: Wallet },
+      { href: "/accounts/credit", label: "Credit", icon: Receipt },
       { href: "/accounts/outstanding", label: "Outstanding", icon: Wallet },
     ],
   },
@@ -162,7 +163,8 @@ export function Sidebar({
             item.href === "/" ||
             item.href === "/pos" ||
             item.href === "/invoices" ||
-            item.href === "/accounts/outstanding"
+            item.href === "/accounts/outstanding" ||
+            item.href === "/accounts/credit"
           );
         }
 

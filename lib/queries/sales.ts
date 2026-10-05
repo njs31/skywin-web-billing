@@ -302,6 +302,12 @@ export function computeSaleSettlement(
     throw new Error("Cash + UPI amounts must equal the bill grand total.");
   }
 
+  if (paidAmount - gst.grandTotal > 0.01) {
+    throw new Error(
+      `Paid amount ₹${paidAmount.toFixed(2)} exceeds bill total ₹${gst.grandTotal.toFixed(2)}.`
+    );
+  }
+
   if (
     input.paymentMode !== "credit" &&
     Math.abs(paidAmount - gst.grandTotal) > 0.01 &&
@@ -1165,6 +1171,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   revalidatePath("/reports");
   revalidatePath("/accounts/outstanding");
   revalidatePath("/accounts/receipts");
+  revalidatePath("/accounts/credit");
 
   const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
   scheduleQwicksStockPush(productIds);
@@ -2063,6 +2070,7 @@ export async function cancelSale(saleId: number, reason: string, actor: string) 
   revalidatePath("/");
   revalidatePath("/reports");
   revalidatePath("/accounts/outstanding");
+  revalidatePath("/accounts/credit");
 
   return result;
 }
@@ -2346,6 +2354,7 @@ export async function updateSale(input: UpdateSaleInput) {
   revalidatePath("/reports");
   revalidatePath("/accounts/outstanding");
   revalidatePath("/accounts/receipts");
+  revalidatePath("/accounts/credit");
 
   const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
   const oldIds = await db

@@ -73,7 +73,7 @@ describe("batch-wise sale rate", () => {
 });
 
 describe("auto credit entries for cash/card/UPI", () => {
-  it("does not create receipts for credit sales", () => {
+  it("does not create receipts for unpaid credit sales", () => {
     assert.deepEqual(
       buildAutoReceiptParts({
         paymentMode: "credit",
@@ -82,6 +82,36 @@ describe("auto credit entries for cash/card/UPI", () => {
         upiAmount: 0,
       }),
       []
+    );
+  });
+
+  it("records the paid-now slice on a credit sale", () => {
+    assert.deepEqual(
+      buildAutoReceiptParts({
+        paymentMode: "credit",
+        paidAmount: 1000,
+        cashAmount: 1000,
+        upiAmount: 0,
+      }),
+      [{ paymentMode: "cash", amount: 1000 }]
+    );
+    assert.deepEqual(
+      buildAutoReceiptParts({
+        paymentMode: "credit",
+        paidAmount: 1000,
+        cashAmount: 0,
+        upiAmount: 1000,
+      }),
+      [{ paymentMode: "upi", amount: 1000 }]
+    );
+    assert.deepEqual(
+      buildAutoReceiptParts({
+        paymentMode: "credit",
+        paidAmount: 1000,
+        cashAmount: 0,
+        upiAmount: 0,
+      }),
+      [{ paymentMode: "card", amount: 1000 }]
     );
   });
 
@@ -141,6 +171,19 @@ describe("auto credit entries for cash/card/UPI", () => {
     assert.equal(s.received, 118);
     assert.equal(s.balance, 0);
     assert.equal(s.label, "UPI");
+  });
+
+  it("prints received and remaining balance on a partial credit invoice", () => {
+    const s = invoiceSettlement({
+      paymentMode: "credit",
+      grandTotal: 10000,
+      paidAmount: 1000,
+      cashAmount: 1000,
+      upiAmount: 0,
+    });
+    assert.equal(s.received, 1000);
+    assert.equal(s.balance, 9000);
+    assert.equal(s.label, "CASH");
   });
 });
 

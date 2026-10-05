@@ -29,9 +29,21 @@ const cleanDate = (value?: string) => (value && YMD.test(value) ? value : undefi
 export default async function ReceiptsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    from?: string;
+    to?: string;
+    customer?: string;
+    sale?: string;
+  }>;
 }) {
-  const { page: pageParam, from: fromParam, to: toParam } = await searchParams;
+  const {
+    page: pageParam,
+    from: fromParam,
+    to: toParam,
+    customer: customerParam,
+    sale: saleParam,
+  } = await searchParams;
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
   const from = cleanDate(fromParam);
   const to = cleanDate(toParam);
@@ -71,7 +83,20 @@ export default async function ReceiptsPage({
           <CardTitle className="text-base">Record Receipt</CardTitle>
         </CardHeader>
         <CardContent>
-          <ReceiptForm customers={customers} nextVoucherNo={nextVoucherNo} />
+          <ReceiptForm
+            customers={customers}
+            nextVoucherNo={nextVoucherNo}
+            initialCustomerId={
+              customerParam && Number.isFinite(parseInt(customerParam, 10))
+                ? parseInt(customerParam, 10)
+                : undefined
+            }
+            initialSaleId={
+              saleParam && Number.isFinite(parseInt(saleParam, 10))
+                ? parseInt(saleParam, 10)
+                : undefined
+            }
+          />
         </CardContent>
       </Card>
 

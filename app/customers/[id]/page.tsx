@@ -97,7 +97,9 @@ export default async function CustomerDetailPage({
                   <TableHead>Invoice</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Mode</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Bill</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Due</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -115,8 +117,22 @@ export default async function CustomerDetailPage({
                       {formatDateIST(s.date)}
                     </TableCell>
                     <TableCell className="capitalize">{s.paymentMode}</TableCell>
-                    <TableCell className="text-right font-semibold">
+                    <TableCell className="text-right">
                       {formatCurrency(s.grandTotal)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(s.paidAmount ?? 0)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatCurrency(
+                        s.status === "cancelled"
+                          ? 0
+                          : Math.max(
+                              0,
+                              Number(s.grandTotal ?? 0) -
+                                Number(s.paidAmount ?? 0)
+                            )
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

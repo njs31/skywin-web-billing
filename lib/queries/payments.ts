@@ -7,7 +7,7 @@ import {
   purchases,
   sales,
 } from "@/db/schema";
-import { desc, eq, sql, asc, and, gte, isNotNull, count } from "drizzle-orm";
+import { desc, eq, sql, asc, and, gte, isNotNull, count, ne, or, ilike, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { allocateReceiptVoucherNo } from "@/lib/queries/receipt-voucher";
 
@@ -180,6 +180,7 @@ export async function createPartyPayment(input: z.infer<typeof paymentSchema>) {
   revalidatePath("/accounts/receipts");
   revalidatePath("/accounts/payments");
   revalidatePath("/accounts/outstanding");
+  revalidatePath("/accounts/credit");
   revalidatePath("/invoices");
   revalidatePath("/purchases");
 
@@ -200,10 +201,67 @@ export async function getOutstandingSalesForCustomer(customerId: number) {
     .where(
       and(
         eq(sales.customerId, customerId),
+        ne(sales.status, "cancelled"),
         sql`(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)) > 0`
       )
     )
     .orderBy(asc(sales.date));
+}
+
+export type OpenCreditInvoice = {
+  saleId: number;
+  invoiceNo: string;
+  date: Date;
+  grandTotal: string;
+  paidAmount: string | null;
+  balance: string;
+  customerId: number;
+  customerName: string;
+  customerPhone: string | null;
+};
+
+export async function getOpenCustomerCreditInvoices(
+  q?: string
+): Promise<OpenCreditInvoice[]> {
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const customerIds = await getScopedCustomerIds();
+  if (customerIds !== null && customerIds.length === 0) return [];
+
+  const needle = q?.trim().replace(/[%_]/g, "") ?? "";
+  const filters = [
+    ne(sales.status, "cancelled"),
+    isNotNull(sales.customerId),
+    sql`(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0)) > 0`,
+  ];
+  if (customerIds !== null) {
+    filters.push(inArray(sales.customerId, customerIds));
+  }
+  if (needle) {
+    const pattern = `%${needle}%`;
+    const search = or(
+      ilike(customers.name, pattern),
+      ilike(sales.invoiceNo, pattern),
+      ilike(customers.phone, pattern)
+    );
+    if (search) filters.push(search);
+  }
+
+  return db
+    .select({
+      saleId: sales.id,
+      invoiceNo: sales.invoiceNo,
+      date: sales.date,
+      grandTotal: sales.grandTotal,
+      paidAmount: sales.paidAmount,
+      balance: sql<string>`(${sales.grandTotal}::numeric - coalesce(${sales.paidAmount}::numeric, 0))`,
+      customerId: customers.id,
+      customerName: customers.name,
+      customerPhone: customers.phone,
+    })
+    .from(sales)
+    .innerJoin(customers, eq(sales.customerId, customers.id))
+    .where(and(...filters))
+    .orderBy(asc(customers.name), asc(sales.date), asc(sales.id));
 }
 
 export async function getOutstandingPurchasesForSupplier(supplierId: number) {

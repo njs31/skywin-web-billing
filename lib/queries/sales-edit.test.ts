@@ -73,6 +73,39 @@ describe("computeSaleSettlement", () => {
     assert.equal(s.paidAmount, 0);
   });
 
+  it("accepts a partial payment on a credit bill", () => {
+    const s = computeSaleSettlement(
+      {
+        ...base,
+        paymentMode: "credit",
+        paidAmount: 100,
+        cashAmount: 100,
+      },
+      [line()],
+      false
+    );
+    assert.equal(s.gst.grandTotal, 236);
+    assert.equal(s.paidAmount, 100);
+    assert.equal(s.cashAmount, 100);
+  });
+
+  it("refuses paid amount above the bill total", () => {
+    assert.throws(
+      () =>
+        computeSaleSettlement(
+          {
+            ...base,
+            paymentMode: "credit",
+            paidAmount: 500,
+            cashAmount: 500,
+          },
+          [line()],
+          false
+        ),
+      /exceeds bill total/
+    );
+  });
+
   it("refuses an underpaid non-credit bill", () => {
     assert.throws(
       () =>

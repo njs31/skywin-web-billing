@@ -87,7 +87,10 @@ export async function getCustomersPaged(filter: CustomerListFilter): Promise<{
     const searchCond = or(
       ilike(customers.name, pattern),
       ilike(customers.phone, pattern),
-      ilike(customers.gstin, pattern)
+      and(
+        sql`char_length(btrim(coalesce(${customers.gstin}, ''))) = 15`,
+        ilike(customers.gstin, pattern)
+      )
     );
     if (searchCond) conditions.push(searchCond);
   }

@@ -7,6 +7,7 @@ import {
   isPlaceholderGstin,
   isValidGstin,
   normalizeEnteredGstin,
+  gstinMatchesSearch,
 } from "./gst";
 
 describe("GSTIN placeholders and uniqueness", () => {
@@ -26,6 +27,14 @@ describe("GSTIN placeholders and uniqueness", () => {
     assert.equal(second, "URP");
     assert.equal(gstinRequiresUniqueness(first), false);
     assert.equal(gstinRequiresUniqueness(second), false);
+  });
+
+  it("does not treat URP as a customer identity in search", () => {
+    assert.equal(gstinMatchesSearch("URP", "URP"), false);
+    assert.equal(gstinMatchesSearch("URP", "urp"), false);
+    assert.equal(gstinMatchesSearch("33ABCDE1234F1Z5", "URP"), false);
+    assert.equal(gstinMatchesSearch("33ABCDE1234F1Z5", "33ABC"), true);
+    assert.equal(gstinMatchesSearch(null, "URP"), false);
   });
 
   it("clips GSTIN fields to 15 characters", () => {

@@ -9,6 +9,7 @@ import {
   calculateLineAmount,
   GSTIN_INPUT_MAX_LENGTH,
   clipGstinInput,
+  gstinMatchesSearch,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Customer, Product } from "@/db/schema";
@@ -155,7 +156,7 @@ export function ReturnForm({
         (c) =>
           c.name.toLowerCase().includes(q) ||
           (c.phone && c.phone.includes(q)) ||
-          (c.gstin && c.gstin.toLowerCase().includes(q))
+          gstinMatchesSearch(c.gstin, q)
       )
       .slice(0, 50);
   }, [customers, customerSearch]);

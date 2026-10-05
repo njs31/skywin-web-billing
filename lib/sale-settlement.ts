@@ -12,8 +12,9 @@ function round2(n: number) {
 }
 
 /**
- * Split a settled (non-credit) sale into receipt voucher lines.
+ * Split a settled sale into receipt voucher lines.
  * Cash + UPI split bills produce two credits; card/cheque produce one.
+ * Credit with a paid-now slice produces a receipt for that slice only.
  */
 export function buildAutoReceiptParts(input: {
   paymentMode: CounterPaymentMode;
@@ -21,7 +22,6 @@ export function buildAutoReceiptParts(input: {
   cashAmount: number;
   upiAmount: number;
 }): AutoReceiptPart[] {
-  if (input.paymentMode === "credit") return [];
   if (round2(input.paidAmount) <= 0) return [];
 
   const parts: AutoReceiptPart[] = [];
@@ -33,11 +33,15 @@ export function buildAutoReceiptParts(input: {
   }
   if (parts.length === 0) {
     const mode =
-      input.paymentMode === "card" || input.paymentMode === "cheque"
+      input.paymentMode === "card" ||
+      input.paymentMode === "cheque" ||
+      input.paymentMode === "neft"
         ? input.paymentMode
         : input.paymentMode === "upi"
           ? "upi"
-          : "cash";
+          : input.paymentMode === "credit"
+            ? "card"
+            : "cash";
     parts.push({ paymentMode: mode, amount: round2(input.paidAmount) });
   }
   return parts;

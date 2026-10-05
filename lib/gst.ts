@@ -388,3 +388,18 @@ export function gstinRequiresUniqueness(
 ): boolean {
   return isValidGstin(gstin);
 }
+
+/**
+ * GSTIN search is an identity lookup. Placeholders like URP are shared by
+ * every unregistered person, so typing "URP" must not pull the last URP
+ * customer onto a new bill.
+ */
+export function gstinMatchesSearch(
+  gstin: string | null | undefined,
+  query: string
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q || !gstin) return false;
+  if (isPlaceholderGstin(gstin) || isPlaceholderGstin(q)) return false;
+  return gstin.trim().toLowerCase().includes(q);
+}

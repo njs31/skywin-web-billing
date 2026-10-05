@@ -33,6 +33,7 @@ import {
   isValidGstin,
   GSTIN_INPUT_MAX_LENGTH,
   clipGstinInput,
+  gstinMatchesSearch,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { checkBelowCost } from "@/lib/pricing";
@@ -108,6 +109,10 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
   >("cash");
   const [splitCashUpi, setSplitCashUpi] = useState(false);
   const [cashAmountInput, setCashAmountInput] = useState("");
+  const [creditPaidNow, setCreditPaidNow] = useState("");
+  const [creditPaidVia, setCreditPaidVia] = useState<"cash" | "upi" | "card">(
+    "cash"
+  );
   const [billDiscount, setBillDiscount] = useState("");
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -475,7 +480,7 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
         (c) =>
           c.name.toLowerCase().includes(q) ||
           (c.phone && c.phone.includes(q)) ||
-          (c.gstin && c.gstin.toLowerCase().includes(q))
+          gstinMatchesSearch(c.gstin, q)
       )
       .slice(0, 50);
   }, [customers, customerSearch]);
@@ -485,7 +490,20 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
     [cart]
   );
 
-  const billCreditAmount = paymentMode === "credit" ? gst.grandTotal : 0;
+  const creditPaidNowAmount =
+    paymentMode === "credit"
+      ? Math.min(
+          gst.grandTotal,
+          Math.max(0, Math.round((parseFloat(creditPaidNow) || 0) * 100) / 100)
+        )
+      : 0;
+  const billCreditAmount =
+    paymentMode === "credit"
+      ? Math.max(
+          0,
+          Math.round((gst.grandTotal - creditPaidNowAmount) * 100) / 100
+        )
+      : 0;
   const projectedDebt =
     customerOutstanding !== null
       ? customerOutstanding + billCreditAmount
@@ -532,8 +550,24 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
     let cashAmount = 0;
     let upiAmount = 0;
     let mode = paymentMode;
+    let paidAmount = gst.grandTotal;
 
-    if (canSplitPayment && splitCashUpi) {
+    if (paymentMode === "credit") {
+      const paidNow =
+        Math.round(Math.max(0, parseFloat(creditPaidNow) || 0) * 100) / 100;
+      if (paidNow - gst.grandTotal > 0.01) {
+        setError("Paid now cannot exceed the bill total.");
+        return;
+      }
+      paidAmount = Math.min(paidNow, gst.grandTotal);
+      if (paidAmount > 0) {
+        if (creditPaidVia === "upi") {
+          upiAmount = paidAmount;
+        } else if (creditPaidVia !== "card") {
+          cashAmount = paidAmount;
+        }
+      }
+    } else if (canSplitPayment && splitCashUpi) {
       cashAmount = splitCashAmount;
       upiAmount = splitUpiAmount;
       if (Math.abs(cashAmount + upiAmount - gst.grandTotal) > 0.01) {
@@ -552,7 +586,7 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
       cashAmount = 0;
       upiAmount = gst.grandTotal;
     } else {
-      // card / cheque — fully paid at counter
+      // card / cheque / neft — fully paid at counter
       cashAmount = 0;
       upiAmount = 0;
     }
@@ -581,8 +615,7 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
           paymentMode: mode,
           cashAmount,
           upiAmount,
-          paidAmount:
-            mode === "credit" ? 0 : gst.grandTotal,
+          paidAmount,
           discountAmount: parseFloat(billDiscount) || 0,
           poNumber: poNumber.trim() || undefined,
           quotationNumber: quotationNumber.trim() || undefined,
@@ -613,14 +646,21 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
           })),
         });
         setCart([]);
+        setCustomerId("none");
+        setCustomerSearch("");
         setCustomerName("");
         setCustomerPhone("");
+        setCustomerOutstanding(null);
         setBillDiscount("");
         setCashAmountInput("");
+        setCreditPaidNow("");
+        setCreditPaidVia("cash");
         setSplitCashUpi(false);
         setTransporterName("");
         setVehicleNo("");
         setDispatchedThrough("");
+        setEInvoiceRequested(false);
+        if (mode === "credit") setPaymentMode("cash");
         router.push(`/invoices/${sale.id}?print=1`);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to complete sale");
@@ -1354,6 +1394,10 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
                         setSplitCashUpi(false);
                         setCashAmountInput("");
                       }
+                      if (next !== "credit") {
+                        setCreditPaidNow("");
+                        setCreditPaidVia("cash");
+                      }
                     }}
                   >
                     <SelectTrigger className="h-9">
@@ -1418,6 +1462,53 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
                           readOnly
                         />
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {paymentMode === "credit" && (
+                <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">Paid now ₹</Label>
+                      <Input
+                        className="mt-1 h-9 bg-white"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={creditPaidNow}
+                        onChange={(e) => setCreditPaidNow(e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">On credit ₹</Label>
+                      <Input
+                        className="mt-1 h-9 bg-white"
+                        type="number"
+                        value={billCreditAmount.toFixed(2)}
+                        readOnly
+                      />
+                    </div>
+                  </div>
+                  {creditPaidNowAmount > 0 && (
+                    <div>
+                      <Label className="text-xs">Paid now via</Label>
+                      <Select
+                        value={creditPaidVia}
+                        onValueChange={(v) =>
+                          setCreditPaidVia(v as "cash" | "upi" | "card")
+                        }
+                      >
+                        <SelectTrigger className="mt-1 h-9 bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="upi">UPI</SelectItem>
+                          <SelectItem value="card">Card</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
                 </div>

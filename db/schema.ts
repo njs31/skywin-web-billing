@@ -90,7 +90,9 @@ export const customers = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
-    gstinUnique: uniqueIndex("customers_gstin_unique").on(table.gstin),
+    gstinUnique: uniqueIndex("customers_gstin_unique")
+      .on(table.gstin)
+      .where(sql`gstin is not null and char_length(btrim(gstin)) = 15`),
     phoneIdx: index("customers_phone_idx").on(table.phone),
     nameIdx: index("customers_name_idx").on(table.name),
   })

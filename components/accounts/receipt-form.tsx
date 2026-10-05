@@ -32,13 +32,19 @@ type OutstandingSale = {
 export function ReceiptForm({
   customers,
   nextVoucherNo,
+  initialCustomerId,
+  initialSaleId,
 }: {
   customers: Customer[];
   nextVoucherNo?: string;
+  initialCustomerId?: number;
+  initialSaleId?: number;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [customerId, setCustomerId] = useState("");
+  const [customerId, setCustomerId] = useState(
+    initialCustomerId ? String(initialCustomerId) : ""
+  );
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState<
     "cash" | "upi" | "card" | "cheque" | "neft"
@@ -62,7 +68,20 @@ export function ReceiptForm({
       .then((rows) => {
         if (!cancelled) {
           setBills(rows as OutstandingSale[]);
-          setAllocations({});
+          if (initialSaleId) {
+            const bill = (rows as OutstandingSale[]).find(
+              (row) => row.id === initialSaleId
+            );
+            if (bill) {
+              const due = toNumber(bill.balance).toFixed(2);
+              setAllocations({ [bill.id]: due });
+              setAmount(due);
+            } else {
+              setAllocations({});
+            }
+          } else {
+            setAllocations({});
+          }
         }
       })
       .finally(() => {
@@ -71,7 +90,7 @@ export function ReceiptForm({
     return () => {
       cancelled = true;
     };
-  }, [customerId]);
+  }, [customerId, initialSaleId]);
 
   const allocatedTotal = useMemo(
     () =>
