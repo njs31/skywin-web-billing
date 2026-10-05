@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GSTIN_INPUT_MAX_LENGTH } from "@/lib/gst";
 import { useRouter } from "next/navigation";
 
 type CustomerFormProps = {
@@ -104,7 +105,12 @@ export function CustomerForm({
       </div>
       <div>
         <Label>GSTIN</Label>
-        <Input name="gstin" placeholder="15-character GSTIN or URP" />
+        <Input
+          name="gstin"
+          placeholder="15-character GSTIN or URP"
+          maxLength={GSTIN_INPUT_MAX_LENGTH}
+          className="font-mono uppercase"
+        />
         <p className="mt-1 text-[10px] text-slate-500">
           Real GSTINs must be 15 characters. URP can be used for more than one unregistered customer.
         </p>

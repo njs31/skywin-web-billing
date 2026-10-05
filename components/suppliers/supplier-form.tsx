@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import { PinConfirmDialog } from "@/components/suppliers/pin-confirm-dialog";
+import { GSTIN_INPUT_MAX_LENGTH } from "@/lib/gst";
 
 type SupplierFormProps = {
   supplier?: Supplier;
@@ -104,7 +105,7 @@ export function SupplierForm({ supplier, onSuccess }: SupplierFormProps) {
               name="gstin"
               defaultValue={supplier?.gstin ?? ""}
               placeholder="15-character GSTIN"
-              maxLength={15}
+              maxLength={GSTIN_INPUT_MAX_LENGTH}
               className="uppercase"
             />
           </div>

@@ -6,6 +6,7 @@ import type { Customer } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GSTIN_INPUT_MAX_LENGTH, clipGstinInput } from "@/lib/gst";
 import { useRouter } from "next/navigation";
 
 export function CustomerEditForm({ customer }: { customer: Customer }) {
@@ -123,8 +124,10 @@ export function CustomerEditForm({ customer }: { customer: Customer }) {
           <Label>GST Number</Label>
           <Input
             value={gstin}
-            onChange={(e) => setGstin(e.target.value.toUpperCase())}
+            onChange={(e) => setGstin(clipGstinInput(e.target.value))}
             placeholder="15-character GSTIN or URP"
+            maxLength={GSTIN_INPUT_MAX_LENGTH}
+            className="font-mono uppercase"
           />
         </div>
         <div>

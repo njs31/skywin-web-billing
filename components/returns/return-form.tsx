@@ -5,7 +5,11 @@ import { Search, Trash2, X } from "lucide-react";
 import { searchProductBatches } from "@/lib/actions/products";
 import { createSaleReturn, updateSaleReturn } from "@/lib/actions/billing";
 import { searchSalesForReturn } from "@/lib/actions/sales";
-import { calculateLineAmount } from "@/lib/gst";
+import {
+  calculateLineAmount,
+  GSTIN_INPUT_MAX_LENGTH,
+  clipGstinInput,
+} from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
@@ -508,10 +512,10 @@ export function ReturnForm({
               <Input
                 value={customerGstin}
                 onChange={(e) =>
-                  setCustomerGstin(e.target.value.toUpperCase())
+                  setCustomerGstin(clipGstinInput(e.target.value))
                 }
                 placeholder="33AAAAA0000A1Z5"
-                maxLength={15}
+                maxLength={GSTIN_INPUT_MAX_LENGTH}
                 className="mt-1 font-mono uppercase"
               />
               <p className="mt-1 text-xs text-slate-500">

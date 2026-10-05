@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  GSTIN_INPUT_MAX_LENGTH,
+  clipGstinInput,
   gstinRequiresUniqueness,
   isPlaceholderGstin,
   isValidGstin,
@@ -24,6 +26,12 @@ describe("GSTIN placeholders and uniqueness", () => {
     assert.equal(second, "URP");
     assert.equal(gstinRequiresUniqueness(first), false);
     assert.equal(gstinRequiresUniqueness(second), false);
+  });
+
+  it("clips GSTIN fields to 15 characters", () => {
+    assert.equal(GSTIN_INPUT_MAX_LENGTH, 15);
+    assert.equal(clipGstinInput("33ABCDE1234F1Z5EXTRA"), "33ABCDE1234F1Z5");
+    assert.equal(clipGstinInput("urp"), "URP");
   });
 
   it("requires 15 characters for a real GSTIN", () => {

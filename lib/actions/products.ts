@@ -8,6 +8,7 @@ import {
   deleteProduct as deleteProductQuery,
   getProductBatches as getProductBatchesQuery,
   getProductChangeLogs as getProductChangeLogsQuery,
+  getProductById as getProductByIdQuery,
   updateBatch as updateBatchQuery,
   getAllProductsForExport,
   getProductsExportForDateRange,
@@ -102,8 +103,18 @@ export async function updateBatch(
 }
 
 export async function deleteProduct(id: number) {
-  await requireNonDealer();
-  return deleteProductQuery(id);
+  const user = await requireNonDealer();
+  const existing = await getProductByIdQuery(id);
+  await deleteProductQuery(id);
+  const { recordActivity } = await import("@/lib/queries/activity-logs");
+  const name = user.name.trim() || user.phone;
+  await recordActivity({
+    action: "product.delete",
+    message: `${name} removed product ${existing?.name ?? `#${id}`}`,
+    entityType: "product",
+    entityId: id,
+    actor: { id: user.id, name },
+  });
 }
 
 export async function importStockFromExcel(rows: StockImportRow[]) {

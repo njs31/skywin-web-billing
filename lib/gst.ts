@@ -321,6 +321,13 @@ export function normalizeCartQty(
   return next;
 }
 
+/** GSTIN inputs are capped at 15 characters everywhere (legal GSTIN length). */
+export const GSTIN_INPUT_MAX_LENGTH = 15;
+
+export function clipGstinInput(raw: string): string {
+  return raw.toUpperCase().slice(0, GSTIN_INPUT_MAX_LENGTH);
+}
+
 /**
  * True only for a real 15-character GSTIN. Matters because this codebase
  * (and the data entered over time) sometimes puts a placeholder like "URP"

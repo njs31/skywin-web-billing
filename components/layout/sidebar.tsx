@@ -17,6 +17,7 @@ import {
   BarChart3,
   Settings,
   Smartphone,
+  ScrollText,
   ChevronDown,
   X,
 } from "lucide-react";
@@ -97,6 +98,7 @@ const navGroups: NavGroup[] = [
     label: "System",
     items: [
       { href: "/users", label: "User Management", icon: Users },
+      { href: "/logs", label: "Logs", icon: ScrollText },
       { href: "/widget", label: "Phone widget", icon: Smartphone },
       { href: "/settings", label: "Settings", icon: Settings },
     ],

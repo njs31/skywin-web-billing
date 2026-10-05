@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { GSTIN_INPUT_MAX_LENGTH } from "@/lib/gst";
 import { useRouter } from "next/navigation";
 import {
   isSerialPrintSupported,
@@ -108,7 +109,13 @@ export function SettingsForm({ settings }: { settings: AppSettings }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label>GSTIN</Label>
-              <Input name="gstin" defaultValue={settings.gstin} />
+              <Input
+                name="gstin"
+                defaultValue={settings.gstin}
+                maxLength={GSTIN_INPUT_MAX_LENGTH}
+                className="font-mono uppercase"
+                placeholder="15-character GSTIN"
+              />
             </div>
             <div>
               <Label>Default Operator</Label>

@@ -21,25 +21,55 @@ import {
 export async function createCustomer(
   input: Parameters<typeof createCustomerMutation>[0]
 ) {
-  await requireUser();
-  return createCustomerMutation(input);
+  const user = await requireUser();
+  const customer = await createCustomerMutation(input);
+  const { recordActivity } = await import("@/lib/queries/activity-logs");
+  const name = user.name.trim() || user.phone;
+  await recordActivity({
+    action: "customer.create",
+    message: `${name} added customer ${customer.name}`,
+    entityType: "customer",
+    entityId: customer.id,
+    actor: { id: user.id, name },
+  });
+  return customer;
 }
 
 export async function updateCustomer(
   id: number,
   input: Parameters<typeof updateCustomerMutation>[1]
 ) {
-  await requireUser();
+  const user = await requireUser();
   await assertCustomerAccess(id);
-  return updateCustomerMutation(id, input);
+  const customer = await updateCustomerMutation(id, input);
+  const { recordActivity } = await import("@/lib/queries/activity-logs");
+  const name = user.name.trim() || user.phone;
+  await recordActivity({
+    action: "customer.update",
+    message: `${name} updated customer ${customer.name}`,
+    entityType: "customer",
+    entityId: id,
+    actor: { id: user.id, name },
+  });
+  return customer;
 }
 
 export async function createSaleReturn(
   input: Parameters<typeof createSaleReturnMutation>[0]
 ) {
-  await requireNonDealer();
+  const user = await requireNonDealer();
   if (input.customerId) await assertCustomerAccess(input.customerId);
-  return createSaleReturnMutation(input);
+  const result = await createSaleReturnMutation(input);
+  const { recordActivity } = await import("@/lib/queries/activity-logs");
+  const name = user.name.trim() || user.phone;
+  await recordActivity({
+    action: "return.create",
+    message: `${name} created credit note ${result.returnNo}`,
+    entityType: "sale_return",
+    entityId: result.id,
+    actor: { id: user.id, name },
+  });
+  return result;
 }
 
 export async function updateSaleReturn(
@@ -84,15 +114,46 @@ export async function adjustStock(
     purchaseRate?: number;
   }
 ) {
-  await requireNonDealer();
-  return adjustStockMutation(productId, qtyDelta, notes, options);
+  const user = await requireNonDealer();
+  const result = await adjustStockMutation(productId, qtyDelta, notes, options);
+  const { db } = await import("@/db");
+  const { products } = await import("@/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const [product] = await db
+    .select({ name: products.name })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1);
+  const { recordActivity } = await import("@/lib/queries/activity-logs");
+  const { stockDeltaMessage } = await import("@/lib/activity-log");
+  const name = user.name.trim() || user.phone;
+  await recordActivity({
+    action: "stock.adjust",
+    message: stockDeltaMessage(name, product?.name ?? `product #${productId}`, qtyDelta),
+    entityType: "product",
+    entityId: productId,
+    actor: { id: user.id, name },
+  });
+  return result;
 }
 
 export async function createProduct(
   input: Parameters<typeof createProductMutation>[0]
 ) {
-  await requireNonDealer();
-  return createProductMutation(input);
+  const user = await requireNonDealer();
+  const product = await createProductMutation(input);
+  if (product) {
+    const { recordActivity } = await import("@/lib/queries/activity-logs");
+    const name = user.name.trim() || user.phone;
+    await recordActivity({
+      action: "product.create",
+      message: `${name} added product ${product.name}`,
+      entityType: "product",
+      entityId: product.id,
+      actor: { id: user.id, name },
+    });
+  }
+  return product;
 }
 
 export async function updateSettings(

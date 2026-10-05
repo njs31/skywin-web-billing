@@ -47,6 +47,27 @@ export async function POST(req: NextRequest) {
 
   try {
     await logLabelPrint({ productId, labelCount, source: "products-page" });
+    const { recordActivity } = await import("@/lib/queries/activity-logs");
+    const { labelsPrintedMessage } = await import("@/lib/activity-log");
+    let productName: string | null = null;
+    if (productId) {
+      const { db } = await import("@/db");
+      const { products } = await import("@/db/schema");
+      const { eq } = await import("drizzle-orm");
+      const [row] = await db
+        .select({ name: products.name })
+        .from(products)
+        .where(eq(products.id, productId))
+        .limit(1);
+      productName = row?.name ?? null;
+    }
+    await recordActivity({
+      action: "labels.print",
+      message: labelsPrintedMessage(user.name.trim() || user.phone, labelCount, productName),
+      entityType: productId ? "product" : "labels",
+      entityId: productId,
+      actor: { id: user.id, name: user.name.trim() || user.phone },
+    });
   } catch (error) {
     console.error("[labels/log] failed to record print:", error);
     return NextResponse.json(

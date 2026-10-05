@@ -751,6 +751,28 @@ export const labelPrints = pgTable(
   })
 );
 
+/**
+ * Staff activity history — who did what in the app. Written only for
+ * logged-in people (not Qwicks/API keys). The Logs page is staff-only.
+ */
+export const activityLogs = pgTable(
+  "activity_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    userName: text("user_name").notNull(),
+    action: text("action").notNull(),
+    message: text("message").notNull(),
+    entityType: text("entity_type"),
+    entityId: integer("entity_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    createdAtIdx: index("activity_logs_created_at_idx").on(table.createdAt),
+    userIdIdx: index("activity_logs_user_id_idx").on(table.userId),
+  })
+);
+
 export type Category = typeof categories.$inferSelect;
 export type Supplier = typeof suppliers.$inferSelect;
 export type Customer = typeof customers.$inferSelect;
@@ -769,3 +791,4 @@ export type ReportingLine = typeof reportingLines.$inferSelect;
 export type DealerMapping = typeof dealerMappings.$inferSelect;
 export type LabelPrint = typeof labelPrints.$inferSelect;
 export type ProductChangeLog = typeof productChangeLogs.$inferSelect;
+export type ActivityLog = typeof activityLogs.$inferSelect;

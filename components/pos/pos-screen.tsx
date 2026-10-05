@@ -31,6 +31,8 @@ import {
   isInterstateGst,
   isPlaceholderGstin,
   isValidGstin,
+  GSTIN_INPUT_MAX_LENGTH,
+  clipGstinInput,
 } from "@/lib/gst";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { checkBelowCost } from "@/lib/pricing";
@@ -1266,9 +1268,12 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
                         <Label className="text-xs">Transporter GSTIN</Label>
                         <Input
                           value={transporterGstin}
-                          onChange={(e) => setTransporterGstin(e.target.value)}
-                          placeholder="Optional"
-                          className="mt-1 h-9"
+                          onChange={(e) =>
+                            setTransporterGstin(clipGstinInput(e.target.value))
+                          }
+                          placeholder="15-character GSTIN"
+                          maxLength={GSTIN_INPUT_MAX_LENGTH}
+                          className="mt-1 h-9 font-mono uppercase"
                         />
                       </div>
                       <div>

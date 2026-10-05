@@ -8,6 +8,8 @@ import {
   calculateGstBreakdown,
   applyRupeeRounding,
   isInterstateGst,
+  GSTIN_INPUT_MAX_LENGTH,
+  clipGstinInput,
 } from "@/lib/gst";
 import { toNumber } from "@/lib/utils";
 import { UNIT_OPTIONS } from "@/lib/units";
@@ -580,7 +582,12 @@ export function EditInvoiceForm({
                 <Label>Transporter GSTIN</Label>
                 <Input
                   value={transporterGstin}
-                  onChange={(e) => setTransporterGstin(e.target.value)}
+                  onChange={(e) =>
+                    setTransporterGstin(clipGstinInput(e.target.value))
+                  }
+                  maxLength={GSTIN_INPUT_MAX_LENGTH}
+                  placeholder="15-character GSTIN"
+                  className="font-mono uppercase"
                 />
               </div>
             </CardContent>

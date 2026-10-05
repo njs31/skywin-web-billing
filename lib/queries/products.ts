@@ -478,6 +478,41 @@ export async function updateProduct(
         userName: actor.userName,
         summary: JSON.stringify(summary),
       });
+      const { recordActivity } = await import("@/lib/queries/activity-logs");
+      const { stockSetMessage, productUpdatedMessage } = await import(
+        "@/lib/activity-log"
+      );
+      const productName = String(after.name ?? before.name ?? `#${id}`);
+      const stockChange = summary["Stock"];
+      const otherChanges = Object.entries(summary)
+        .filter(([label]) => label !== "Stock")
+        .map(([label, ch]) => `${label} ${ch.from || "—"} → ${ch.to || "—"}`);
+      if (stockChange) {
+        await recordActivity({
+          action: "stock.set",
+          message: stockSetMessage(actor.userName, productName, stockChange.to),
+          entityType: "product",
+          entityId: id,
+          actor: actor.userId
+            ? { id: actor.userId, name: actor.userName }
+            : null,
+        });
+      }
+      if (otherChanges.length > 0) {
+        await recordActivity({
+          action: "product.update",
+          message: productUpdatedMessage(
+            actor.userName,
+            productName,
+            otherChanges
+          ),
+          entityType: "product",
+          entityId: id,
+          actor: actor.userId
+            ? { id: actor.userId, name: actor.userName }
+            : null,
+        });
+      }
     }
   }
 
