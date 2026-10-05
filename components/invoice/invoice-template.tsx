@@ -132,6 +132,50 @@ function PrintLogo({ className }: { className?: string }) {
   );
 }
 
+function CompanyLetterhead({
+  business,
+  einvoiceQrUrl,
+  irn,
+}: {
+  business: InvoiceTemplateProps["business"];
+  einvoiceQrUrl?: string | null;
+  irn?: string | null;
+}) {
+  return (
+    <div className="flex items-start gap-3 px-3 py-2.5">
+      <PrintLogo className="mt-0.5 h-[52px] w-auto shrink-0 object-contain" />
+      <div className="min-w-0 flex-1 text-[11px] leading-[1.45]">
+        <p className="text-[15px] font-bold uppercase tracking-wide">
+          {PRINT_TRADE_NAME}
+        </p>
+        {business.address && <p className="mt-0.5">{business.address}</p>}
+        <p>GSTIN/UIN: {business.gstin}</p>
+        <p>
+          State Name : {business.state}, Code : {business.stateCode}
+        </p>
+        {business.email && <p>E-Mail : {business.email}</p>}
+        <p>Phone: {printPhones(business)}</p>
+      </div>
+      {einvoiceQrUrl ? (
+        <div className="flex shrink-0 flex-col items-center pl-2">
+          <p className="text-[10px] font-bold leading-none">e-Invoice</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={einvoiceQrUrl}
+            alt="Invoice QR"
+            className="mt-1 h-[68px] w-[68px] print:h-[20mm] print:w-[20mm]"
+          />
+          {irn && (
+            <p className="mt-0.5 max-w-[88px] break-all text-center text-[7px] leading-tight">
+              IRN: {irn}
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function paymentLabel(sale: InvoiceSale): string {
   if (sale.paymentTerms?.trim()) return sale.paymentTerms.trim();
   if (toNumber(sale.cashAmount) > 0 && toNumber(sale.upiAmount) > 0) {
@@ -194,8 +238,10 @@ function PartyBlock({
   agriBits: string[];
 }) {
   return (
-    <div className="border-b border-slate-900 p-2 text-[11px] leading-snug">
-      <p className="mb-1 font-semibold">{label}</p>
+    <div className="border-b border-slate-900 p-2 text-[11px] leading-snug last:border-b-0">
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+        {label}
+      </p>
       <p className="font-bold uppercase">{customer ?? "Walk-in Customer"}</p>
       {sale.customerAddress && <p>{sale.customerAddress}</p>}
       {agriBits.length > 0 && <p>{agriBits.join(", ")}</p>}
@@ -270,43 +316,19 @@ function WholesaleInvoiceLayout({
         </div>
       )}
       <div className="border border-slate-900">
-        <div className="grid grid-cols-[1fr_auto] border-b border-slate-900">
-          <div className="px-2 py-1 text-center text-sm font-bold tracking-wide">
-            TAX INVOICE
-          </div>
-          {einvoiceQrUrl ? (
-            <div className="flex flex-col items-center border-l border-slate-900 px-2 py-1">
-              <p className="text-[10px] font-bold leading-none">e-Invoice</p>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={einvoiceQrUrl}
-                alt="Invoice QR"
-                className="mt-0.5 h-[72px] w-[72px] print:h-[22mm] print:w-[22mm]"
-              />
-              {sale.irn && (
-                <p className="mt-0.5 max-w-[90px] break-all text-center text-[7px] leading-tight">
-                  IRN: {sale.irn}
-                </p>
-              )}
-            </div>
-          ) : null}
+        <div className="border-b border-slate-900 bg-slate-50 px-2 py-1.5 text-center text-sm font-bold tracking-[0.18em]">
+          TAX INVOICE
+        </div>
+        <div className="border-b border-slate-900">
+          <CompanyLetterhead
+            business={business}
+            einvoiceQrUrl={einvoiceQrUrl}
+            irn={sale.irn}
+          />
         </div>
 
         <div className="grid grid-cols-2 border-b border-slate-900">
           <div className="border-r border-slate-900">
-            <div className="border-b border-slate-900 p-2 text-[11px] leading-snug">
-              <PrintLogo className="mb-1 h-10 w-auto object-contain" />
-              <p className="text-sm font-bold uppercase">{PRINT_TRADE_NAME}</p>
-              <p>{business.address}</p>
-              <p>
-                GSTIN/UIN: {business.gstin}
-              </p>
-              <p>
-                State Name : {business.state}, Code : {business.stateCode}
-              </p>
-              <p>E-Mail : {business.email}</p>
-              <p>Phone: {printPhones(business)}</p>
-            </div>
             <PartyBlock
               label="Consignee (Ship to)"
               sale={sale}
