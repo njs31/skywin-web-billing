@@ -16,9 +16,13 @@ import {
 export async function createSale(
   input: Parameters<typeof createSaleMutation>[0]
 ) {
-  await requireUser();
+  const user = await requireUser();
   await assertCustomerAccess(input.customerId);
-  return createSaleMutation(input);
+  // Operator is whoever is logged in — ignore any name the client sent.
+  return createSaleMutation({
+    ...input,
+    operatorName: user.name.trim() || "Counter",
+  });
 }
 
 export async function cancelSale(saleId: number, reason: string) {

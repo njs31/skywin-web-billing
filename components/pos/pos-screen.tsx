@@ -81,10 +81,10 @@ type CartItem = {
 
 type PosScreenProps = {
   customers: Customer[];
-  defaultOperator?: string;
+  operatorName: string;
 };
 
-export function PosScreen({ customers: initialCustomers, defaultOperator }: PosScreenProps) {
+export function PosScreen({ customers: initialCustomers, operatorName }: PosScreenProps) {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -107,7 +107,6 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
   const [splitCashUpi, setSplitCashUpi] = useState(false);
   const [cashAmountInput, setCashAmountInput] = useState("");
   const [billDiscount, setBillDiscount] = useState("");
-  const [operatorName, setOperatorName] = useState(defaultOperator ?? "Counter");
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -582,7 +581,6 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
           upiAmount,
           paidAmount:
             mode === "credit" ? 0 : gst.grandTotal,
-          operatorName,
           discountAmount: parseFloat(billDiscount) || 0,
           poNumber: poNumber.trim() || undefined,
           quotationNumber: quotationNumber.trim() || undefined,
@@ -1419,12 +1417,12 @@ export function PosScreen({ customers: initialCustomers, defaultOperator }: PosS
                   )}
                 </div>
               )}
-              <Input
-                className="h-9"
-                placeholder="Operator name"
-                value={operatorName}
-                onChange={(e) => setOperatorName(e.target.value)}
-              />
+              <div className="flex h-9 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+                <span className="mr-2 shrink-0 text-xs font-medium text-slate-500">
+                  Billed by
+                </span>
+                <span className="truncate font-medium">{operatorName}</span>
+              </div>
             </div>
 
             {belowCostCount > 0 && (

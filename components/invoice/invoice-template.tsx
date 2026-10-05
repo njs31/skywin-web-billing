@@ -16,6 +16,7 @@ import {
   DEFAULT_LANDLINE,
   PRINT_LOGO_SRC,
   PRINT_TRADE_NAME,
+  customerArea,
   printPhoneLine,
   saleRateBracket,
   thankYouMessage,
@@ -237,13 +238,21 @@ function PartyBlock({
   customer: string | null;
   agriBits: string[];
 }) {
+  const area = customerArea({
+    village: sale.customerVillage,
+    address: sale.customerAddress,
+    taluk: sale.customerTaluk,
+    district: sale.customerDistrict,
+  });
+  const address = sale.customerAddress?.trim() || null;
   return (
     <div className="border-b border-slate-900 p-2 text-[11px] leading-snug last:border-b-0">
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
         {label}
       </p>
       <p className="font-bold uppercase">{customer ?? "Walk-in Customer"}</p>
-      {sale.customerAddress && <p>{sale.customerAddress}</p>}
+      {area && <p>Area: {area}</p>}
+      {address && address !== area && <p>{address}</p>}
       {agriBits.length > 0 && <p>{agriBits.join(", ")}</p>}
       {sale.customerPhone && <p>Cell.No: {sale.customerPhone}</p>}
       {sale.customerGstin && <p>GSTIN/UIN : {sale.customerGstin}</p>}
@@ -283,7 +292,6 @@ function WholesaleInvoiceLayout({
   const agriBits = [
     sale.customerAcre && `Acre: ${sale.customerAcre}`,
     sale.customerCrop && `Crop: ${sale.customerCrop}`,
-    sale.customerVillage && `Village: ${sale.customerVillage}`,
     sale.customerTaluk && `Taluk: ${sale.customerTaluk}`,
     sale.customerDistrict && `District: ${sale.customerDistrict}`,
     sale.customerPinCode && `PIN: ${sale.customerPinCode}`,
@@ -758,6 +766,12 @@ function RetailReceiptLayout({
   einvoiceQrUrl,
 }: InvoiceTemplateProps) {
   const customer = sale.customerRecordName ?? sale.customerName ?? null;
+  const area = customerArea({
+    village: sale.customerVillage,
+    address: sale.customerAddress,
+    taluk: sale.customerTaluk,
+    district: sale.customerDistrict,
+  });
   const interstate = toNumber(sale.igst) > 0;
   const taxableTotal = items.reduce((s, i) => s + toNumber(i.amount), 0);
   const discountTotal = totalLineDiscount(items);
@@ -803,11 +817,9 @@ function RetailReceiptLayout({
       <ReceiptRow label="Date" value={invoiceDate} />
       <ReceiptRow label="Payment" value={paymentLabel(sale)} />
       {customer && <ReceiptRow label="Customer" value={customer} />}
+      {area && <ReceiptRow label="Area" value={area} />}
       {sale.customerPhone && <ReceiptRow label="Phone" value={sale.customerPhone} />}
       {sale.customerGstin && <ReceiptRow label="GSTIN" value={sale.customerGstin} />}
-      {sale.customerVillage && (
-        <ReceiptRow label="Area" value={sale.customerVillage} />
-      )}
       {sale.operatorName && <ReceiptRow label="Billed by" value={sale.operatorName} />}
       {transport.map((t) => (
         <p key={t} className="text-[10px]">

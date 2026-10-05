@@ -13,7 +13,7 @@ export default async function PosPage() {
   return (
     <PosScreen
       customers={customers}
-      defaultOperator={
+      operatorName={
         user?.name?.trim() || settings.defaultOperator || "Counter"
       }
     />

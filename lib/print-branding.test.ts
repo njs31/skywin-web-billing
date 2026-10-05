@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   PRINT_TRADE_NAME,
+  customerArea,
   saleRateBracket,
   thankYouMessage,
 } from "./print-branding";
@@ -18,5 +19,18 @@ describe("invoice print helpers", () => {
       thankYouMessage(),
       `Thank you for shopping at ${PRINT_TRADE_NAME}`
     );
+  });
+
+  it("prints Area from village, then address, then taluk/district", () => {
+    assert.equal(customerArea({ village: "Thiruvidaimarudur" }), "Thiruvidaimarudur");
+    assert.equal(
+      customerArea({ village: "  ", address: "ILANTHURAI" }),
+      "ILANTHURAI"
+    );
+    assert.equal(
+      customerArea({ taluk: "Kumbakonam", district: "Thanjavur" }),
+      "Kumbakonam, Thanjavur"
+    );
+    assert.equal(customerArea({}), null);
   });
 });

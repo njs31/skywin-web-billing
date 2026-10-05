@@ -28,3 +28,22 @@ export function saleRateBracket(
 ) {
   return `(${formatNumber(inclusiveSalePrice(rate, gstRate), 2)})`;
 }
+
+/** Customer's area/place for invoices: village, else address, else taluk/district. */
+export function customerArea(
+  customer: {
+    village?: string | null;
+    address?: string | null;
+    taluk?: string | null;
+    district?: string | null;
+  }
+): string | null {
+  const village = customer.village?.trim();
+  if (village) return village;
+  const address = customer.address?.trim();
+  if (address) return address;
+  const taluk = customer.taluk?.trim();
+  const district = customer.district?.trim();
+  if (taluk && district && taluk !== district) return `${taluk}, ${district}`;
+  return taluk || district || null;
+}
