@@ -484,7 +484,7 @@ export function PurchaseForm({
             gstRate: i.gstRate ?? toNumber(i.product?.gstRate),
             saleRate: i.saleRate,
           }));
-        await (initialPurchase
+        const result = await (initialPurchase
           ? updatePurchase({
               id: initialPurchase.id,
               supplierId: parseInt(supplierId, 10),
@@ -514,6 +514,10 @@ export function PurchaseForm({
                   : parseFloat(paidAmount) || 0,
               items: payloadItems,
             }));
+        if (result && "error" in result) {
+          setError(result.error);
+          return;
+        }
         router.push(
           initialPurchase ? `/purchases/${initialPurchase.id}` : "/purchases"
         );

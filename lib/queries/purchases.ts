@@ -4,6 +4,7 @@ import {
   purchases,
   purchaseItems,
   products,
+  productBatches,
   stockMovements,
   suppliers,
   purchaseReturns,
@@ -11,6 +12,7 @@ import {
 } from "@/db/schema";
 import { calculateLineAmount, isInterstateGst } from "@/lib/gst";
 import { calculatePurchaseTotals } from "@/lib/purchase-totals";
+import { purchaseStockDeltas, purchaseStockKey } from "@/lib/purchase-stock";
 import { getSettings } from "@/lib/settings";
 import { and, desc, eq, gte, lte, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -381,11 +383,20 @@ const updatePurchaseSchema = createPurchaseSchema.extend({
   id: z.number().int().positive(),
 });
 
+type PurchaseStockSnap = {
+  productId: number;
+  batchId: number | null;
+  batchNumber: string;
+  qty: number;
+};
+
+/** Drop this bill's purchase movements without touching on-hand qty.
+ *  Stock is then adjusted by the net delta in applyPurchaseLines, so a
+ *  rate/GST-only save does not fail after those units were sold. */
 async function reversePurchaseStock(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   purchaseId: number
 ) {
-  const { deductFromBatch } = await import("@/lib/batches");
   const movements = await tx
     .select()
     .from(stockMovements)
@@ -396,15 +407,32 @@ async function reversePurchaseStock(
       )
     );
 
+  const previous = new Map<string, PurchaseStockSnap>();
   const productIds: number[] = [];
   for (const movement of movements) {
     const qty = toNumber(movement.qtyDelta);
     if (qty <= 0) continue;
-    if (movement.batchId) {
-      await deductFromBatch(tx, movement.batchId, qty, movement.productId);
+    let batchNumber = (movement.batchNumber ?? "").trim().toUpperCase();
+    if (!batchNumber && movement.batchId) {
+      const [named] = await tx
+        .select({ batchNumber: productBatches.batchNumber })
+        .from(productBatches)
+        .where(eq(productBatches.id, movement.batchId))
+        .limit(1);
+      batchNumber = (named?.batchNumber ?? "").trim().toUpperCase();
+    }
+    const key = purchaseStockKey(movement.productId, batchNumber);
+    const cur = previous.get(key);
+    if (cur) {
+      cur.qty += qty;
+      if (!cur.batchId && movement.batchId) cur.batchId = movement.batchId;
     } else {
-      const { deductStockFefo } = await import("@/lib/batches");
-      await deductStockFefo(tx, movement.productId, qty);
+      previous.set(key, {
+        productId: movement.productId,
+        batchId: movement.batchId,
+        batchNumber,
+        qty,
+      });
     }
     productIds.push(movement.productId);
   }
@@ -418,7 +446,44 @@ async function reversePurchaseStock(
       )
     );
 
-  return productIds;
+  return { previous, productIds };
+}
+
+type NextStockLine = {
+  productId: number;
+  batchNumber: string;
+  qty: number;
+  landedRate: number;
+  saleRate: number;
+  expiryDate: string | null;
+  notes: string;
+};
+
+async function deductSoldPurchaseQty(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  opts: {
+    productId: number;
+    batchId: number | null;
+    batchNumber: string;
+    qty: number;
+  }
+) {
+  const { deductFromBatch, deductStockFefo } = await import("@/lib/batches");
+  try {
+    if (opts.batchId) {
+      await deductFromBatch(tx, opts.batchId, opts.qty, opts.productId);
+    } else {
+      await deductStockFefo(tx, opts.productId, opts.qty);
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "";
+    if (/Insufficient qty|Insufficient stock/i.test(message)) {
+      throw new Error(
+        `Cannot reduce batch ${opts.batchNumber || "OPENING"} on this bill — those units have already been sold. Change rate, GST, or supplier without reducing quantity.`
+      );
+    }
+    throw e;
+  }
 }
 
 async function applyPurchaseLines(
@@ -430,9 +495,11 @@ async function applyPurchaseLines(
   >,
   subtotal: number,
   /** Handling in rupees (before its GST) — spread into each line's landed cost. */
-  handlingAmount: number
+  handlingAmount: number,
+  previousStock: Map<string, PurchaseStockSnap> = new Map()
 ) {
-  const touchedProductIds: number[] = [];
+  const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
+  const nextByKey = new Map<string, NextStockLine>();
 
   for (const item of resolvedItems) {
     let productId = item.productId || null;
@@ -479,41 +546,130 @@ async function applyPurchaseLines(
       expiryDate: item.expiryDate || null,
     });
 
-    if (productId) {
-      const effectiveRate = item.amount / item.qty;
-      const landedRate =
-        subtotal > 0 ? effectiveRate * (1 + handlingAmount / subtotal) : effectiveRate;
+    if (!productId) continue;
 
-      const { addStockToBatch, defaultBatchNumber } = await import("@/lib/batches");
-      const batchNumber =
-        item.batchNumber?.trim().toUpperCase() || defaultBatchNumber("PUR");
-
-      const batch = await addStockToBatch(tx, {
+    const effectiveRate = item.amount / item.qty;
+    const landedRate =
+      subtotal > 0 ? effectiveRate * (1 + handlingAmount / subtotal) : effectiveRate;
+    const batchNumber =
+      item.batchNumber?.trim().toUpperCase() || defaultBatchNumber("PUR");
+    const key = purchaseStockKey(productId, batchNumber);
+    const cur = nextByKey.get(key);
+    if (cur) {
+      const totalQty = cur.qty + item.qty;
+      cur.landedRate =
+        totalQty > 0
+          ? (cur.landedRate * cur.qty + landedRate * item.qty) / totalQty
+          : landedRate;
+      cur.qty = totalQty;
+      cur.saleRate = item.saleRate ?? item.rate;
+      cur.expiryDate = item.expiryDate || cur.expiryDate;
+    } else {
+      nextByKey.set(key, {
         productId,
         batchNumber,
         qty: item.qty,
-        purchaseRate: landedRate,
+        landedRate,
         saleRate: item.saleRate ?? item.rate,
         expiryDate: item.expiryDate || null,
         notes: data.invoiceNo
           ? `Purchase ${data.invoiceNo}`
           : `Purchase #${purchaseId}`,
       });
-
-      await tx.insert(stockMovements).values({
-        productId,
-        batchId: batch.id,
-        batchNumber: batch.batchNumber,
-        type: "purchase",
-        qtyDelta: item.qty.toFixed(2),
-        referenceId: purchaseId,
-      });
-
-      touchedProductIds.push(productId);
     }
   }
 
-  return touchedProductIds;
+  const previousQty = new Map<string, number>();
+  for (const [key, snap] of previousStock) previousQty.set(key, snap.qty);
+  const nextQty = new Map<string, number>();
+  for (const [key, line] of nextByKey) nextQty.set(key, line.qty);
+
+  const touchedProductIds: number[] = [];
+
+  for (const change of purchaseStockDeltas(previousQty, nextQty)) {
+    const prev = previousStock.get(change.key);
+    const next = nextByKey.get(change.key);
+    touchedProductIds.push(change.productId);
+
+    if (change.delta > 0) {
+      const batch = await addStockToBatch(tx, {
+        productId: change.productId,
+        batchNumber: change.batchNumber || defaultBatchNumber("PUR"),
+        qty: change.delta,
+        purchaseRate: next?.landedRate,
+        saleRate: next?.saleRate,
+        expiryDate: next?.expiryDate || null,
+        notes: next?.notes,
+      });
+      if (next) {
+        await tx.insert(stockMovements).values({
+          productId: change.productId,
+          batchId: batch.id,
+          batchNumber: batch.batchNumber,
+          type: "purchase",
+          qtyDelta: next.qty.toFixed(2),
+          referenceId: purchaseId,
+        });
+      }
+      continue;
+    }
+
+    if (change.delta < 0) {
+      await deductSoldPurchaseQty(tx, {
+        productId: change.productId,
+        batchId: prev?.batchId ?? null,
+        batchNumber: change.batchNumber,
+        qty: -change.delta,
+      });
+    }
+
+    if (!next) continue;
+
+    let batchId = prev?.batchId ?? null;
+    let batchNumber = change.batchNumber;
+    if (!batchId) {
+      const [found] = await tx
+        .select({ id: productBatches.id, batchNumber: productBatches.batchNumber })
+        .from(productBatches)
+        .where(
+          and(
+            eq(productBatches.productId, change.productId),
+            eq(productBatches.batchNumber, change.batchNumber)
+          )
+        )
+        .limit(1);
+      batchId = found?.id ?? null;
+      if (found) batchNumber = found.batchNumber;
+    }
+
+    if (change.delta === 0 && batchId) {
+      await tx
+        .update(productBatches)
+        .set({
+          purchaseRate: next.landedRate.toFixed(2),
+          saleRate: next.saleRate.toFixed(2),
+          expiryDate: next.expiryDate,
+          notes: next.notes,
+          updatedAt: new Date(),
+        })
+        .where(eq(productBatches.id, batchId));
+      await tx
+        .update(products)
+        .set({ saleRate: next.saleRate.toFixed(2) })
+        .where(eq(products.id, change.productId));
+    }
+
+    await tx.insert(stockMovements).values({
+      productId: change.productId,
+      batchId,
+      batchNumber,
+      type: "purchase",
+      qtyDelta: next.qty.toFixed(2),
+      referenceId: purchaseId,
+    });
+  }
+
+  return [...new Set(touchedProductIds)];
 }
 
 export async function updatePurchase(input: z.infer<typeof updatePurchaseSchema>) {
@@ -616,7 +772,8 @@ export async function updatePurchase(input: z.infer<typeof updatePurchaseSchema>
   const oldSupplierId = existing.supplierId;
 
   const result = await db.transaction(async (tx) => {
-    const reversedProductIds = await reversePurchaseStock(tx, data.id);
+    const { previous, productIds: reversedProductIds } =
+      await reversePurchaseStock(tx, data.id);
 
     await tx.delete(purchaseItems).where(eq(purchaseItems.purchaseId, data.id));
 
@@ -647,7 +804,8 @@ export async function updatePurchase(input: z.infer<typeof updatePurchaseSchema>
       data,
       resolvedItems,
       subtotal,
-      handling
+      handling,
+      previous
     );
 
     await tx
