@@ -20,8 +20,17 @@ import { and, gte, lte, eq, ne, sql } from "drizzle-orm";
 import { format } from "date-fns";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { getSettings } from "@/lib/settings";
+import { isPlaceholderGstin } from "@/lib/gst";
 import { stateNameFromGstin } from "@/lib/gst-states";
 import { unitWithoutQuantity } from "@/lib/units";
+
+function taxabilityType(rate: number) {
+  return rate === 0 ? "Exempt" : "Taxable";
+}
+
+function gstRegistrationType(gstin: string | null | undefined) {
+  return isPlaceholderGstin(gstin) ? "Unregistered/Consumer" : "Regular";
+}
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
@@ -114,6 +123,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Unit: unitWithoutQuantity(s.unit),
       UnitPrice: rate,
       "Tax Percent": gstRate,
+      "Taxability type": taxabilityType(gstRate),
       Tax: tax,
       "Transaction Type": "Sale ",
       Amount: net,
@@ -122,6 +132,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       "net amount": net,
       "sales ledger": ledgerLabel("sales", gstRate),
       "GST NO.": s.customerGstin ?? "",
+      "Gst type": gstRegistrationType(s.customerGstin),
       STATE: stateNameFromGstin(s.customerGstin, businessState),
       COUNTRY: "India",
       "BILLED TO ADDRESS": billedTo,
@@ -178,6 +189,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Unit: unitWithoutQuantity(p.unit),
       UnitPrice: rate,
       "Tax Percent": gstRate,
+      "Taxability type": taxabilityType(gstRate),
       Tax: tax,
       "Transaction Type": "Sale ",
       Amount: net,
@@ -187,6 +199,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       "sales ledger": ledgerLabel("sales", gstRate),
       "purchase ledger": ledgerLabel("purchase", gstRate),
       "PURCHASER GST NO": p.supplierGstin ?? "",
+      "Gst type": gstRegistrationType(p.supplierGstin),
       STATE: p.supplierState ?? stateNameFromGstin(p.supplierGstin, businessState),
       COUNTRY: "India",
     };
@@ -240,6 +253,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Unit: unitWithoutQuantity(c.unit),
       UnitPrice: rate,
       "Tax Percent": gstRate,
+      "Taxability type": taxabilityType(gstRate),
       Tax: tax,
       "Transaction Type": "Sale ",
       Amount: net,
@@ -248,6 +262,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       "net amount": net,
       "credit note ledger": "sales return",
       "GST NO.": c.customerGstin ?? "",
+      "Gst type": gstRegistrationType(c.customerGstin),
       STATE: stateNameFromGstin(c.customerGstin, businessState),
       COUNTRY: "India",
     };
@@ -302,6 +317,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Unit: unitWithoutQuantity(d.unit),
       UnitPrice: rate,
       "Tax Percent": gstRate,
+      "Taxability type": taxabilityType(gstRate),
       Tax: tax,
       "Transaction Type": "Sale ",
       Amount: net,
@@ -310,6 +326,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       "net amount": net,
       "debit note ledger": "purchase return",
       "GST NO.": d.supplierGstin ?? "",
+      "Gst type": gstRegistrationType(d.supplierGstin),
       STATE: d.supplierState ?? stateNameFromGstin(d.supplierGstin, businessState),
       COUNTRY: "India",
     };
