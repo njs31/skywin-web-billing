@@ -112,7 +112,7 @@ type PurchaseEditData = {
   id: number;
   supplierId: number;
   invoiceNo: string | null;
-  date: Date;
+  date: Date | string;
   paymentType: "credit" | "cash";
   handlingCharges: string;
   handlingChargeType: HandlingChargeType;
@@ -192,7 +192,9 @@ export function PurchaseForm({
 
   useEffect(() => {
     if (!initialPurchase) return;
-    const d = initialPurchase.date;
+    const d = typeof initialPurchase.date === 'string' 
+      ? new Date(initialPurchase.date) 
+      : initialPurchase.date;
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
