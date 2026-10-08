@@ -8,6 +8,7 @@ import {
   diffProductFields,
   hasProductChanges,
 } from "@/lib/product-changelog";
+import type { ProductListStatus } from "@/lib/product-status";
 
 const CACHE_TAG = {
   products: "products",
@@ -235,23 +236,39 @@ export async function getProductBatchesById(
   return queryProductBatchRows(productMatch, 50, true);
 }
 
+function listStatusCondition(status: ProductListStatus) {
+  return eq(products.isActive, status === "active");
+}
+
 export const getProducts = unstable_cache(
   async (
     search?: string,
     page = 1,
     pageSize = 50,
     sort: ProductSort = "name",
-    dir: SortDir = "asc"
+    dir: SortDir = "asc",
+    status: ProductListStatus = "active"
   ) => {
     const order = productOrderBy(sort, dir);
     const q = search?.trim();
     if (q) {
       // Search results are sorted the same way, so switching sort does not
       // silently stop applying once something is typed in the search box.
+      // POS search stays active-only; this list follows the Active/Inactive tab.
       return db
         .select()
         .from(products)
-        .where(productMatches(q))
+        .where(
+          and(
+            listStatusCondition(status),
+            or(
+              ilike(products.name, `%${q}%`),
+              ilike(products.sku, `%${q}%`),
+              ilike(products.barcode, `%${q}%`),
+              eq(products.barcode, q)
+            )
+          )
+        )
         .orderBy(...order)
         .limit(100);
     }
@@ -259,7 +276,7 @@ export const getProducts = unstable_cache(
     return db
       .select()
       .from(products)
-      .where(eq(products.isActive, true))
+      .where(listStatusCondition(status))
       .orderBy(...order)
       .limit(pageSize)
       .offset(offset);
@@ -269,11 +286,11 @@ export const getProducts = unstable_cache(
 );
 
 export const getProductCount = unstable_cache(
-  async () => {
+  async (status: ProductListStatus = "active") => {
     const [result] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(products)
-      .where(eq(products.isActive, true));
+      .where(listStatusCondition(status));
     return result?.count ?? 0;
   },
   ["products-count"],
@@ -338,17 +355,29 @@ export const getProductStats = unstable_cache(
   { revalidate: 60, tags: [CACHE_TAG.products] }
 );
 
-export async function deleteProduct(id: number) {
+export async function setProductActive(id: number, isActive: boolean) {
   const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } = await import("@/lib/revalidate");
-  await db
+  const [updated] = await db
     .update(products)
-    .set({ isActive: false })
-    .where(eq(products.id, id));
+    .set({ isActive })
+    .where(eq(products.id, id))
+    .returning({ id: products.id, name: products.name, isActive: products.isActive });
+
+  if (!updated) throw new Error("Product not found.");
 
   await revalidateTag("products", "max");
   await revalidatePath("/products");
   await revalidatePath("/stock");
   await revalidatePath("/pos");
+
+  const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+  scheduleQwicksStockPush([id]);
+
+  return updated;
+}
+
+export async function deleteProduct(id: number) {
+  await setProductActive(id, false);
 }
 
 export { CACHE_TAG as PRODUCT_CACHE_TAG };

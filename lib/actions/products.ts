@@ -6,6 +6,7 @@ import {
   getProductBatchesById as getProductBatchesByIdQuery,
   updateProduct as updateProductQuery,
   deleteProduct as deleteProductQuery,
+  setProductActive as setProductActiveQuery,
   getProductBatches as getProductBatchesQuery,
   getProductChangeLogs as getProductChangeLogsQuery,
   getProductById as getProductByIdQuery,
@@ -100,6 +101,34 @@ export async function updateBatch(
 ) {
   await requireNonDealer();
   return updateBatchQuery(batchId, data);
+}
+
+export async function setProductActive(id: number, isActive: boolean) {
+  try {
+    const user = await requireNonDealer();
+    const product = await setProductActiveQuery(id, isActive);
+    const { recordActivity } = await import("@/lib/queries/activity-logs");
+    const name = user.name.trim() || user.phone;
+    const verb = isActive ? "activated" : "deactivated";
+    await recordActivity({
+      action: isActive ? "product.activate" : "product.deactivate",
+      message: `${name} ${verb} product ${product.name}`,
+      entityType: "product",
+      entityId: id,
+      actor: { id: user.id, name },
+    });
+    return { ok: true as const };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Could not update this product.";
+    if (/Failed query:|Server Components render/i.test(message)) {
+      return {
+        ok: false as const,
+        error: "Could not update this product. Nothing was changed.",
+      };
+    }
+    return { ok: false as const, error: message };
+  }
 }
 
 export async function deleteProduct(id: number) {

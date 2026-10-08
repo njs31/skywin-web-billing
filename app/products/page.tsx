@@ -12,6 +12,10 @@ import { ProductTable } from "@/components/products/product-table";
 import { presentDotsFromMm } from "@/lib/escpos-print";
 import { getSettings } from "@/lib/settings";
 import { ProductSearch } from "@/components/products/product-search";
+import {
+  parseProductListStatus,
+  type ProductListStatus,
+} from "@/lib/product-status";
 import { ProductExportButtons } from "@/components/products/product-export-buttons";
 import { getTodayLabelCount } from "@/lib/queries/label-prints";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,11 +26,19 @@ const PAGE_SIZE = 50;
 export default async function ProductsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    page?: string;
+    sort?: string;
+    dir?: string;
+    status?: string;
+  }>;
 }) {
 
-  const { q, page: pageParam, sort: sortParam, dir: dirParam } = await searchParams;
+  const { q, page: pageParam, sort: sortParam, dir: dirParam, status: statusParam } =
+    await searchParams;
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
+  const status = parseProductListStatus(statusParam);
 
   const sort: ProductSort = PRODUCT_SORTS.includes(sortParam as ProductSort)
     ? (sortParam as ProductSort)
@@ -34,9 +46,11 @@ export default async function ProductsPage({
   const dir: SortDir =
     dirParam === "asc" || dirParam === "desc" ? dirParam : DEFAULT_SORT_DIR[sort];
 
-  const [products, totalCount] = await Promise.all([
-    getProducts(q, page, PAGE_SIZE, sort, dir),
-    q ? Promise.resolve(0) : getProductCount(),
+  const [products, totalCount, activeCount, inactiveCount] = await Promise.all([
+    getProducts(q, page, PAGE_SIZE, sort, dir, status),
+    q ? Promise.resolve(0) : getProductCount(status),
+    getProductCount("active"),
+    getProductCount("inactive"),
   ]);
   const todayLabelCount = await getTodayLabelCount();
 
@@ -45,8 +59,23 @@ export default async function ProductsPage({
   const presentDots = presentDotsFromMm(settings.labelTearOffMm);
 
   // Paging has to carry the sort, or page two quietly reverts to name order.
-  const pageHref = (target: number) =>
-    `/products?page=${target}&sort=${sort}&dir=${dir}`;
+  const pageHref = (target: number) => {
+    const params = new URLSearchParams();
+    params.set("page", String(target));
+    params.set("sort", sort);
+    params.set("dir", dir);
+    if (status === "inactive") params.set("status", "inactive");
+    return `/products?${params.toString()}`;
+  };
+
+  const statusHref = (next: ProductListStatus) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (next === "inactive") params.set("status", "inactive");
+    params.set("sort", sort);
+    params.set("dir", dir);
+    return `/products?${params.toString()}`;
+  };
 
   const total = q ? products.length : totalCount;
   const totalPages = q ? 1 : Math.ceil(total / PAGE_SIZE);
@@ -57,9 +86,14 @@ export default async function ProductsPage({
         <div>
           <h1 className="text-2xl font-bold">Products</h1>
           <p className="text-sm text-slate-500">
-            {total} products — edit sale rates and GST
+            {total} {status} products — edit sale rates and GST
             {!q && totalPages > 1 && ` (page ${page} of ${totalPages})`}
           </p>
+          {status === "inactive" ? (
+            <p className="text-xs text-slate-500">
+              Hidden from billing. Activate a product to sell it again.
+            </p>
+          ) : null}
           <p className="text-xs text-slate-400">
             {todayLabelCount === 1
               ? "1 label printed today"
@@ -80,15 +114,48 @@ export default async function ProductsPage({
           <CardTitle className="text-base">Search Products</CardTitle>
         </CardHeader>
         <CardContent>
-          <ProductSearch defaultQuery={q ?? ""} />
+          <ProductSearch
+            defaultQuery={q ?? ""}
+            status={status}
+            sort={sort}
+            dir={dir}
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Show
+            </span>
+            {(
+              [
+                ["active", `Active (${activeCount})`],
+                ["inactive", `Inactive (${inactiveCount})`],
+              ] as const
+            ).map(([key, label]) => (
+              <Button
+                key={key}
+                asChild
+                size="sm"
+                variant={status === key ? "default" : "outline"}
+              >
+                <Link href={statusHref(key)}>{label}</Link>
+              </Button>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
-      <ProductSortBar sort={sort} dir={dir} q={q} />
+      <ProductSortBar sort={sort} dir={dir} q={q} status={status} />
 
       <Card>
         <CardContent className="p-0">
-          <ProductTable products={products} presentDots={presentDots} />
+          {products.length === 0 ? (
+            <p className="p-6 text-sm text-slate-500">
+              {status === "inactive"
+                ? "No inactive products."
+                : "No products found."}
+            </p>
+          ) : (
+            <ProductTable products={products} presentDots={presentDots} />
+          )}
         </CardContent>
       </Card>
 

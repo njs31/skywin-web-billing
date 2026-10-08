@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState, useTransition } from "react";
-import { updateProduct, deleteProduct } from "@/lib/actions/products";
+import { updateProduct, setProductActive } from "@/lib/actions/products";
 import { useRouter } from "next/navigation";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Product } from "@/db/schema";
@@ -142,13 +142,14 @@ export function ProductTable({
     });
   };
 
-  const handleDelete = (product: Product) => {
+  const handleSetActive = (product: Product, active: boolean) => {
     startTransition(async () => {
       try {
         const pinRequired = await isInventoryPinRequired();
+        const verb = active ? "activate" : "deactivate";
         if (pinRequired) {
           const pin = window.prompt(
-            `Enter Supervisor/Admin PIN to delete product "${product.name}":`
+            `Enter Supervisor/Admin PIN to ${verb} product "${product.name}":`
           );
           if (pin === null) return;
           const valid = await verifyInventoryAdminPin(pin);
@@ -156,18 +157,30 @@ export function ProductTable({
             alert("Incorrect PIN. Access denied.");
             return;
           }
-        } else {
+        } else if (active) {
           if (
-            !confirm(`Are you sure you want to delete product "${product.name}"?`)
+            !confirm(
+              `Activate "${product.name}"? It will show up in billing again.`
+            )
           ) {
             return;
           }
+        } else if (
+          !confirm(
+            `Deactivate "${product.name}"? It will be hidden from billing until someone activates it again under Inactive products.`
+          )
+        ) {
+          return;
         }
 
-        await deleteProduct(product.id);
+        const result = await setProductActive(product.id, active);
+        if (!result.ok) {
+          alert(result.error);
+          return;
+        }
         router.refresh();
       } catch (err) {
-        alert(err instanceof Error ? err.message : "Failed to delete product");
+        alert(err instanceof Error ? err.message : "Failed to update product");
       }
     });
   };
@@ -187,7 +200,7 @@ export function ProductTable({
           <TableHead className="py-2.5 px-2 text-right">MRP</TableHead>
           <TableHead className="py-2.5 px-2 text-right">Disc %</TableHead>
           <TableHead className="py-2.5 px-2 text-right">GST %</TableHead>
-          <TableHead className="py-2.5 px-2 text-right w-20">Actions</TableHead>
+          <TableHead className="py-2.5 px-2 text-right min-w-[9rem]">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -408,16 +421,27 @@ export function ProductTable({
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
-                      disabled={isPending}
-                      onClick={() => handleDelete(product)}
-                      title="Delete product"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {product.isActive ? (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                        disabled={isPending}
+                        onClick={() => handleSetActive(product, false)}
+                        title="Deactivate product"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="h-7 bg-emerald-600 px-2 text-white hover:bg-emerald-700"
+                        disabled={isPending}
+                        onClick={() => handleSetActive(product, true)}
+                      >
+                        Activate
+                      </Button>
+                    )}
                   </div>
                 )}
               </TableCell>

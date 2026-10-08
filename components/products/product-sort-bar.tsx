@@ -6,6 +6,7 @@ import {
   type ProductSort,
   type SortDir,
 } from "@/lib/queries/products";
+import type { ProductListStatus } from "@/lib/product-status";
 
 const LABELS: Record<ProductSort, string> = {
   name: "Name",
@@ -30,10 +31,12 @@ export function ProductSortBar({
   sort,
   dir,
   q,
+  status = "active",
 }: {
   sort: ProductSort;
   dir: SortDir;
   q?: string;
+  status?: ProductListStatus;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -50,6 +53,7 @@ export function ProductSortBar({
 
         const params = new URLSearchParams();
         if (q) params.set("q", q);
+        if (status === "inactive") params.set("status", "inactive");
         params.set("sort", key);
         params.set("dir", nextDir);
         // No page: a new order means the old page number means nothing.
