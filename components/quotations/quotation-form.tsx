@@ -11,6 +11,7 @@ import {
   getBatchBillingRate,
   getProductRate,
 } from "@/lib/gst";
+import { quotationLineDiscountPercent } from "@/lib/quotation-discount";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
@@ -78,7 +79,7 @@ export function QuotationForm({ customers }: { customers: Customer[] }) {
         // addBatchRow, else the product sale rate. No wholesale rate.
         rate: getProductRate(p, "retail"),
         gstRate: toNumber(p.gstRate),
-        discountPercent: 0,
+        discountPercent: quotationLineDiscountPercent(p),
         hsnCode: p.hsnCode ?? undefined,
       },
     ]);
@@ -100,6 +101,7 @@ export function QuotationForm({ customers }: { customers: Customer[] }) {
       wholesaleRate: row.wholesaleRate,
       purchaseRate: row.batchPurchaseRate ?? row.purchaseRate,
       stockQty: row.productStockQty,
+      discountPercent: row.discountPercent,
     } as Product);
   };
 
