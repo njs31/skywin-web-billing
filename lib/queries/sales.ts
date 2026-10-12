@@ -16,6 +16,7 @@ import { buildAutoReceiptParts } from "@/lib/sale-settlement";
 import {
   calculateGstBreakdown,
   calculateLineAmount,
+  equalCgstSgst,
   isInterstateGst,
   applyRupeeRounding,
   einvoiceReadiness,
@@ -1876,7 +1877,7 @@ export async function getSalesReport(
       const gstRate = toNum(row.gstRate);
       const tax = Math.round((taxableValue * gstRate) / 100 * 100) / 100;
       const interstate = toNum(row.saleIgst) > 0;
-      const half = Math.round((tax / 2) * 100) / 100;
+      const halves = equalCgstSgst(tax);
       const unitCost =
         toNum(row.batchPurchaseRate) || toNum(row.productPurchaseRate);
       const cost = Math.round(unitCost * qty * 100) / 100;
@@ -1900,8 +1901,8 @@ export async function getSalesReport(
         discountValue: toNum(row.discountValue),
         gstRate,
         taxableValue,
-        cgst: interstate ? 0 : half,
-        sgst: interstate ? 0 : Math.round((tax - half) * 100) / 100,
+        cgst: interstate ? 0 : halves.cgst,
+        sgst: interstate ? 0 : halves.sgst,
         igst: interstate ? tax : 0,
         cost,
         margin: Math.round((taxableValue - cost) * 100) / 100,

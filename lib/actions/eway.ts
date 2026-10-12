@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { sales, saleItems, products, customers } from "@/db/schema";
-import { isInterstateGst } from "@/lib/gst";
+import { equalCgstSgst, isInterstateGst } from "@/lib/gst";
 import { getSettings } from "@/lib/settings";
 import { and, gte, lte, eq, sql, isNotNull, ne } from "drizzle-orm";
 import { format } from "date-fns";
@@ -55,13 +55,13 @@ export async function getEwayExportData(startDateStr: string, endDateStr: string
     const tax = round2((taxable * gstRate) / 100);
     const interstate = isInterstateGst(row.customerGstin, settings.stateCode);
     const halfRate = round2(gstRate / 2);
-    const halfTax = round2(tax / 2);
+    const halves = equalCgstSgst(tax);
 
     const cgstRate = interstate ? 0 : halfRate;
     const sgstRate = interstate ? 0 : halfRate;
     const igstRate = interstate ? gstRate : 0;
-    const cgstAmount = interstate ? 0 : halfTax;
-    const sgstAmount = interstate ? 0 : round2(tax - halfTax);
+    const cgstAmount = interstate ? 0 : halves.cgst;
+    const sgstAmount = interstate ? 0 : halves.sgst;
     const igstAmount = interstate ? tax : 0;
 
     return {

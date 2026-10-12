@@ -6,6 +6,7 @@ import {
   toNumber,
 } from "@/lib/utils";
 import { amountInIndianWords } from "@/lib/print-helpers";
+import { equalCgstSgst } from "@/lib/gst";
 import { invoiceSettlement } from "@/lib/sale-settlement";
 import {
   lineDiscountLabel,
@@ -210,9 +211,9 @@ function buildHsnSummary(
     if (interstate) {
       existing.igst += tax;
     } else {
-      const half = Math.round((tax / 2) * 100) / 100;
-      existing.cgst += half;
-      existing.sgst += Math.round((tax - half) * 100) / 100;
+      const halves = equalCgstSgst(tax);
+      existing.cgst += halves.cgst;
+      existing.sgst += halves.sgst;
     }
     existing.totalTax += tax;
     map.set(key, existing);

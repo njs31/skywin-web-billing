@@ -93,16 +93,24 @@ export function calculateGstBreakdown(
     };
   }
 
-  const half = Math.round((totalGst / 2) * 100) / 100;
+  // Odd-paisa tax used to leave SGST one paisa below CGST. Both halves take
+  // the same rounded value; rupee rounding absorbs the stray paisa.
+  const { cgst, sgst } = equalCgstSgst(totalGst);
   return {
     subtotal,
     discountAmount,
     taxableAmount,
-    cgst: half,
-    sgst: totalGst - half,
+    cgst,
+    sgst,
     igst: 0,
-    grandTotal: Math.round((taxableAmount + totalGst) * 100) / 100,
+    grandTotal: Math.round((taxableAmount + cgst + sgst) * 100) / 100,
   };
+}
+
+/** Intra-state split. CGST and SGST are always the same amount. */
+export function equalCgstSgst(totalTax: number): { cgst: number; sgst: number } {
+  const half = Math.round((totalTax / 2) * 100) / 100;
+  return { cgst: half, sgst: half };
 }
 
 export function inferGstRate(productName: string): number {

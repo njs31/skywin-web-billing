@@ -17,6 +17,7 @@ import {
   partyPayments,
 } from "@/db/schema";
 import { and, gte, lte, eq, ne, sql } from "drizzle-orm";
+import { equalCgstSgst } from "@/lib/gst";
 import { format } from "date-fns";
 import { requireNonDealer } from "@/lib/actions/auth";
 import { getSettings } from "@/lib/settings";
@@ -41,8 +42,7 @@ function joinAddress(parts: (string | null | undefined)[]) {
 }
 
 function halfTax(tax: number) {
-  const half = round2(tax / 2);
-  return { cgst: half, sgst: round2(tax - half) };
+  return equalCgstSgst(tax);
 }
 
 function ledgerLabel(kind: "sales" | "purchase", rate: number) {
