@@ -24,6 +24,7 @@ import { getSettings } from "@/lib/settings";
 import { isPlaceholderGstin } from "@/lib/gst";
 import { stateNameFromGstin } from "@/lib/gst-states";
 import { unitWithoutQuantity } from "@/lib/units";
+import { buildSalesTallyRow } from "@/lib/tally-sales-sheet";
 
 function taxabilityType(rate: number) {
   return rate === 0 ? "Exempt" : "Taxable";
@@ -107,38 +108,34 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       s.customerDistrict,
       s.customerPinCode,
     ]);
-    return {
-      Date: format(new Date(s.date), "dd/MM/yyyy"),
-      "Invoice No./Txn No.": s.invoiceNo,
-      "Party Name": s.customerRecordName ?? s.customerName ?? "Walk-in",
-      "Mode of Payment": s.paymentMode,
-      "Item Name": s.productName ?? s.customName ?? "Custom Item",
-      "Item Code": s.sku ?? "",
-      "HSN/SAC": s.hsnCode ?? "",
-      LOCATION: "",
-      Category: s.categoryName ?? "General",
-      Description: s.notes ?? "",
-      "Challan/Order No.": s.poNumber ?? "",
-      Quantity: qty,
-      Unit: unitWithoutQuantity(s.unit),
-      UnitPrice: rate,
-      "Tax Percent": gstRate,
-      "Taxability type": taxabilityType(gstRate),
-      Tax: tax,
-      "Transaction Type": "Sale ",
-      Amount: net,
+    return buildSalesTallyRow({
+      date: format(new Date(s.date), "dd/MM/yyyy"),
+      invoiceNo: s.invoiceNo,
+      partyName: s.customerRecordName ?? s.customerName ?? "Walk-in",
+      paymentMode: s.paymentMode,
+      itemName: s.productName ?? s.customName ?? "Custom Item",
+      itemCode: s.sku ?? "",
+      hsn: s.hsnCode ?? "",
+      category: s.categoryName ?? "General",
+      description: s.notes ?? "",
+      challan: s.poNumber ?? "",
+      quantity: qty,
+      unit: unitWithoutQuantity(s.unit),
+      unitPrice: rate,
+      taxPercent: gstRate,
+      taxabilityType: taxabilityType(gstRate),
+      tax,
+      amount: net,
       cgst,
-      "taxable amount": taxable,
+      taxableAmount: taxable,
       sgst,
-      "net amount": net,
-      "sales ledger": ledgerLabel("sales", gstRate),
-      "GST NO.": s.customerGstin ?? "",
-      "Gst type": gstRegistrationType(s.customerGstin),
-      STATE: stateNameFromGstin(s.customerGstin, businessState),
-      COUNTRY: "India",
-      "BILLED TO ADDRESS": billedTo,
-      "SHIPPED TO ADDRESS": billedTo,
-    };
+      netAmount: net,
+      salesLedger: ledgerLabel("sales", gstRate),
+      gstNo: s.customerGstin ?? "",
+      gstType: gstRegistrationType(s.customerGstin),
+      state: stateNameFromGstin(s.customerGstin, businessState),
+      billedTo,
+    });
   });
 
   const dbPurchases = await db
