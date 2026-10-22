@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import * as XLSX from "xlsx";
 import { FileSpreadsheet, Search } from "lucide-react";
 import { getStockMovementsReportData } from "@/lib/actions/billing";
 import type { StockMovementsReportData } from "@/lib/queries/reports";
 import { formatDateTimeIST, formatNumber } from "@/lib/utils";
+import {
+  emptyStockMovementFilter,
+  filterStockMovements,
+  MOVEMENT_DIRECTIONS,
+  MOVEMENT_TYPES,
+  summarizeStockMovements,
+  type StockMovementFilter,
+} from "@/lib/report-filters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,12 +56,29 @@ const QUICK_RANGES = [
   { label: "Last 30 Days", days: 30 },
 ] as const;
 
+const fieldClass =
+  "h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800";
+
 export function StockMovementsReport() {
   const [fromDate, setFromDate] = useState(defaultFromDate);
   const [toDate, setToDate] = useState(defaultToDate);
+  const [filters, setFilters] = useState(emptyStockMovementFilter);
   const [data, setData] = useState<StockMovementsReportData | null>(null);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+
+  const rows = useMemo(
+    () => (data ? filterStockMovements(data.rows, filters) : []),
+    [data, filters]
+  );
+  const summary = useMemo(() => summarizeStockMovements(rows), [rows]);
+
+  const setFilter = <K extends keyof StockMovementFilter>(
+    key: K,
+    value: StockMovementFilter[K]
+  ) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+  };
 
   const generate = (from = fromDate, to = toDate) => {
     setError("");
@@ -70,7 +95,7 @@ export function StockMovementsReport() {
 
   const downloadExcel = () => {
     if (!data) return;
-    const rows = data.rows.map((r, i) => ({
+    const sheetRows = rows.map((r, i) => ({
       "S.No.": i + 1,
       Date: formatDateTimeIST(r.date),
       Product: r.productName,
@@ -84,7 +109,7 @@ export function StockMovementsReport() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       wb,
-      XLSX.utils.json_to_sheet(rows),
+      XLSX.utils.json_to_sheet(sheetRows),
       "Stock Movements"
     );
     XLSX.writeFile(
@@ -98,7 +123,7 @@ export function StockMovementsReport() {
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Stock Movements Report</CardTitle>
         <p className="text-xs text-slate-500">
-          In/out movements for a date range — Excel download
+          In/out movements for a date range. Filters apply to the table and the Excel download.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -142,6 +167,52 @@ export function StockMovementsReport() {
             </Button>
           )}
         </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Product or SKU</Label>
+            <Input
+              value={filters.q}
+              onChange={(event) => setFilter("q", event.target.value)}
+              placeholder="Name or SKU"
+              className="h-9"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Movement type</Label>
+            <select
+              className={fieldClass}
+              value={filters.type}
+              onChange={(event) =>
+                setFilter("type", event.target.value as StockMovementFilter["type"])
+              }
+            >
+              {MOVEMENT_TYPES.map((value) => (
+                <option key={value} value={value}>
+                  {value === "all" ? "All types" : value}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Direction</Label>
+            <select
+              className={fieldClass}
+              value={filters.direction}
+              onChange={(event) =>
+                setFilter(
+                  "direction",
+                  event.target.value as StockMovementFilter["direction"]
+                )
+              }
+            >
+              {MOVEMENT_DIRECTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value === "all" ? "In and out" : value === "in" ? "Stock in" : "Stock out"}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
           {QUICK_RANGES.map((r) => (
             <Button
@@ -171,23 +242,28 @@ export function StockMovementsReport() {
 
         {data && (
           <div className="space-y-3">
+            {rows.length !== data.rows.length ? (
+              <p className="text-xs text-slate-500">
+                Showing {rows.length} of {data.rows.length} movements.
+              </p>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg border bg-slate-50 p-3">
                 <p className="text-xs text-slate-500">Movements</p>
                 <p className="text-lg font-semibold">
-                  {data.summary.movementCount}
+                  {summary.movementCount}
                 </p>
               </div>
               <div className="rounded-lg border bg-emerald-50 p-3">
                 <p className="text-xs text-emerald-700">Qty In</p>
                 <p className="text-lg font-semibold text-emerald-800">
-                  {formatNumber(data.summary.qtyIn, 2)}
+                  {formatNumber(summary.qtyIn, 2)}
                 </p>
               </div>
               <div className="rounded-lg border bg-amber-50 p-3">
                 <p className="text-xs text-amber-700">Qty Out</p>
                 <p className="text-lg font-semibold text-amber-800">
-                  {formatNumber(data.summary.qtyOut, 2)}
+                  {formatNumber(summary.qtyOut, 2)}
                 </p>
               </div>
             </div>
@@ -204,7 +280,7 @@ export function StockMovementsReport() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.rows.length === 0 ? (
+                  {rows.length === 0 ? (
                     <TableRow>
                       <TableCell
                         colSpan={5}
@@ -214,7 +290,7 @@ export function StockMovementsReport() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    data.rows.map((r) => (
+                    rows.map((r) => (
                       <TableRow key={r.id}>
                         <TableCell className="whitespace-nowrap text-xs">
                           {formatDateTimeIST(r.date)}

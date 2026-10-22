@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
@@ -26,6 +26,16 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { sortPaymentModeEntries } from "@/lib/sale-settlement";
+import {
+  emptySalesReportFilter,
+  filterSalesReport,
+  SALES_BILL_TYPES,
+  SALES_GST_FILTERS,
+  SALES_PAYMENT_MODES,
+  SALES_SETTLEMENTS,
+  SALES_TAX_SPLITS,
+  type SalesReportFilter,
+} from "@/lib/report-filters";
 
 function toDateInputValue(date: Date) {
   const y = date.getFullYear();
@@ -373,13 +383,58 @@ function exportPdf(data: SalesReportData) {
   doc.save(`Skywin-Sales-Report-${data.fromDate}-to-${data.toDate}.pdf`);
 }
 
+const selectClass =
+  "mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800";
+
+function FilterSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div>
+      <Label className="text-xs text-slate-600">{label}</Label>
+      <select
+        className={selectClass}
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 export function SalesReport() {
   const [fromDate, setFromDate] = useState(defaultFromDate);
   const [toDate, setToDate] = useState(defaultToDate);
   const [activeQuick, setActiveQuick] = useState<number | "custom" | null>(null);
+  const [filters, setFilters] = useState(emptySalesReportFilter);
   const [report, setReport] = useState<SalesReportData | null>(null);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+
+  const view = useMemo(
+    () => (report ? { ...report, ...filterSalesReport(report, filters) } : null),
+    [report, filters]
+  );
+
+  const setFilter = <K extends keyof SalesReportFilter>(
+    key: K,
+    value: SalesReportFilter[K]
+  ) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+  };
 
   const loadReport = (from = fromDate, to = toDate) => {
     setError("");
@@ -389,7 +444,7 @@ export function SalesReport() {
         setReport(data);
       } catch (err) {
         setReport(null);
-        setError(err instanceof Error ? err.message : "Failed to load sales report.");
+        setError(err instanceof Error ? err.message : "Failed to load sales view.");
       }
     });
   };
@@ -404,14 +459,14 @@ export function SalesReport() {
   };
 
   const handleExport = (format: "excel" | "pdf") => {
-    if (!report || report.invoices.length === 0) {
+    if (!view || view.invoices.length === 0) {
       setError("No sales data to export. Generate the report first.");
       return;
     }
     setError("");
     try {
-      if (format === "excel") exportExcel(report);
-      else exportPdf(report);
+      if (format === "excel") exportExcel(view);
+      else exportPdf(view);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed.");
     }
@@ -488,6 +543,120 @@ export function SalesReport() {
             className="mt-1 h-9 w-40 bg-white"
           />
         </div>
+        <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <FilterSelect
+            label="Bill type"
+            value={filters.billType}
+            onChange={(value) => setFilter("billType", value)}
+            options={SALES_BILL_TYPES.map((value) => ({
+              value,
+              label: value === "all" ? "All bill types" : value,
+            }))}
+          />
+          <FilterSelect
+            label="Payment"
+            value={filters.paymentMode}
+            onChange={(value) => setFilter("paymentMode", value)}
+            options={SALES_PAYMENT_MODES.map((value) => ({
+              value,
+              label: value === "all" ? "All payments" : value.toUpperCase(),
+            }))}
+          />
+          <FilterSelect
+            label="GSTIN"
+            value={filters.gst}
+            onChange={(value) => setFilter("gst", value)}
+            options={SALES_GST_FILTERS.map((value) => ({
+              value,
+              label:
+                value === "all"
+                  ? "All customers"
+                  : value === "with"
+                    ? "With GST number"
+                    : "Without GST number",
+            }))}
+          />
+          <FilterSelect
+            label="Settlement"
+            value={filters.settlement}
+            onChange={(value) => setFilter("settlement", value)}
+            options={SALES_SETTLEMENTS.map((value) => ({
+              value,
+              label: value === "all" ? "Paid and unpaid" : value,
+            }))}
+          />
+          <FilterSelect
+            label="Tax"
+            value={filters.tax}
+            onChange={(value) => setFilter("tax", value)}
+            options={SALES_TAX_SPLITS.map((value) => ({
+              value,
+              label:
+                value === "all"
+                  ? "CGST/SGST and IGST"
+                  : value === "intra"
+                    ? "Within state (CGST/SGST)"
+                    : "Other state (IGST)",
+            }))}
+          />
+          <div>
+            <Label className="text-xs text-slate-600">Customer</Label>
+            <Input
+              value={filters.customer}
+              onChange={(event) => setFilter("customer", event.target.value)}
+              placeholder="Name contains"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-600">Product or SKU</Label>
+            <Input
+              value={filters.product}
+              onChange={(event) => setFilter("product", event.target.value)}
+              placeholder="Product or SKU"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-600">Category</Label>
+            <Input
+              value={filters.category}
+              onChange={(event) => setFilter("category", event.target.value)}
+              placeholder="Category"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-600">HSN</Label>
+            <Input
+              value={filters.hsn}
+              onChange={(event) => setFilter("hsn", event.target.value)}
+              placeholder="HSN"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-slate-600">Operator</Label>
+            <Input
+              value={filters.operator}
+              onChange={(event) => setFilter("operator", event.target.value)}
+              placeholder="Billed by"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-9 text-slate-600"
+          onClick={() => setFilters(emptySalesReportFilter())}
+        >
+          Clear filters
+        </Button>
+        <p className="w-full text-xs text-slate-500">
+          Product, category, and HSN keep the whole bill in the invoice list and
+          only the matching rows in line items. Excel and PDF use the filtered set.
+        </p>
         <Button
           type="button"
           onClick={() => loadReport()}
@@ -502,7 +671,7 @@ export function SalesReport() {
             <Button
               type="button"
               variant="outline"
-              disabled={!report || report.invoices.length === 0}
+              disabled={!view || view.invoices.length === 0}
               className="h-9 gap-1.5"
               aria-label="Export report"
             >
@@ -541,33 +710,39 @@ export function SalesReport() {
       ) : null}
     </section>
 
-      {report ? (
+      {view ? (
         <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+          {report && view.summary.billCount !== report.invoices.length ? (
+            <p className="mb-2 text-xs text-slate-500">
+              Showing {view.summary.billCount} of {report.invoices.length} bills.
+              Excel and PDF use this filtered set.
+            </p>
+          ) : null}
           <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
             <div>
               <dt className="text-xs text-slate-500">Bills</dt>
               <dd className="text-base font-semibold tabular-nums">
-                {report.summary.billCount}
+                {view.summary.billCount}
                 <span className="ml-1.5 text-xs font-normal text-slate-500">
-                  R {report.summary.retailCount} · W {report.summary.wholesaleCount}
+                  R {view.summary.retailCount} · W {view.summary.wholesaleCount}
                 </span>
               </dd>
             </div>
             <div>
               <dt className="text-xs text-slate-500">Grand total</dt>
               <dd className="text-base font-semibold tabular-nums text-emerald-700">
-                {formatCurrency(report.summary.grandTotal)}
+                {formatCurrency(view.summary.grandTotal)}
                 <span className="ml-1.5 text-xs font-normal text-slate-500">
-                  Paid {formatCurrency(report.summary.paidAmount)}
+                  Paid {formatCurrency(view.summary.paidAmount)}
                 </span>
               </dd>
             </div>
             <div>
               <dt className="text-xs text-slate-500">Taxable / Discount</dt>
               <dd className="text-base font-semibold tabular-nums">
-                {formatCurrency(report.summary.subtotal)}
+                {formatCurrency(view.summary.subtotal)}
                 <span className="ml-1.5 text-xs font-normal text-slate-500">
-                  − {formatCurrency(report.summary.discountAmount)}
+                  − {formatCurrency(view.summary.discountAmount)}
                 </span>
               </dd>
             </div>
@@ -575,7 +750,7 @@ export function SalesReport() {
               <dt className="text-xs text-slate-500">GST</dt>
               <dd className="text-base font-semibold tabular-nums">
                 {formatCurrency(
-                  report.summary.cgst + report.summary.sgst + report.summary.igst
+                  view.summary.cgst + view.summary.sgst + view.summary.igst
                 )}
               </dd>
             </div>
@@ -583,12 +758,12 @@ export function SalesReport() {
         </div>
       ) : null}
 
-      {report ? (
+      {view ? (
         <>
             <Card>
               <CardContent className="flex flex-wrap gap-4 p-4">
                 {sortPaymentModeEntries(
-                  Object.entries(report.summary.byPaymentMode)
+                  Object.entries(view.summary.byPaymentMode)
                 ).map(([mode, info]) => (
                   <div key={mode} className="min-w-[120px]">
                     <p className="text-xs capitalize text-slate-500">{mode}</p>
@@ -602,17 +777,17 @@ export function SalesReport() {
           <Tabs defaultValue="invoices">
             <TabsList>
               <TabsTrigger value="invoices">
-                Invoices ({report.invoices.length})
+                Invoices ({view.invoices.length})
               </TabsTrigger>
               <TabsTrigger value="items">
-                Line Items ({report.lineItems.length})
+                Line Items ({view.lineItems.length})
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="invoices">
               <Card>
                 <CardContent className="p-0">
-                  {report.invoices.length === 0 ? (
+                  {view.invoices.length === 0 ? (
                     <p className="p-6 text-sm text-slate-400">
                       No sales found for the selected date range.
                     </p>
@@ -636,7 +811,7 @@ export function SalesReport() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {report.invoices.map((inv, index) => (
+                          {view.invoices.map((inv, index) => (
                             <TableRow key={inv.id}>
                               <TableCell className="text-slate-500">
                                 {index + 1}
@@ -679,19 +854,19 @@ export function SalesReport() {
                           <TableRow>
                             <TableCell colSpan={6}>Grand Total</TableCell>
                             <TableCell className="text-right">
-                              {formatCurrency(report.summary.subtotal)}
+                              {formatCurrency(view.summary.subtotal)}
                             </TableCell>
                             <TableCell className="text-right">
-                              {formatCurrency(report.summary.discountAmount)}
+                              {formatCurrency(view.summary.discountAmount)}
                             </TableCell>
                             <TableCell className="text-right">
-                              {formatCurrency(report.summary.cgst)}
+                              {formatCurrency(view.summary.cgst)}
                             </TableCell>
                             <TableCell className="text-right">
-                              {formatCurrency(report.summary.sgst)}
+                              {formatCurrency(view.summary.sgst)}
                             </TableCell>
                             <TableCell className="text-right text-emerald-700">
-                              {formatCurrency(report.summary.grandTotal)}
+                              {formatCurrency(view.summary.grandTotal)}
                             </TableCell>
                             <TableCell />
                           </TableRow>
@@ -706,7 +881,7 @@ export function SalesReport() {
             <TabsContent value="items">
               <Card>
                 <CardContent className="p-0">
-                  {report.lineItems.length === 0 ? (
+                  {view.lineItems.length === 0 ? (
                     <p className="p-6 text-sm text-slate-400">
                       No line items for the selected date range.
                     </p>
@@ -737,7 +912,7 @@ export function SalesReport() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {report.lineItems.map((item, index) => (
+                          {view.lineItems.map((item, index) => (
                             <TableRow key={`${item.invoiceNo}-${index}`}>
                               <TableCell className="text-slate-500">
                                 {index + 1}
@@ -795,13 +970,13 @@ export function SalesReport() {
                             <TableCell colSpan={8}>Grand Total</TableCell>
                             <TableCell className="text-right">
                               {round2(
-                                report.lineItems.reduce((s, i) => s + i.qty, 0)
+                                view.lineItems.reduce((s, i) => s + i.qty, 0)
                               )}
                             </TableCell>
                             <TableCell colSpan={9} />
                             <TableCell className="text-right text-emerald-700">
                               {formatCurrency(
-                                report.lineItems.reduce((s, i) => s + i.amount, 0)
+                                view.lineItems.reduce((s, i) => s + i.amount, 0)
                               )}
                             </TableCell>
                           </TableRow>
@@ -814,7 +989,7 @@ export function SalesReport() {
             </TabsContent>
           </Tabs>
 
-          {Object.keys(report.summary.receivedByMode || {}).length > 0 ? (
+          {Object.keys(view.summary.receivedByMode || {}).length > 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">
@@ -823,7 +998,7 @@ export function SalesReport() {
               </CardHeader>
               <CardContent className="flex flex-wrap gap-6 p-4 pt-0">
                 {sortPaymentModeEntries(
-                  Object.entries(report.summary.receivedByMode).filter(
+                  Object.entries(view.summary.receivedByMode).filter(
                     ([, amt]) => amt > 0
                   )
                 ).map(([mode, amount]) => (
@@ -838,7 +1013,7 @@ export function SalesReport() {
                   <p className="text-xs text-slate-500">Total received</p>
                   <p className="text-lg font-bold">
                     {formatCurrency(
-                      Object.values(report.summary.receivedByMode).reduce(
+                      Object.values(view.summary.receivedByMode).reduce(
                         (s, n) => s + n,
                         0
                       )

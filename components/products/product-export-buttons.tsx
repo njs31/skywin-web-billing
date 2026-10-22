@@ -9,6 +9,16 @@ import { getProductsExportData } from "@/lib/actions/products";
 import type { ProductDateRangeExport, StockExportRow } from "@/lib/queries/products";
 import { BUSINESS } from "@/lib/business";
 import { duplicateHsnKeys, hsnKey } from "@/lib/duplicate-hsn";
+import {
+  emptyStockReportFilter,
+  filterStockRows,
+  STOCK_DUPLICATES,
+  STOCK_EXPIRY,
+  STOCK_LEVELS,
+  STOCK_SOLD,
+  STOCK_STATUSES,
+  type StockReportFilter,
+} from "@/lib/report-filters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,11 +79,11 @@ function rowsToSheetData(rows: StockExportRow[]) {
   }));
 }
 
-function exportExcel(data: ProductDateRangeExport) {
+function exportExcel(data: ProductDateRangeExport, catalog: StockExportRow[] = data.rows) {
   const wb = XLSX.utils.book_new();
   const stockSheet = XLSX.utils.json_to_sheet(rowsToSheetData(data.rows));
   XLSX.utils.book_append_sheet(wb, stockSheet, "Stock");
-  const duplicateKeys = duplicateHsnKeys(data.rows.map((row) => row.hsnCode));
+  const duplicateKeys = duplicateHsnKeys(catalog.map((row) => row.hsnCode));
   const duplicateRows = data.rows.filter((row) =>
     duplicateKeys.has(hsnKey(row.hsnCode))
   );
@@ -153,25 +163,39 @@ function exportPdf(data: ProductDateRangeExport) {
   doc.save(`Skywin-Stock-Export-${data.fromDate}-to-${data.toDate}.pdf`);
 }
 
+const fieldClass =
+  "mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800";
+
 export function ProductExportButtons() {
   const [fromDate, setFromDate] = useState(defaultFromDate);
   const [toDate, setToDate] = useState(defaultToDate);
+  const [filters, setFilters] = useState(emptyStockReportFilter);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
+
+  const setFilter = <K extends keyof StockReportFilter>(
+    key: K,
+    value: StockReportFilter[K]
+  ) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+  };
 
   const runExport = (format: "excel" | "pdf", from = fromDate, to = toDate) => {
     setError("");
     startTransition(async () => {
       try {
         const data = await getProductsExportData(from, to);
-        if (data.rows.length === 0) {
-          setError("No products found to export.");
+        const today = toDateInputValue(new Date());
+        const rows = filterStockRows(data.rows, filters, today);
+        if (rows.length === 0) {
+          setError("No products match these filters.");
           return;
         }
+        const filtered = { ...data, rows };
         if (format === "excel") {
-          exportExcel(data);
+          exportExcel(filtered, data.rows);
         } else {
-          exportPdf(data);
+          exportPdf(filtered);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Export failed.");
@@ -195,7 +219,7 @@ export function ProductExportButtons() {
         </CardTitle>
         <p className="text-xs text-slate-500">
           Current stock plus qty sold and sales amount for the selected date
-          range
+          range. Filters apply to the Excel and PDF download.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -238,6 +262,152 @@ export function ProductExportButtons() {
             <FileText className="h-4 w-4" />
             {isPending ? "Exporting..." : "Export PDF"}
           </Button>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <Label className="text-xs">Product, SKU, or barcode</Label>
+            <Input
+              value={filters.q}
+              onChange={(event) => setFilter("q", event.target.value)}
+              placeholder="Search"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Category</Label>
+            <Input
+              value={filters.category}
+              onChange={(event) => setFilter("category", event.target.value)}
+              placeholder="Category"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">HSN</Label>
+            <Input
+              value={filters.hsn}
+              onChange={(event) => setFilter("hsn", event.target.value)}
+              placeholder="HSN"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">GST %</Label>
+            <Input
+              value={filters.gstRate}
+              onChange={(event) => setFilter("gstRate", event.target.value)}
+              placeholder="Exact rate, e.g. 18"
+              className="mt-1 h-9 bg-white"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Status</Label>
+            <select
+              className={fieldClass}
+              value={filters.status}
+              onChange={(event) =>
+                setFilter("status", event.target.value as StockReportFilter["status"])
+              }
+            >
+              {STOCK_STATUSES.map((value) => (
+                <option key={value} value={value}>
+                  {value === "all" ? "Active and inactive" : value}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Stock</Label>
+            <select
+              className={fieldClass}
+              value={filters.stock}
+              onChange={(event) =>
+                setFilter("stock", event.target.value as StockReportFilter["stock"])
+              }
+            >
+              {STOCK_LEVELS.map((value) => (
+                <option key={value} value={value}>
+                  {value === "all"
+                    ? "Any quantity"
+                    : value === "in"
+                      ? "In stock"
+                      : value === "out"
+                        ? "Out of stock"
+                        : "Below reorder level"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Expiry</Label>
+            <select
+              className={fieldClass}
+              value={filters.expiry}
+              onChange={(event) =>
+                setFilter("expiry", event.target.value as StockReportFilter["expiry"])
+              }
+            >
+              {STOCK_EXPIRY.map((value) => (
+                <option key={value} value={value}>
+                  {value === "all"
+                    ? "Any expiry"
+                    : value === "dated"
+                      ? "Has an expiry date"
+                      : value === "none"
+                        ? "No expiry date"
+                        : value === "expired"
+                          ? "Already expired"
+                          : "Expires within 90 days"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Sales in range</Label>
+            <select
+              className={fieldClass}
+              value={filters.sold}
+              onChange={(event) =>
+                setFilter("sold", event.target.value as StockReportFilter["sold"])
+              }
+            >
+              {STOCK_SOLD.map((value) => (
+                <option key={value} value={value}>
+                  {value === "all" ? "Sold and unsold" : value === "sold" ? "Sold in range" : "Not sold in range"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Duplicate HSN</Label>
+            <select
+              className={fieldClass}
+              value={filters.duplicates}
+              onChange={(event) =>
+                setFilter(
+                  "duplicates",
+                  event.target.value as StockReportFilter["duplicates"]
+                )
+              }
+            >
+              {STOCK_DUPLICATES.map((value) => (
+                <option key={value} value={value}>
+                  {value === "all" ? "All HSN codes" : "Only shared HSN codes"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-9 text-slate-600"
+              onClick={() => setFilters(emptyStockReportFilter())}
+            >
+              Clear filters
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
