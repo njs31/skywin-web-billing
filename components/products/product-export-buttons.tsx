@@ -8,6 +8,7 @@ import { FileSpreadsheet, FileText } from "lucide-react";
 import { getProductsExportData } from "@/lib/actions/products";
 import type { ProductDateRangeExport, StockExportRow } from "@/lib/queries/products";
 import { BUSINESS } from "@/lib/business";
+import { duplicateHsnKeys, hsnKey } from "@/lib/duplicate-hsn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -72,6 +73,19 @@ function exportExcel(data: ProductDateRangeExport) {
   const wb = XLSX.utils.book_new();
   const stockSheet = XLSX.utils.json_to_sheet(rowsToSheetData(data.rows));
   XLSX.utils.book_append_sheet(wb, stockSheet, "Stock");
+  const duplicateKeys = duplicateHsnKeys(data.rows.map((row) => row.hsnCode));
+  const duplicateRows = data.rows.filter((row) =>
+    duplicateKeys.has(hsnKey(row.hsnCode))
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(
+      duplicateRows.length > 0
+        ? rowsToSheetData(duplicateRows)
+        : [{ Note: "No products share an HSN code." }]
+    ),
+    "Duplicate HSN"
+  );
   XLSX.writeFile(
     wb,
     `Skywin-Stock-Export-${data.fromDate}-to-${data.toDate}.xlsx`

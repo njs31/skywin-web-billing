@@ -15,8 +15,9 @@ import {
   purchaseReturns,
   purchaseReturnItems,
   partyPayments,
+  partyPaymentAllocations,
 } from "@/db/schema";
-import { and, gte, lte, eq, ne, sql } from "drizzle-orm";
+import { and, gte, lte, eq, ne, sql, inArray } from "drizzle-orm";
 import { equalCgstSgst } from "@/lib/gst";
 import { format } from "date-fns";
 import { requireNonDealer } from "@/lib/actions/auth";
@@ -25,6 +26,7 @@ import { isPlaceholderGstin } from "@/lib/gst";
 import { stateNameFromGstin } from "@/lib/gst-states";
 import { unitWithoutQuantity } from "@/lib/units";
 import { buildSalesTallyRow } from "@/lib/tally-sales-sheet";
+import { tallyReceiptIncluded } from "@/lib/tally-receipt-filter";
 
 function taxabilityType(rate: number) {
   return rate === 0 ? "Exempt" : "Taxable";
@@ -350,7 +352,37 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       )
     );
 
-  const receiptRows = dbReceipts.map((r) => {
+  const receiptIds = dbReceipts.map((r) => r.id);
+  const receiptInvoices = new Map<
+    number,
+    { paymentMode: string | null; gstin: string | null; status: string | null }[]
+  >();
+  if (receiptIds.length > 0) {
+    const links = await db
+      .select({
+        paymentId: partyPaymentAllocations.paymentId,
+        paymentMode: sales.paymentMode,
+        gstin: customers.gstin,
+        status: sales.status,
+      })
+      .from(partyPaymentAllocations)
+      .innerJoin(sales, eq(partyPaymentAllocations.saleId, sales.id))
+      .leftJoin(customers, eq(sales.customerId, customers.id))
+      .where(inArray(partyPaymentAllocations.paymentId, receiptIds));
+    for (const link of links) {
+      const list = receiptInvoices.get(link.paymentId) ?? [];
+      list.push({
+        paymentMode: link.paymentMode,
+        gstin: link.gstin,
+        status: link.status,
+      });
+      receiptInvoices.set(link.paymentId, list);
+    }
+  }
+
+  const receiptRows = dbReceipts
+    .filter((r) => tallyReceiptIncluded(receiptInvoices.get(r.id) ?? []))
+    .map((r) => {
     const total = parseFloat(r.amount);
     return {
       Date: format(new Date(r.date), "dd/MM/yyyy"),

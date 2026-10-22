@@ -3,6 +3,7 @@ import {
   getStockStatus,
   getStockValuation,
 } from "@/lib/queries/reports";
+import { getDuplicateHsnStock } from "@/lib/queries/products";
 import { db } from "@/db";
 import { productBatches } from "@/db/schema";
 import { inArray } from "drizzle-orm";
@@ -20,9 +21,10 @@ import {
 } from "@/components/ui/table";
 
 export default async function StockPage() {
-  const [stock, valuation] = await Promise.all([
+  const [stock, valuation, duplicateHsn] = await Promise.all([
     getStockStatus(),
     getStockValuation(),
+    getDuplicateHsnStock(),
   ]);
 
   const productIds = stock.map((p) => p.id);
@@ -95,6 +97,43 @@ export default async function StockPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardContent className="space-y-3 p-5">
+          <div>
+            <h2 className="text-base font-semibold">Closing stock — duplicate HSN</h2>
+            <p className="text-sm text-slate-500">
+              {duplicateHsn.length === 0
+                ? "No active products share an HSN code."
+                : `${duplicateHsn.length} products use an HSN that another product also uses.`}
+            </p>
+          </div>
+          {duplicateHsn.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>HSN</TableHead>
+                  <TableHead>Product</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead className="text-right">Stock</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {duplicateHsn.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-mono text-xs">{row.hsnCode}</TableCell>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="text-slate-500">{row.sku || "-"}</TableCell>
+                    <TableCell className="text-slate-500">{row.category}</TableCell>
+                    <TableCell className="text-right">{row.stockQty}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-0">

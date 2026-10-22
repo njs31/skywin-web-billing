@@ -9,6 +9,7 @@ import {
   hasProductChanges,
 } from "@/lib/product-changelog";
 import type { ProductListStatus } from "@/lib/product-status";
+import { duplicateHsnKeys, hsnKey } from "@/lib/duplicate-hsn";
 
 const CACHE_TAG = {
   products: "products",
@@ -899,4 +900,43 @@ export async function getProductsExportForDateRange(
       };
     }),
   };
+}
+
+export type DuplicateHsnStockRow = {
+  id: number;
+  name: string;
+  sku: string;
+  hsnCode: string;
+  stockQty: number;
+  category: string;
+};
+
+/** Active products whose HSN is also used by another active product. */
+export async function getDuplicateHsnStock(): Promise<DuplicateHsnStockRow[]> {
+  const rows = await db
+    .select({
+      id: products.id,
+      name: products.name,
+      sku: products.sku,
+      hsnCode: products.hsnCode,
+      stockQty: products.stockQty,
+      categoryName: categories.name,
+    })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(eq(products.isActive, true))
+    .orderBy(asc(products.hsnCode), asc(products.name));
+
+  const duplicates = duplicateHsnKeys(rows.map((row) => row.hsnCode));
+
+  return rows
+    .filter((row) => duplicates.has(hsnKey(row.hsnCode)))
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      sku: row.sku ?? "",
+      hsnCode: hsnKey(row.hsnCode),
+      stockQty: Number(row.stockQty ?? 0),
+      category: row.categoryName ?? "General",
+    }));
 }
