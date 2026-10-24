@@ -91,8 +91,8 @@ function farmerConditions(filter?: {
               or field.name ilike ${pattern}
               or field.acres::text ilike ${pattern}
             )
-        )`
-      );
+        )`,
+      ];
       if (digits.length >= 3) {
         parts.push(
           sql`regexp_replace(coalesce(${customers.phone}, ''), '\\D', '', 'g') ilike ${"%" + digits + "%"}`
