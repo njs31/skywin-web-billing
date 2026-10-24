@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS = {
   qwicksApiKey: "skywin_qwicks_api_key_7596",
   widgetApiKey: "skywin_widget_8f3c2a91e6b04d7a",
   labelApiKey: "skywin_label_3d9f1c47ba805e26",
+  fieldApiKey: "skywin_field_api_key_4c8e2b19",
   /**
    * Millimetres fed after a label run so the last sticker clears the tear bar.
    * The right value is the head-to-tear-bar distance less 9 mm, and that

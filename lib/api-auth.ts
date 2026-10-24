@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest } from "next/server";
-import { getSettings } from "@/lib/settings";
+import { DEFAULT_SETTINGS, getSettings } from "@/lib/settings";
 
 function keysMatch(provided: string, expected: string) {
   const a = createHash("sha256").update(provided).digest();
@@ -47,4 +47,13 @@ export async function verifyWidgetApiKey(req: NextRequest) {
 export async function verifyLabelApiKey(req: NextRequest) {
   const settings = await getSettings();
   return verifyConfiguredApiKey(req, [settings.labelApiKey]);
+}
+
+/** Field Officer app — dedicated key, Qwicks key accepted as fallback. */
+export async function verifyFieldApiKey(req: NextRequest) {
+  const settings = await getSettings();
+  return verifyConfiguredApiKey(req, [
+    settings.fieldApiKey || DEFAULT_SETTINGS.fieldApiKey,
+    settings.qwicksApiKey || DEFAULT_SETTINGS.qwicksApiKey,
+  ]);
 }
