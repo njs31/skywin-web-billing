@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { fieldFarmersList, fieldOfficers } from "@/lib/actions/field";
-import { FarmerCreateForm } from "./farmer-form";
+import { FarmerSearchBar } from "./farmer-form";
 
 function farmersHref(input: { approval: string; q?: string; page?: number }) {
   const sp = new URLSearchParams();
@@ -52,29 +52,22 @@ export default async function FieldFarmersPage({
             {total > 0 ? ` · showing ${from.toLocaleString("en-IN")}–${to.toLocaleString("en-IN")}` : ""}
           </p>
         </div>
-        <form className="flex gap-2">
-          <input type="hidden" name="approval" value={approval} />
-          <input
-            name="q"
-            defaultValue={params.q ?? ""}
-            placeholder="Name, village, phone"
-            className="h-10 rounded-lg border border-[#1E3317]/15 bg-white px-3 text-sm"
-          />
-          <button className="h-10 rounded-lg bg-[#1E3317] px-4 text-sm font-semibold text-white">Search</button>
-        </form>
       </div>
-      <div className="flex gap-2">
-        {pills.map((pill) => (
-          <Link
-            key={pill.key}
-            href={farmersHref({ approval: pill.key, q: params.q })}
-            className={`rounded-full px-3 py-1.5 text-sm ${
-              approval === pill.key ? "bg-[#1E3317] text-white" : "bg-white text-[#1E3317] border border-[#1E3317]/15"
-            }`}
-          >
-            {pill.label}
-          </Link>
-        ))}
+      <div className="space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {pills.map((pill) => (
+            <Link
+              key={pill.key}
+              href={farmersHref({ approval: pill.key, q: params.q })}
+              className={`rounded-full px-4 py-2 text-sm font-medium ${
+                approval === pill.key ? "bg-[#1E3317] text-white" : "bg-white text-[#1E3317] border border-[#1E3317]/15"
+              }`}
+            >
+              {pill.label}
+            </Link>
+          ))}
+        </div>
+        <FarmerSearchBar approval={approval} query={params.q ?? ""} officers={officers} />
       </div>
       <div className="overflow-hidden rounded-2xl border border-[#1E3317]/10 bg-white">
         <table className="w-full text-sm">
@@ -140,7 +133,6 @@ export default async function FieldFarmersPage({
           </Link>
         </div>
       ) : null}
-      <FarmerCreateForm officers={officers} />
     </div>
   );
 }

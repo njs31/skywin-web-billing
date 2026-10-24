@@ -65,16 +65,42 @@ function farmerConditions(filter?: {
     conditions.push(eq(customers.approval, filter.approval));
   }
   if (filter?.q?.trim()) {
-    const q = filter.q.trim();
-    const search = or(
-      ilike(customers.name, `%${q}%`),
-      ilike(customers.phone, `%${q}%`),
-      ilike(customers.village, `%${q}%`),
-      ilike(customers.taluk, `%${q}%`),
-      ilike(customers.fieldOfficerName, `%${q}%`),
-      ilike(customers.pinCode, `%${q}%`)
-    );
-    if (search) conditions.push(search);
+    const raw = filter.q.trim().replace(/[%_]/g, "");
+    if (raw) {
+      const pattern = `%${raw}%`;
+      const digits = raw.replace(/\D/g, "");
+      const parts = [
+        ilike(customers.name, pattern),
+        ilike(customers.phone, pattern),
+        ilike(customers.village, pattern),
+        ilike(customers.taluk, pattern),
+        ilike(customers.fieldOfficerName, pattern),
+        ilike(customers.approval, pattern),
+        ilike(customers.crop, pattern),
+        ilike(customers.acre, pattern),
+        sql`exists (
+          select 1 from ${users} officer
+          where officer.id = ${customers.assignedOfficerId}
+            and officer.name ilike ${pattern}
+        )`,
+        sql`exists (
+          select 1 from ${farms} field
+          where field.customer_id = ${customers.id}
+            and (
+              field.crop ilike ${pattern}
+              or field.name ilike ${pattern}
+              or field.acres::text ilike ${pattern}
+            )
+        )`
+      );
+      if (digits.length >= 3) {
+        parts.push(
+          sql`regexp_replace(coalesce(${customers.phone}, ''), '\\D', '', 'g') ilike ${"%" + digits + "%"}`
+        );
+      }
+      const search = or(...parts);
+      if (search) conditions.push(search);
+    }
   }
   return conditions;
 }
