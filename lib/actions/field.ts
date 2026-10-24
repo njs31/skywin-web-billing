@@ -21,6 +21,7 @@ import {
   updateFieldSubcategory,
 } from "@/lib/queries/field-catalog";
 import {
+  countFieldFarmers,
   countPendingFarmers,
   getFieldFarmer,
   listFieldFarmers,
@@ -226,9 +227,20 @@ export async function saveFieldProductDetail(productId: number, input: FieldProd
   touchField(["/field/products", `/field/products/${productId}`]);
 }
 
-export async function fieldFarmersList(filter?: { q?: string; approval?: FieldFarmerApproval | "all" }) {
+export async function fieldFarmersList(filter?: {
+  q?: string;
+  approval?: FieldFarmerApproval | "all";
+  page?: number;
+}) {
   await requireFieldAdmin();
-  return listFieldFarmers(filter);
+  const pageSize = 100;
+  const page = Math.max(1, filter?.page ?? 1);
+  const query = { q: filter?.q, approval: filter?.approval };
+  const [total, farmers] = await Promise.all([
+    countFieldFarmers(query),
+    listFieldFarmers({ ...query, limit: pageSize, offset: (page - 1) * pageSize }),
+  ]);
+  return { farmers, total, page, pageSize };
 }
 
 export async function fieldFarmerDetail(id: number) {

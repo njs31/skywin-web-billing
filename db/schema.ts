@@ -95,6 +95,8 @@ export const customers = pgTable(
     rewardPoints: integer("reward_points").default(0).notNull(),
     source: text("source").default("imported"),
     assignedOfficerId: integer("assigned_officer_id"),
+    fieldOfficerName: text("field_officer_name"),
+    fieldExternalId: text("field_external_id"),
     photoUrl: text("photo_url"),
     paymentMode: text("payment_mode").default("upi"),
     createdAt: timestamp("created_at").defaultNow().notNull(),

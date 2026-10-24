@@ -30,6 +30,7 @@ type Farmer = {
   approval: "Approved" | "Pending" | "Rejected";
   rewardPoints: number;
   assignedOfficerId: number | null;
+  fieldOfficerName?: string;
   paymentMode?: PaymentMode;
   photo?: string;
   farms: Array<{
@@ -73,6 +74,7 @@ function FarmerFields({ farmer, officers }: { farmer?: Farmer; officers: Officer
   const [altPhone, setAltPhone] = useState(farmer?.altPhone ?? "");
   const [language, setLanguage] = useState<"en" | "ta">(farmer?.language ?? "ta");
   const [officerId, setOfficerId] = useState(farmer?.assignedOfficerId ? String(farmer.assignedOfficerId) : "");
+  const [officerName, setOfficerName] = useState(farmer?.fieldOfficerName ?? "");
   const [points, setPoints] = useState(String(farmer?.rewardPoints ?? 0));
   const [paymentMode, setPaymentMode] = useState<PaymentMode>(farmer?.paymentMode ?? "upi");
   const [photo, setPhoto] = useState(farmer?.photo ?? "");
@@ -105,6 +107,7 @@ function FarmerFields({ farmer, officers }: { farmer?: Farmer; officers: Officer
             altPhone,
             language,
             assignedOfficerId: officerId ? Number(officerId) : null,
+            fieldOfficerName: officerName,
             paymentMode,
             approval: farmer ? (farmer.approval.toLowerCase() as "approved" | "pending" | "rejected") : undefined,
             rewardPoints: Number(points) || 0,
@@ -159,7 +162,7 @@ function FarmerFields({ farmer, officers }: { farmer?: Farmer; officers: Officer
             value={officerId}
             onChange={(e) => setOfficerId(e.target.value)}
           >
-            <option value="">Unassigned</option>
+            <option value="">{officerName ? `Keep ${officerName}` : "Unassigned"}</option>
             {officers.map((officer) => (
               <option key={officer.id} value={officer.id}>
                 {officer.name} · {officer.phone}
@@ -181,6 +184,7 @@ function FarmerFields({ farmer, officers }: { farmer?: Farmer; officers: Officer
             ))}
           </select>
         </div>
+        <Field label="Officer name" value={officerName} onChange={setOfficerName} />
         <Field label="Reward points" value={points} onChange={setPoints} />
         <Field label="Photo URL" value={photo} onChange={setPhoto} />
       </div>

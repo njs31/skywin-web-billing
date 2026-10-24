@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, farms, users } from "@/db/schema";
 
@@ -35,6 +35,7 @@ export type FieldFarmerInput = {
   rewardPoints?: number;
   source?: "imported" | "registered";
   assignedOfficerId?: number | null;
+  fieldOfficerName?: string | null;
   photoUrl?: string | null;
   paymentMode?: FieldPaymentMode;
   assignedOfficerPhone?: string;
@@ -55,7 +56,7 @@ function titleCaseApproval(value: string | null | undefined): "Approved" | "Pend
   return "Pending";
 }
 
-export async function listFieldFarmers(filter?: {
+function farmerConditions(filter?: {
   q?: string;
   approval?: FieldFarmerApproval | "all";
 }) {
@@ -69,10 +70,35 @@ export async function listFieldFarmers(filter?: {
       ilike(customers.name, `%${q}%`),
       ilike(customers.phone, `%${q}%`),
       ilike(customers.village, `%${q}%`),
+      ilike(customers.taluk, `%${q}%`),
+      ilike(customers.fieldOfficerName, `%${q}%`),
       ilike(customers.pinCode, `%${q}%`)
     );
     if (search) conditions.push(search);
   }
+  return conditions;
+}
+
+export async function countFieldFarmers(filter?: {
+  q?: string;
+  approval?: FieldFarmerApproval | "all";
+}) {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(customers)
+    .where(and(...farmerConditions(filter)));
+  return Number(row?.count ?? 0);
+}
+
+export async function listFieldFarmers(filter?: {
+  q?: string;
+  approval?: FieldFarmerApproval | "all";
+  limit?: number;
+  offset?: number;
+}) {
+  const conditions = farmerConditions(filter);
+  const limit = Math.min(Math.max(filter?.limit ?? 50000, 1), 50000);
+  const offset = Math.max(filter?.offset ?? 0, 0);
 
   const rows = await db
     .select({
@@ -82,8 +108,9 @@ export async function listFieldFarmers(filter?: {
     .from(customers)
     .leftJoin(users, eq(users.id, customers.assignedOfficerId))
     .where(and(...conditions))
-    .orderBy(desc(customers.createdAt), asc(customers.name))
-    .limit(300);
+    .orderBy(asc(customers.name), asc(customers.id))
+    .limit(limit)
+    .offset(offset);
 
   const ids = rows.map((row) => row.farmer.id);
   const farmRows =
@@ -166,6 +193,9 @@ export async function upsertFieldFarmer(input: FieldFarmerInput, existingId?: nu
     ...(input.rewardPoints !== undefined ? { rewardPoints: input.rewardPoints } : {}),
     ...(input.source !== undefined ? { source: input.source } : {}),
     ...(assignedOfficerId !== undefined ? { assignedOfficerId } : {}),
+    ...(input.fieldOfficerName !== undefined
+      ? { fieldOfficerName: input.fieldOfficerName?.trim() || null }
+      : {}),
     ...(input.photoUrl !== undefined ? { photoUrl: input.photoUrl } : {}),
     ...(input.paymentMode !== undefined ? { paymentMode: input.paymentMode } : {}),
   };
@@ -271,8 +301,10 @@ export function serializeFarmer(
     approval: titleCaseApproval(farmer.approval),
     rewardPoints: farmer.rewardPoints ?? 0,
     source: farmer.source === "registered" ? "registered" : "imported",
+    territory: farmer.taluk ?? "",
     assignedOfficerId: farmer.assignedOfficerId,
-    assignedOfficer: officerName ?? "",
+    fieldOfficerName: farmer.fieldOfficerName ?? "",
+    assignedOfficer: officerName || farmer.fieldOfficerName || "",
     photo: farmer.photoUrl ?? undefined,
     paymentMode: (normalizePaymentMode(farmer.paymentMode) ?? "upi") as FieldPaymentMode,
     farms: farmRows.map((farm) => ({

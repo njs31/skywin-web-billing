@@ -22,7 +22,7 @@ export default async function FieldFarmerDetailPage({
       <div>
         <h1 className="text-2xl font-bold">{farmer.name}</h1>
         <p className="text-sm text-[#2E4A22]/70">
-          {farmer.village || "No village"} · {farmer.approval}
+          {[farmer.village, farmer.territory].filter(Boolean).join(", ") || "No village"} · {farmer.assignedOfficer || "No officer"} · {farmer.approval}
         </p>
       </div>
       <FarmerEditForm farmer={farmer} officers={officers} />
