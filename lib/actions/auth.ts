@@ -280,6 +280,17 @@ export async function requireAdmin() {
   return user;
 }
 
+export async function requireFieldAdmin() {
+  const { canManageField } = await import("@/lib/user-roles");
+  const user = await requireUser();
+  if (!canManageField(user.role)) {
+    throw new Error(
+      "Unauthorized. Only administrators and regional managers can manage SkyWin Field."
+    );
+  }
+  return user;
+}
+
 /** Matches UI: dealers cannot manage products, stock, quotations, or POs. */
 export async function requireNonDealer() {
   const user = await requireUser();

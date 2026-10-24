@@ -27,8 +27,10 @@ export default function LoginPage() {
   const [resendTimer, setResendTimer] = useState(0);
   const [useDirectLogin, setUseDirectLogin] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [fieldSite, setFieldSite] = useState(false);
 
   useEffect(() => {
+    setFieldSite(document.querySelector("[data-field-site]")?.getAttribute("data-field-site") === "1");
     setMounted(true);
   }, []);
 
@@ -64,7 +66,7 @@ export default function LoginPage() {
           if (res.success) {
             setSuccess("Signed in. Opening workspace…");
             setTimeout(() => {
-              router.push("/");
+              router.push(fieldSite ? "/field" : "/");
               router.refresh();
             }, 500);
           } else {
@@ -104,7 +106,7 @@ export default function LoginPage() {
         if (res.success) {
           setSuccess("Signed in. Opening workspace…");
           setTimeout(() => {
-            router.push("/");
+            router.push(fieldSite ? "/field" : "/");
             router.refresh();
           }, 500);
         } else {
@@ -132,7 +134,7 @@ export default function LoginPage() {
         if (res.success) {
           setSuccess("Verified. Opening workspace…");
           setTimeout(() => {
-            router.push("/");
+            router.push(fieldSite ? "/field" : "/");
             router.refresh();
           }, 500);
         } else {
@@ -246,13 +248,15 @@ export default function LoginPage() {
             />
           </div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#b4d12a]">
-            {BUSINESS.name}
+            {fieldSite ? "SkyWin Field" : BUSINESS.name}
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#f4f7ea] sm:text-4xl">
-            {BUSINESS.tagline}
+            {fieldSite ? "Field officers" : BUSINESS.tagline}
           </h1>
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-[#9aa88a]">
-            Billing workspace for your store.
+            {fieldSite
+              ? "Manage farmers, the phone catalog, officers, and field orders."
+              : "Billing workspace for your store."}
           </p>
         </div>
 

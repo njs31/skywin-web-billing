@@ -20,6 +20,10 @@ export function isUserRole(value: string): value is UserRole {
   return (USER_ROLES as readonly string[]).includes(value);
 }
 
+export function canManageField(role: string | undefined | null) {
+  return role === "admin" || role === "regional_manager";
+}
+
 export function roleLabel(role: string): string {
   return isUserRole(role) ? ROLE_LABELS[role] : role.replaceAll("_", " ");
 }

@@ -10,6 +10,8 @@ import {
   date,
   index,
   uniqueIndex,
+  jsonb,
+  customType,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
@@ -87,6 +89,14 @@ export const customers = pgTable(
     creditLimit: numeric("credit_limit", { precision: 14, scale: 2 }).default(
       "0"
     ),
+    altPhone: text("alt_phone"),
+    language: text("language").default("en"),
+    approval: text("approval").default("pending"),
+    rewardPoints: integer("reward_points").default(0).notNull(),
+    source: text("source").default("imported"),
+    assignedOfficerId: integer("assigned_officer_id"),
+    photoUrl: text("photo_url"),
+    paymentMode: text("payment_mode").default("upi"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
@@ -691,6 +701,7 @@ export const users = pgTable("users", {
   customerId: integer("customer_id").references(() => customers.id),
   otp: text("otp"),
   otpExpiry: timestamp("otp_expiry"),
+  fieldAppAccess: boolean("field_app_access").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -793,4 +804,123 @@ export type ReportingLine = typeof reportingLines.$inferSelect;
 export type DealerMapping = typeof dealerMappings.$inferSelect;
 export type LabelPrint = typeof labelPrints.$inferSelect;
 export type ProductChangeLog = typeof productChangeLogs.$inferSelect;
+export const fieldCategories = pgTable("field_categories", {
+  id: serial("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  queries: text("queries").array().notNull(),
+  iconKey: text("icon_key").notNull(),
+});
+
+export const fieldSubcategories = pgTable(
+  "field_subcategories",
+  {
+    id: serial("id").primaryKey(),
+    categoryId: integer("category_id")
+      .references(() => fieldCategories.id, { onDelete: "cascade" })
+      .notNull(),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    queries: text("queries").array().notNull(),
+    matchTerms: text("match_terms").array().notNull(),
+    iconKey: text("icon_key"),
+    iconUri: text("icon_uri"),
+    iconTint: boolean("icon_tint").default(true).notNull(),
+  },
+  (table) => ({
+    categorySlugUnique: uniqueIndex("field_subcategories_category_slug").on(
+      table.categoryId,
+      table.slug
+    ),
+    categoryIdIdx: index("field_subcategories_category_id_idx").on(table.categoryId),
+  })
+);
+
+export const fieldSubcategoryProducts = pgTable(
+  "field_subcategory_products",
+  {
+    id: serial("id").primaryKey(),
+    subcategoryId: integer("subcategory_id")
+      .references(() => fieldSubcategories.id, { onDelete: "cascade" })
+      .notNull(),
+    productId: integer("product_id")
+      .references(() => products.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (table) => ({
+    pairUnique: uniqueIndex("field_subcategory_products_unique").on(
+      table.subcategoryId,
+      table.productId
+    ),
+    subcategoryIdIdx: index("field_subcategory_products_sub_idx").on(
+      table.subcategoryId
+    ),
+  })
+);
+
+export const farms = pgTable(
+  "farms",
+  {
+    id: serial("id").primaryKey(),
+    customerId: integer("customer_id")
+      .references(() => customers.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    crop: text("crop"),
+    acres: numeric("acres", { precision: 10, scale: 2 }).default("0").notNull(),
+    gps: text("gps"),
+    address: text("address"),
+    pin: text("pin"),
+    validated: boolean("validated").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    customerIdIdx: index("farms_customer_id_idx").on(table.customerId),
+  })
+);
+
+export type FieldUsageRow = {
+  crop: string;
+  pest: string;
+  perHectare: string;
+  perAcre: string;
+};
+export type FieldVideo = { title: string; url: string; thumbnail?: string };
+
+export const fieldProductDetails = pgTable("field_product_details", {
+  productId: integer("product_id")
+    .primaryKey()
+    .references(() => products.id, { onDelete: "cascade" }),
+  displayName: text("display_name"),
+  images: jsonb("images").$type<string[]>().default([]).notNull(),
+  brochureUrl: text("brochure_url"),
+  activeIngredient: text("active_ingredient"),
+  packSizes: text("pack_sizes"),
+  headline: text("headline"),
+  description: text("description"),
+  antidote: text("antidote"),
+  usage: jsonb("usage").$type<FieldUsageRow[]>().default([]).notNull(),
+  videos: jsonb("videos").$type<FieldVideo[]>().default([]).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type FieldProductDetail = typeof fieldProductDetails.$inferSelect;
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
+
+export const fieldMedia = pgTable("field_media", {
+  id: text("id").primaryKey(),
+  mime: text("mime").notNull(),
+  size: integer("size").notNull(),
+  data: bytea("data").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 export type ActivityLog = typeof activityLogs.$inferSelect;
+export type FieldCategory = typeof fieldCategories.$inferSelect;
+export type FieldSubcategory = typeof fieldSubcategories.$inferSelect;
+export type FieldSubcategoryProduct = typeof fieldSubcategoryProducts.$inferSelect;
+export type Farm = typeof farms.$inferSelect;

@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import { canManageField } from "@/lib/user-roles";
+
+const FIELD_HOST = "skywin-field.qwicksapp.com";
+const BILLING_ORIGIN = "https://skywin.qwicksapp.com";
+
+function requestHost(request: NextRequest) {
+  const raw = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+  return raw.split(",")[0].trim().split(":")[0].toLowerCase();
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -15,8 +24,21 @@ export async function proxy(request: NextRequest) {
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionToken(token);
+  const fieldSite = requestHost(request) === FIELD_HOST;
 
-  if (pathname === "/login") {
+  if (fieldSite) {
+    if (pathname === "/login") return NextResponse.next();
+    if (!session) return NextResponse.redirect(new URL("/login", request.url));
+    if (!canManageField(session.role)) {
+      return NextResponse.redirect(BILLING_ORIGIN);
+    }
+    if (pathname !== "/field" && !pathname.startsWith("/field/")) {
+      return NextResponse.redirect(new URL("/field", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  if (pathname === "/login" || pathname === "/pay" || pathname.startsWith("/pay/")) {
     return NextResponse.next();
   }
 
@@ -33,6 +55,12 @@ export async function proxy(request: NextRequest) {
       pathname.startsWith("/widget")
     ) {
       return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    if (pathname === "/field" || pathname.startsWith("/field/")) {
+      if (role !== "regional_manager") {
+        return NextResponse.redirect(new URL("/", request.url));
+      }
     }
 
     if (role === "dealer") {
