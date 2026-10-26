@@ -5,7 +5,7 @@ import {
   createPartyPayment,
   getOutstandingSalesForCustomer,
 } from "@/lib/actions/billing";
-import type { Customer } from "@/db/schema";
+import type { CustomerPickerOption } from "@/lib/queries/customers";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
 import { BlockLoader } from "@/components/ui/page-loader";
+import { CustomerSearchSelect } from "@/components/accounts/customer-search-select";
 
 type OutstandingSale = {
   id: number;
@@ -30,20 +31,20 @@ type OutstandingSale = {
 };
 
 export function ReceiptForm({
-  customers,
   nextVoucherNo,
-  initialCustomerId,
+  initialCustomer,
   initialSaleId,
 }: {
-  customers: Customer[];
   nextVoucherNo?: string;
-  initialCustomerId?: number;
+  initialCustomer?: CustomerPickerOption | null;
   initialSaleId?: number;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<CustomerPickerOption | null>(initialCustomer ?? null);
   const [customerId, setCustomerId] = useState(
-    initialCustomerId ? String(initialCustomerId) : ""
+    initialCustomer ? String(initialCustomer.id) : ""
   );
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState<
@@ -157,6 +158,7 @@ export function ReceiptForm({
           allocations: allocationRows,
         });
         setCustomerId("");
+        setSelectedCustomer(null);
         setAmount("");
         setReferenceNo("");
         setNotes("");
@@ -183,18 +185,13 @@ export function ReceiptForm({
         ) : null}
         <div>
           <Label>Customer *</Label>
-          <Select value={customerId} onValueChange={setCustomerId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select customer" />
-            </SelectTrigger>
-            <SelectContent>
-              {customers.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CustomerSearchSelect
+            selected={selectedCustomer}
+            onSelect={(customer) => {
+              setSelectedCustomer(customer);
+              setCustomerId(customer ? String(customer.id) : "");
+            }}
+          />
         </div>
         <div>
           <Label>Amount *</Label>
