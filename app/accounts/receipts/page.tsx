@@ -173,6 +173,9 @@ export default async function ReceiptsPage({
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button asChild size="sm" variant="outline">
+                          <Link href={`/accounts/receipts/${r.id}/edit`}>Edit</Link>
+                        </Button>
+                        <Button asChild size="sm" variant="outline">
                           <Link href={`/accounts/receipts/${r.id}`}>View</Link>
                         </Button>
                         <PrintSizeMenu href={`/accounts/receipts/${r.id}`} />

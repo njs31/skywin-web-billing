@@ -57,11 +57,16 @@ export default async function ReceiptDetailPage({
         <Button asChild variant="outline">
           <Link href="/accounts/receipts">Back to Receipts</Link>
         </Button>
-        <PrintButton
-          autoPrint={print === "1"}
-          initialSize={size}
-          buttonText="Print Receipt"
-        />
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href={`/accounts/receipts/${payment.id}/edit`}>Edit</Link>
+          </Button>
+          <PrintButton
+            autoPrint={print === "1"}
+            initialSize={size}
+            buttonText="Print Receipt"
+          />
+        </div>
       </div>
       <PaymentVoucherTemplate business={business} voucher={voucher} />
     </div>

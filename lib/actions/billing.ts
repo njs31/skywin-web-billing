@@ -7,6 +7,7 @@ import {
   updateSaleReturn as updateSaleReturnMutation,
 } from "@/lib/queries/returns";
 import { createPartyPayment as createPartyPaymentMutation } from "@/lib/queries/payments";
+import { ZodError } from "zod";
 import { adjustStock as adjustStockMutation } from "@/lib/queries/reports";
 import { createProduct as createProductMutation } from "@/lib/queries/products";
 import { updateSettings as updateSettingsMutation, type AppSettings } from "@/lib/settings";
@@ -94,6 +95,52 @@ export async function createPartyPayment(
   await requireUser();
   await assertCustomerAccess(input.customerId);
   return createPartyPaymentMutation(input);
+}
+
+function receiptSaveError(err: unknown) {
+  if (err instanceof ZodError) {
+    return err.issues[0]?.message ?? "Check the receipt and try again.";
+  }
+  if (err instanceof Error) {
+    const message = err.message.trim();
+    if (
+      message &&
+      !message.startsWith("Failed query") &&
+      !message.includes("Server Components") &&
+      message.length <= 240
+    ) {
+      return message;
+    }
+  }
+  return "Couldn't save this receipt. Please try again.";
+}
+
+export async function updateReceipt(
+  id: number,
+  input: {
+    customerId: number;
+    amount: number;
+    paymentMode: "cash" | "upi" | "credit" | "card" | "cheque" | "neft";
+    referenceNo?: string;
+    notes?: string;
+    allocations: { saleId: number; amount: number }[];
+  }
+) {
+  await requireUser();
+  const { getPartyPaymentById, updateReceipt: updateReceiptMutation } =
+    await import("@/lib/queries/payments");
+  const existing = await getPartyPaymentById(id);
+  if (!existing || existing.type !== "receipt") {
+    return { ok: false as const, error: "Receipt not found." };
+  }
+  if (existing.customerId) await assertCustomerAccess(existing.customerId);
+  await assertCustomerAccess(input.customerId);
+  try {
+    await updateReceiptMutation(id, input);
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: receiptSaveError(err) };
+  }
 }
 
 export async function getNextReceiptVoucherNo() {

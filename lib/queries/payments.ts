@@ -187,6 +187,142 @@ export async function createPartyPayment(input: z.infer<typeof paymentSchema>) {
   return payment;
 }
 
+const updateReceiptSchema = z.object({
+  customerId: z.number().int().positive(),
+  amount: z.number().positive(),
+  paymentMode: z.enum(["cash", "upi", "credit", "card", "cheque", "neft"]),
+  referenceNo: z.string().optional(),
+  notes: z.string().optional(),
+  allocations: z
+    .array(
+      z.object({
+        saleId: z.number().int().positive(),
+        amount: z.number().positive(),
+      })
+    )
+    .default([]),
+});
+
+export async function updateReceipt(
+  id: number,
+  input: z.infer<typeof updateReceiptSchema>
+) {
+  const { safeRevalidatePath: revalidatePath, safeRevalidateTag: revalidateTag } =
+    await import("@/lib/revalidate");
+  const data = updateReceiptSchema.parse(input);
+  const allocations = data.allocations ?? [];
+  const allocatedTotal = round2(
+    allocations.reduce((sum, row) => sum + row.amount, 0)
+  );
+  if (allocations.length > 0 && Math.abs(allocatedTotal - data.amount) > 0.01) {
+    throw new Error("Allocation total must equal receipt amount");
+  }
+
+  await db.transaction(async (tx) => {
+    const [payment] = await tx
+      .select({ id: partyPayments.id, type: partyPayments.type })
+      .from(partyPayments)
+      .where(eq(partyPayments.id, id))
+      .for("update")
+      .limit(1);
+
+    if (!payment || payment.type !== "receipt") {
+      throw new Error("Receipt not found");
+    }
+
+    const existing = await tx
+      .select({
+        saleId: partyPaymentAllocations.saleId,
+        amount: partyPaymentAllocations.amount,
+      })
+      .from(partyPaymentAllocations)
+      .where(eq(partyPaymentAllocations.paymentId, id));
+
+    for (const row of existing) {
+      if (!row.saleId) continue;
+      await tx
+        .update(sales)
+        .set({
+          paidAmount: sql`greatest(0, coalesce(${sales.paidAmount}::numeric, 0) - ${row.amount}::numeric)`,
+        })
+        .where(eq(sales.id, row.saleId));
+    }
+
+    await tx
+      .delete(partyPaymentAllocations)
+      .where(eq(partyPaymentAllocations.paymentId, id));
+
+    await tx
+      .update(partyPayments)
+      .set({
+        customerId: data.customerId,
+        amount: data.amount.toFixed(2),
+        paymentMode: data.paymentMode,
+        referenceNo: data.referenceNo || null,
+        notes: data.notes || null,
+      })
+      .where(eq(partyPayments.id, id));
+
+    for (const row of allocations) {
+      const [sale] = await tx
+        .select({
+          invoiceNo: sales.invoiceNo,
+          grandTotal: sales.grandTotal,
+          paidAmount: sales.paidAmount,
+          customerId: sales.customerId,
+          status: sales.status,
+        })
+        .from(sales)
+        .where(eq(sales.id, row.saleId))
+        .limit(1);
+      if (!sale) throw new Error(`Invoice #${row.saleId} not found.`);
+      if (sale.status === "cancelled") {
+        throw new Error(`Invoice ${sale.invoiceNo} is cancelled.`);
+      }
+      if (sale.customerId !== data.customerId) {
+        throw new Error(
+          `Invoice ${sale.invoiceNo} does not belong to this customer.`
+        );
+      }
+      const balance = round2(
+        parseFloat(sale.grandTotal) - parseFloat(sale.paidAmount ?? "0")
+      );
+      if (row.amount - balance > 0.01) {
+        throw new Error(
+          `Allocation ₹${row.amount.toFixed(2)} exceeds balance ₹${balance.toFixed(2)} on ${sale.invoiceNo}.`
+        );
+      }
+
+      await tx.insert(partyPaymentAllocations).values({
+        paymentId: id,
+        saleId: row.saleId,
+        amount: row.amount.toFixed(2),
+      });
+
+      await tx
+        .update(sales)
+        .set({
+          paidAmount: sql`least(
+            ${sales.grandTotal}::numeric,
+            coalesce(${sales.paidAmount}::numeric, 0) + ${row.amount}
+          )`,
+        })
+        .where(eq(sales.id, row.saleId));
+    }
+  });
+
+  revalidateTag("customers", "max");
+  revalidateTag("suppliers", "max");
+  revalidateTag("purchases", "max");
+  revalidatePath("/accounts/receipts");
+  revalidatePath(`/accounts/receipts/${id}`);
+  revalidatePath("/accounts/payments");
+  revalidatePath("/accounts/outstanding");
+  revalidatePath("/accounts/credit");
+  revalidatePath("/invoices");
+  revalidatePath("/purchases");
+}
+
 export async function getOutstandingSalesForCustomer(customerId: number) {
   return db
     .select({

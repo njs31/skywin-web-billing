@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   createPartyPayment,
   getOutstandingSalesForCustomer,
+  updateReceipt,
 } from "@/lib/actions/billing";
 import type { CustomerPickerOption } from "@/lib/queries/customers";
+import { mergeReceiptBills, type ReceiptShare } from "@/lib/receipt-edit";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,60 +32,103 @@ type OutstandingSale = {
   balance: string;
 };
 
+type ReceiptMode = "cash" | "upi" | "credit" | "card" | "cheque" | "neft";
+
+export type ReceiptEditInitial = {
+  id: number;
+  customerId: number;
+  voucherNo: string;
+  amount: string;
+  paymentMode: ReceiptMode;
+  referenceNo: string;
+  notes: string;
+  requireAllocation: boolean;
+  allocations: Record<number, string>;
+  shares: ReceiptShare[];
+};
+
 export function ReceiptForm({
   nextVoucherNo,
   initialCustomer,
   initialSaleId,
+  editing,
 }: {
   nextVoucherNo?: string;
   initialCustomer?: CustomerPickerOption | null;
   initialSaleId?: number;
+  editing?: ReceiptEditInitial;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerPickerOption | null>(initialCustomer ?? null);
   const [customerId, setCustomerId] = useState(
-    initialCustomer ? String(initialCustomer.id) : ""
+    editing?.customerId
+      ? String(editing.customerId)
+      : initialCustomer
+        ? String(initialCustomer.id)
+        : ""
   );
-  const [amount, setAmount] = useState("");
-  const [paymentMode, setPaymentMode] = useState<
-    "cash" | "upi" | "card" | "cheque" | "neft"
-  >("cash");
-  const [referenceNo, setReferenceNo] = useState("");
-  const [notes, setNotes] = useState("");
+  const [amount, setAmount] = useState(editing?.amount ?? "");
+  const [paymentMode, setPaymentMode] = useState<ReceiptMode>(
+    editing?.paymentMode ?? "cash"
+  );
+  const [referenceNo, setReferenceNo] = useState(editing?.referenceNo ?? "");
+  const [notes, setNotes] = useState(editing?.notes ?? "");
   const [bills, setBills] = useState<OutstandingSale[]>([]);
-  const [allocations, setAllocations] = useState<Record<number, string>>({});
+  const [allocations, setAllocations] = useState<Record<number, string>>(
+    editing?.allocations ?? {}
+  );
   const [error, setError] = useState("");
-  const [loadingBills, setLoadingBills] = useState(false);
+  const [loadingBills, setLoadingBills] = useState(
+    Boolean(editing?.customerId || initialCustomer)
+  );
 
-  useEffect(() => {
-    if (!customerId) {
-      setBills([]);
+  const onCustomerChange = (value: string) => {
+    setCustomerId(value);
+    setBills([]);
+    setError("");
+    if (!value) {
+      setLoadingBills(false);
       setAllocations({});
       return;
     }
-    let cancelled = false;
     setLoadingBills(true);
+    if (editing && value === String(editing.customerId)) {
+      setAllocations(editing.allocations);
+    } else {
+      setAllocations({});
+    }
+  };
+
+  useEffect(() => {
+    if (!customerId) return;
+    let cancelled = false;
     getOutstandingSalesForCustomer(parseInt(customerId, 10))
       .then((rows) => {
-        if (!cancelled) {
-          setBills(rows as OutstandingSale[]);
-          if (initialSaleId) {
-            const bill = (rows as OutstandingSale[]).find(
-              (row) => row.id === initialSaleId
-            );
-            if (bill) {
-              const due = toNumber(bill.balance).toFixed(2);
-              setAllocations({ [bill.id]: due });
-              setAmount(due);
-            } else {
-              setAllocations({});
-            }
+        if (cancelled) return;
+        const sameReceipt =
+          editing && customerId === String(editing.customerId);
+        const loaded = rows as OutstandingSale[];
+        setBills(
+          sameReceipt ? mergeReceiptBills(loaded, editing.shares) : loaded
+        );
+        if (sameReceipt) return;
+        if (initialSaleId) {
+          const bill = loaded.find((row) => row.id === initialSaleId);
+          if (bill) {
+            const due = toNumber(bill.balance).toFixed(2);
+            setAllocations({ [bill.id]: due });
+            setAmount(due);
           } else {
             setAllocations({});
           }
+        } else {
+          setAllocations({});
         }
+      })
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load this customer's invoices.");
       })
       .finally(() => {
         if (!cancelled) setLoadingBills(false);
@@ -91,7 +136,7 @@ export function ReceiptForm({
     return () => {
       cancelled = true;
     };
-  }, [customerId, initialSaleId]);
+  }, [customerId, initialSaleId, editing]);
 
   const allocatedTotal = useMemo(
     () =>
@@ -135,18 +180,37 @@ export function ReceiptForm({
       }))
       .filter((row) => row.amount > 0);
 
-    if (allocationRows.length === 0) {
+    const requireAllocation = editing ? editing.requireAllocation : true;
+    if (allocationRows.length === 0 && requireAllocation) {
       setError("Allocate the receipt to at least one outstanding invoice.");
       return;
     }
 
     const total = allocationRows.reduce((sum, row) => sum + row.amount, 0);
-    if (Math.abs(total - receiptAmount) > 0.01) {
+    if (allocationRows.length > 0 && Math.abs(total - receiptAmount) > 0.01) {
       setError("Allocation total must equal the receipt amount.");
       return;
     }
 
     startTransition(async () => {
+      if (editing) {
+        const result = await updateReceipt(editing.id, {
+          customerId: parseInt(customerId, 10),
+          amount: receiptAmount,
+          paymentMode,
+          referenceNo: referenceNo || undefined,
+          notes: notes || undefined,
+          allocations: allocationRows,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        router.push(`/accounts/receipts/${editing.id}`);
+        router.refresh();
+        return;
+      }
+
       try {
         await createPartyPayment({
           type: "receipt",
@@ -174,7 +238,12 @@ export function ReceiptForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {nextVoucherNo ? (
+        {editing ? (
+          <div>
+            <Label>Voucher number</Label>
+            <Input value={editing.voucherNo} readOnly className="bg-slate-50 font-mono" />
+          </div>
+        ) : nextVoucherNo ? (
           <div>
             <Label>Voucher number</Label>
             <Input value={nextVoucherNo} readOnly className="bg-slate-50 font-mono" />
@@ -189,7 +258,7 @@ export function ReceiptForm({
             selected={selectedCustomer}
             onSelect={(customer) => {
               setSelectedCustomer(customer);
-              setCustomerId(customer ? String(customer.id) : "");
+              onCustomerChange(customer ? String(customer.id) : "");
             }}
           />
         </div>
@@ -208,9 +277,7 @@ export function ReceiptForm({
           <Label>Payment Mode</Label>
           <Select
             value={paymentMode}
-            onValueChange={(v) =>
-              setPaymentMode(v as "cash" | "upi" | "card" | "cheque" | "neft")
-            }
+            onValueChange={(v) => setPaymentMode(v as ReceiptMode)}
           >
             <SelectTrigger>
               <SelectValue />
@@ -221,6 +288,9 @@ export function ReceiptForm({
               <SelectItem value="card">Card</SelectItem>
               <SelectItem value="cheque">Cheque</SelectItem>
               <SelectItem value="neft">NEFT</SelectItem>
+              {paymentMode === "credit" ? (
+                <SelectItem value="credit">Credit</SelectItem>
+              ) : null}
             </SelectContent>
           </Select>
         </div>
@@ -241,9 +311,16 @@ export function ReceiptForm({
       {customerId && (
         <div className="space-y-2 rounded-lg border border-slate-200 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-slate-800">
-              Allocate to outstanding invoices
-            </p>
+            <div>
+              <p className="text-sm font-semibold text-slate-800">
+                Allocate to outstanding invoices
+              </p>
+              {editing && !editing.requireAllocation ? (
+                <p className="text-xs text-slate-500">
+                  Leave this blank to keep the receipt as an advance.
+                </p>
+              ) : null}
+            </div>
             <div className="flex items-center gap-3 text-xs text-slate-500">
               <span>
                 Allocated: {formatCurrency(allocatedTotal)} /{" "}
@@ -299,7 +376,7 @@ export function ReceiptForm({
       )}
 
       <Button type="submit" disabled={isPending}>
-        {isPending ? "Saving..." : "Record Receipt"}
+        {isPending ? "Saving..." : editing ? "Save changes" : "Record Receipt"}
       </Button>
     </form>
   );
