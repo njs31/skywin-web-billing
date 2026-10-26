@@ -204,6 +204,12 @@ export async function getCustomerOutstanding(customerId: number): Promise<number
   return query(customerId);
 }
 
+export async function searchCustomersForPicker(query: string) {
+  await requireUser();
+  const { getCustomersForPicker } = await import("@/lib/queries/customers");
+  return getCustomersForPicker(query);
+}
+
 export async function getOutstandingSalesForCustomer(customerId: number) {
   await requireUser();
   await assertCustomerAccess(customerId);

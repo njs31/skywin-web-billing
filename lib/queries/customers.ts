@@ -7,6 +7,14 @@ import {
   normalizeEnteredGstin,
 } from "@/lib/gst";
 
+/**
+ * Full customer rows for POS / returns / quotations client-side pickers.
+ *
+ * Warning: with no search and no dealer scope this has **no LIMIT**. That is
+ * what froze `/accounts/receipts` — two Radix Selects hydrated every farmer
+ * imported from the Field directory. Receipts (and any other typeahead that
+ * must stay responsive) must use `getCustomersForPicker` instead.
+ */
 export async function getCustomers(search?: string) {
   const { getScopedCustomerIds } = await import("@/lib/actions/auth");
   const { inArray } = await import("drizzle-orm");
@@ -33,6 +41,86 @@ export async function getCustomers(search?: string) {
   }
 
   return query.orderBy(asc(customers.name));
+}
+
+/** Hard cap for typeahead results so a picker never ships the full ledger. */
+export const CUSTOMER_PICKER_LIMIT = 50;
+
+export type CustomerPickerOption = {
+  id: number;
+  name: string;
+  phone: string | null;
+  gstin: string | null;
+};
+
+/** Strip SQL LIKE wildcards from a picker query. Pure — unit-tested. */
+export function customerSearchNeedle(q?: string): string {
+  return (q ?? "").trim().replace(/[%_]/g, "");
+}
+
+/** Clamp a caller-supplied limit to `(0, CUSTOMER_PICKER_LIMIT]`. */
+export function resolveCustomerPickerLimit(limit?: number): number {
+  if (limit == null || !Number.isFinite(limit)) return CUSTOMER_PICKER_LIMIT;
+  return Math.min(CUSTOMER_PICKER_LIMIT, Math.max(1, Math.floor(limit)));
+}
+
+export function toCustomerPickerOption(customer: {
+  id: number;
+  name: string;
+  phone: string | null;
+  gstin: string | null;
+}): CustomerPickerOption {
+  return {
+    id: customer.id,
+    name: customer.name,
+    phone: customer.phone,
+    gstin: customer.gstin,
+  };
+}
+
+/**
+ * Slim, always-capped customer list for receipt / payment typeaheads.
+ * Empty search still returns at most `CUSTOMER_PICKER_LIMIT` rows — never
+ * the whole table — so opening Receipts stays cheap after the Field farmer
+ * import.
+ */
+export async function getCustomersForPicker(
+  search?: string,
+  limit?: number
+): Promise<CustomerPickerOption[]> {
+  const { getScopedCustomerIds } = await import("@/lib/actions/auth");
+  const { inArray } = await import("drizzle-orm");
+  const customerIds = await getScopedCustomerIds();
+
+  const conditions: SQL[] = [];
+  const needle = customerSearchNeedle(search);
+  if (needle) {
+    const pattern = `%${needle}%`;
+    const searchCond = or(
+      ilike(customers.name, pattern),
+      ilike(customers.phone, pattern),
+      ilike(customers.gstin, pattern)
+    );
+    if (searchCond) conditions.push(searchCond);
+  }
+
+  if (customerIds !== null) {
+    if (customerIds.length === 0) return [];
+    conditions.push(inArray(customers.id, customerIds));
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  return db
+    .select({
+      id: customers.id,
+      name: customers.name,
+      phone: customers.phone,
+      gstin: customers.gstin,
+    })
+    .from(customers)
+    .where(where)
+    .orderBy(asc(customers.name))
+    .limit(resolveCustomerPickerLimit(limit));
 }
 
 export type CustomerListType = "all" | "retail" | "wholesale" | "farmer";

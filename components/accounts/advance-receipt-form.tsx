@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createPartyPayment } from "@/lib/actions/billing";
-import type { Customer } from "@/db/schema";
+import type { CustomerPickerOption } from "@/lib/queries/customers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,16 +14,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
+import { CustomerSearchSelect } from "@/components/accounts/customer-search-select";
 
 export function AdvanceReceiptForm({
-  customers,
   nextVoucherNo,
 }: {
-  customers: Customer[];
   nextVoucherNo?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<CustomerPickerOption | null>(null);
   const [customerId, setCustomerId] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState<
@@ -54,6 +55,7 @@ export function AdvanceReceiptForm({
           allocations: [],
         });
         setCustomerId("");
+        setSelectedCustomer(null);
         setAmount("");
         setReferenceNo("");
         setNotes("");
@@ -85,18 +87,13 @@ export function AdvanceReceiptForm({
         ) : null}
         <div>
           <Label>Customer *</Label>
-          <Select value={customerId} onValueChange={setCustomerId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select customer" />
-            </SelectTrigger>
-            <SelectContent>
-              {customers.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CustomerSearchSelect
+            selected={selectedCustomer}
+            onSelect={(customer) => {
+              setSelectedCustomer(customer);
+              setCustomerId(customer ? String(customer.id) : "");
+            }}
+          />
         </div>
         <div>
           <Label>Amount *</Label>

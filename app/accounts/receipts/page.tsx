@@ -4,7 +4,10 @@ import {
   getReceiptCount,
   RECEIPTS_PAGE_SIZE,
 } from "@/lib/queries/payments";
-import { getCustomers } from "@/lib/queries/customers";
+import {
+  getCustomerById,
+  toCustomerPickerOption,
+} from "@/lib/queries/customers";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,13 +51,21 @@ export default async function ReceiptsPage({
   const from = cleanDate(fromParam);
   const to = cleanDate(toParam);
   const filters = { from, to };
+  const initialCustomerId =
+    customerParam && Number.isFinite(parseInt(customerParam, 10))
+      ? parseInt(customerParam, 10)
+      : undefined;
 
-  const [receipts, totalCount, customers, nextVoucherNo] = await Promise.all([
-    getReceipts(page, RECEIPTS_PAGE_SIZE, filters),
-    getReceiptCount(filters),
-    getCustomers(),
-    peekNextReceiptVoucherNo(),
-  ]);
+  const [receipts, totalCount, initialCustomerRow, nextVoucherNo] =
+    await Promise.all([
+      getReceipts(page, RECEIPTS_PAGE_SIZE, filters),
+      getReceiptCount(filters),
+      initialCustomerId ? getCustomerById(initialCustomerId) : Promise.resolve(null),
+      peekNextReceiptVoucherNo(),
+    ]);
+  const initialCustomer = initialCustomerRow
+    ? toCustomerPickerOption(initialCustomerRow)
+    : undefined;
 
   const totalPages = Math.max(1, Math.ceil(totalCount / RECEIPTS_PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -84,13 +95,8 @@ export default async function ReceiptsPage({
         </CardHeader>
         <CardContent>
           <ReceiptForm
-            customers={customers}
             nextVoucherNo={nextVoucherNo}
-            initialCustomerId={
-              customerParam && Number.isFinite(parseInt(customerParam, 10))
-                ? parseInt(customerParam, 10)
-                : undefined
-            }
+            initialCustomer={initialCustomer}
             initialSaleId={
               saleParam && Number.isFinite(parseInt(saleParam, 10))
                 ? parseInt(saleParam, 10)
@@ -105,10 +111,7 @@ export default async function ReceiptsPage({
           <CardTitle className="text-base">Advance Receipt</CardTitle>
         </CardHeader>
         <CardContent>
-          <AdvanceReceiptForm
-            customers={customers}
-            nextVoucherNo={nextVoucherNo}
-          />
+          <AdvanceReceiptForm nextVoucherNo={nextVoucherNo} />
         </CardContent>
       </Card>
 
