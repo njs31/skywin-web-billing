@@ -27,7 +27,7 @@ export async function proxy(request: NextRequest) {
   const fieldSite = requestHost(request) === FIELD_HOST;
 
   if (fieldSite) {
-    if (pathname === "/login" || pathname === "/privacy") return NextResponse.next();
+    if (pathname === "/login" || pathname === "/privacy" || pathname === "/delete-account") return NextResponse.next();
     if (!session) return NextResponse.redirect(new URL("/login", request.url));
     if (!canManageField(session.role)) {
       return NextResponse.redirect(BILLING_ORIGIN);
@@ -41,6 +41,7 @@ export async function proxy(request: NextRequest) {
   if (
     pathname === "/login" ||
     pathname === "/privacy" ||
+    pathname === "/delete-account" ||
     pathname === "/pay" ||
     pathname.startsWith("/pay/")
   ) {

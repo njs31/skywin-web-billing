@@ -17,7 +17,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <main className="h-screen w-screen overflow-auto bg-[#050605]">{children}</main>;
   }
 
-  if (pathname === "/privacy") {
+  if (pathname === "/privacy" || pathname === "/delete-account") {
     return <main className="min-h-screen overflow-auto bg-[#F6F3EC]">{children}</main>;
   }
 
