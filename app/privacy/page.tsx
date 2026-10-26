@@ -159,7 +159,7 @@ export default function PrivacyPage() {
             Email: <a className="underline" href={`mailto:${BUSINESS.email}`}>{BUSINESS.email}</a>
             <br />
             Website:{" "}
-            <a className="underline" href="https://skywingroups.com">skywingroups.com</a>
+            <a className="underline" href="https://www.skywingroup.com">skywingroup.com</a>
           </p>
         </Section>
       </div>
