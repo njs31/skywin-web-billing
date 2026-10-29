@@ -1,6 +1,21 @@
 import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, farms, users } from "@/db/schema";
+import { FIELD_OFFICER_ROLES } from "@/lib/user-roles";
+import {
+  digitsPhone,
+  farmerFieldErrorList,
+  farmerFieldErrors,
+  loginPhoneChanged,
+  normalizePaymentMode,
+  FIELD_PAYMENT_MODES,
+  type FieldPaymentMode,
+} from "@/lib/field-farmer-rules";
+
+export { digitsPhone, normalizePaymentMode, FIELD_PAYMENT_MODES };
+export type { FieldPaymentMode };
+
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type FieldFarmerApproval = "pending" | "approved" | "rejected";
 
@@ -15,14 +30,6 @@ export type FieldFarmInput = {
   validated?: boolean;
 };
 
-export const FIELD_PAYMENT_MODES = ["upi", "cash", "credit", "card", "cheque", "neft"] as const;
-export type FieldPaymentMode = (typeof FIELD_PAYMENT_MODES)[number];
-
-export function normalizePaymentMode(value: unknown): FieldPaymentMode | undefined {
-  const v = String(value ?? "").trim().toLowerCase();
-  return (FIELD_PAYMENT_MODES as readonly string[]).includes(v) ? (v as FieldPaymentMode) : undefined;
-}
-
 export type FieldFarmerInput = {
   name: string;
   phone?: string;
@@ -31,6 +38,7 @@ export type FieldFarmerInput = {
   address?: string;
   pinCode?: string;
   language?: "en" | "ta";
+  territory?: string;
   approval?: FieldFarmerApproval;
   rewardPoints?: number;
   source?: "imported" | "registered";
@@ -43,11 +51,6 @@ export type FieldFarmerInput = {
   acre?: string;
   farms?: FieldFarmInput[];
 };
-
-function digitsPhone(phone?: string | null) {
-  const d = (phone ?? "").replace(/\D/g, "");
-  return d.length > 10 ? d.slice(-10) : d;
-}
 
 function titleCaseApproval(value: string | null | undefined): "Approved" | "Pending" | "Rejected" {
   const v = (value ?? "pending").toLowerCase();
@@ -75,7 +78,6 @@ function farmerConditions(filter?: {
         ilike(customers.village, pattern),
         ilike(customers.taluk, pattern),
         ilike(customers.fieldOfficerName, pattern),
-        ilike(customers.approval, pattern),
         ilike(customers.crop, pattern),
         ilike(customers.acre, pattern),
         sql`exists (
@@ -205,6 +207,7 @@ export async function upsertFieldFarmer(input: FieldFarmerInput, existingId?: nu
     language: input.language ?? "en",
     approval,
     type: "farmer" as const,
+    ...(input.territory !== undefined ? { taluk: input.territory.trim() || null } : {}),
     ...(input.crop !== undefined || firstFarm
       ? {
           crop: input.crop?.trim() || input.farms?.map((f) => f.crop).filter(Boolean).join(", ") || null,
@@ -263,18 +266,124 @@ export async function upsertFieldFarmer(input: FieldFarmerInput, existingId?: nu
   }
 
   if (input.farms) {
-    await replaceFarms(farmer.id, input.farms);
+    await replaceFarms(db, farmer.id, input.farms);
   }
 
   return getFieldFarmer(farmer.id);
 }
 
-async function replaceFarms(customerId: number, next: FieldFarmInput[]) {
-  const existing = await db.select().from(farms).where(eq(farms.customerId, customerId));
+function assertFarmerFields(input: FieldFarmerInput, requirePhone: boolean) {
+  const errors = farmerFieldErrorList(farmerFieldErrors({ ...input, requirePhone }));
+  if (errors.length) throw new Error(errors.join(" "));
+}
+
+async function assertOfficer(officerId: number | null | undefined) {
+  if (!officerId) return;
+  const [officer] = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(and(eq(users.id, officerId), inArray(users.role, [...FIELD_OFFICER_ROLES])))
+    .limit(1);
+  if (!officer) throw new Error("Choose a field officer from the list.");
+  return officer;
+}
+
+function profileColumns(input: FieldFarmerInput) {
+  return {
+    name: input.name.trim(),
+    altPhone: input.altPhone?.trim() || null,
+    village: input.village?.trim() || null,
+    address: input.address?.trim() || null,
+    pinCode: input.pinCode?.trim() || null,
+    language: input.language === "en" ? "en" : "ta",
+    ...(input.territory !== undefined ? { taluk: input.territory.trim() || null } : {}),
+    ...(input.crop !== undefined || input.farms
+      ? {
+          crop:
+            input.crop?.trim() ||
+            input.farms?.map((farm) => farm.crop).filter(Boolean).join(", ") ||
+            null,
+          acre:
+            input.acre?.trim() ||
+            (input.farms
+              ? String(input.farms.reduce((sum, farm) => sum + (Number(farm.acres) || 0), 0))
+              : null),
+        }
+      : {}),
+    ...(input.rewardPoints !== undefined ? { rewardPoints: Math.round(input.rewardPoints) } : {}),
+    ...(input.assignedOfficerId !== undefined ? { assignedOfficerId: input.assignedOfficerId } : {}),
+    ...(input.fieldOfficerName !== undefined
+      ? { fieldOfficerName: input.fieldOfficerName?.trim() || null }
+      : {}),
+    ...(input.photoUrl !== undefined ? { photoUrl: input.photoUrl?.trim() || null } : {}),
+    ...(input.paymentMode !== undefined ? { paymentMode: input.paymentMode } : {}),
+  };
+}
+
+/** Insert a farmer. A phone that already belongs to someone is rejected. */
+export async function createFieldFarmer(input: FieldFarmerInput) {
+  assertFarmerFields(input, true);
+  const phone = digitsPhone(input.phone);
+  const [existing] = await db
+    .select({ id: customers.id, name: customers.name })
+    .from(customers)
+    .where(sql`regexp_replace(coalesce(${customers.phone}, ''), '\\D', '', 'g') = ${phone}`)
+    .limit(1);
+  if (existing) throw new Error(`${existing.name} already uses this phone.`);
+  const officer = await assertOfficer(input.assignedOfficerId);
+  const [farmer] = await db
+    .insert(customers)
+    .values({
+      ...profileColumns(input),
+      phone,
+      type: "farmer",
+      approval: "approved",
+      rewardPoints: input.rewardPoints ?? 0,
+      source: "registered",
+      paymentMode: input.paymentMode ?? "upi",
+      fieldOfficerName: officer?.name ?? input.fieldOfficerName?.trim() ?? null,
+    })
+    .returning();
+  if (input.farms?.length) await replaceFarms(db, farmer.id, input.farms);
+  return getFieldFarmer(farmer.id);
+}
+
+/**
+ * Update one farmer by id. The login phone is left unchanged.
+ * Approval is left unchanged. Related sales keep their own customer id.
+ */
+export async function updateFieldFarmer(id: number, input: FieldFarmerInput) {
+  assertFarmerFields(input, false);
+  const current = await getFieldFarmer(id);
+  if (!current) throw new Error("Farmer not found");
+  if (loginPhoneChanged(current.phone, input.phone)) {
+    throw new Error("The login phone cannot be changed here. It is how this farmer signs in.");
+  }
+  const officer = await assertOfficer(input.assignedOfficerId);
+  const columns = {
+    ...profileColumns(input),
+    ...(officer ? { fieldOfficerName: officer.name } : {}),
+  };
+
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(customers)
+      .set(columns)
+      .where(and(eq(customers.id, id), eq(customers.type, "farmer")))
+      .returning({ id: customers.id });
+    if (!updated) throw new Error("Farmer not found");
+    if (input.farms) await replaceFarms(tx, id, input.farms);
+  });
+
+  return getFieldFarmer(id);
+}
+
+async function replaceFarms(client: DbOrTx, customerId: number, next: FieldFarmInput[]) {
+  const existing = await client.select().from(farms).where(eq(farms.customerId, customerId));
   const keep = new Set(next.map((farm) => farm.id).filter((id): id is number => Number.isFinite(id)));
   for (const farm of existing) {
     if (!keep.has(farm.id)) {
-      await db.delete(farms).where(eq(farms.id, farm.id));
+      await client.delete(farms).where(eq(farms.id, farm.id));
     }
   }
   for (const farm of next) {
@@ -289,9 +398,9 @@ async function replaceFarms(customerId: number, next: FieldFarmInput[]) {
       validated: farm.validated ?? false,
     };
     if (farm.id) {
-      await db.update(farms).set(values).where(eq(farms.id, farm.id));
+      await client.update(farms).set(values).where(and(eq(farms.id, farm.id), eq(farms.customerId, customerId)));
     } else {
-      await db.insert(farms).values(values);
+      await client.insert(farms).values(values);
     }
   }
 }

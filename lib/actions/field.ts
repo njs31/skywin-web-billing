@@ -21,13 +21,14 @@ import {
   updateFieldCategory,
   updateFieldSubcategory,
 } from "@/lib/queries/field-catalog";
+import { recordActivity } from "@/lib/queries/activity-logs";
 import {
   countFieldFarmers,
-  countPendingFarmers,
+  createFieldFarmer,
   getFieldFarmer,
   listFieldFarmers,
   setFarmerApproval,
-  upsertFieldFarmer,
+  updateFieldFarmer,
   type FieldFarmerApproval,
   type FieldFarmerInput,
 } from "@/lib/queries/field-farmers";
@@ -50,11 +51,7 @@ function touchField(paths: string[] = []) {
 
 export async function fieldOverview() {
   await requireFieldAdmin();
-  const [catalog, pendingFarmers, orders] = await Promise.all([
-    getFieldCatalogTree(),
-    countPendingFarmers(),
-    listFieldOrders(),
-  ]);
+  const [catalog, orders] = await Promise.all([getFieldCatalogTree(), listFieldOrders()]);
   const skuCount = catalog.reduce(
     (sum, category) =>
       sum + category.subs.reduce((inner, sub) => inner + sub.productIds.length, 0),
@@ -64,7 +61,6 @@ export async function fieldOverview() {
     categories: catalog.length,
     subcategories: catalog.reduce((sum, category) => sum + category.subs.length, 0),
     skuCount,
-    pendingFarmers,
     todayCount: orders.todayCount,
     todayTotal: orders.todayTotal,
     monthCount: orders.monthCount,
@@ -261,10 +257,50 @@ export async function fieldFarmerDetail(id: number) {
 }
 
 export async function saveFieldFarmer(input: FieldFarmerInput, id?: number) {
-  await requireFieldAdmin();
-  const row = await upsertFieldFarmer(input, id);
-  touchField(row ? [`/field/farmers/${row.id}`] : []);
+  const user = await requireFieldAdmin();
+  const before = id ? await getFieldFarmer(id) : null;
+  if (id && !before) throw new Error("Farmer not found");
+  const row = id ? await updateFieldFarmer(id, input) : await createFieldFarmer(input);
+  if (!row) throw new Error("Farmer was not saved");
+  const changed = before ? farmerChangeLabels(before, row) : [];
+  await recordActivity({
+    action: id ? "field.farmer.update" : "field.farmer.create",
+    message: id
+      ? changed.length
+        ? `Updated farmer ${row.id} (${changed.join(", ")})`
+        : `Updated farmer ${row.id}`
+      : `Added farmer ${row.id}`,
+    entityType: "customer",
+    entityId: row.id,
+    actor: { id: user.id, name: user.name },
+  });
+  touchField([`/field/farmers/${row.id}`]);
   return row;
+}
+
+function farmerChangeLabels(
+  before: NonNullable<Awaited<ReturnType<typeof getFieldFarmer>>>,
+  after: NonNullable<Awaited<ReturnType<typeof getFieldFarmer>>>
+) {
+  const labels: string[] = [];
+  const pairs: Array<[string, string, string]> = [
+    ["name", before.name, after.name],
+    ["village", before.village, after.village],
+    ["address", before.address, after.address],
+    ["pin", before.pin, after.pin],
+    ["territory", before.territory, after.territory],
+    ["alternate phone", before.altPhone, after.altPhone],
+    ["language", before.language, after.language],
+    ["officer", String(before.assignedOfficerId ?? ""), String(after.assignedOfficerId ?? "")],
+    ["payment", before.paymentMode, after.paymentMode],
+    ["reward points", String(before.rewardPoints), String(after.rewardPoints)],
+    ["photo", before.photo ?? "", after.photo ?? ""],
+  ];
+  for (const [label, left, right] of pairs) {
+    if (left !== right) labels.push(label);
+  }
+  if (JSON.stringify(before.farms) !== JSON.stringify(after.farms)) labels.push("farms");
+  return labels;
 }
 
 export async function approveFieldFarmer(id: number, approval: FieldFarmerApproval) {

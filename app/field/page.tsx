@@ -33,12 +33,6 @@ export default async function FieldOverviewPage() {
       sub: "Pinned to catalogue rails",
     },
     {
-      label: "Awaiting approval",
-      value: String(data.pendingFarmers),
-      href: "/field/farmers?approval=pending",
-      sub: data.pendingFarmers === 1 ? "Farmer to review" : "Farmers to review",
-    },
-    {
       label: "Today's UPI",
       value: formatCurrency(data.todayTotal),
       href: "/field/orders",
@@ -58,13 +52,13 @@ export default async function FieldOverviewPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-[#1E3317]">Overview</h1>
           <p className="mt-1 text-sm text-[#5E6B62]">
-            Catalogue, farmer approvals, and field invoices for {todayLabel}.
+            Catalogue, farmers, and field invoices for {todayLabel}.
           </p>
         </div>
         <RefreshButton />
       </div>
 
-      <section aria-label="Operations summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section aria-label="Operations summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <Link
             key={card.label}
@@ -80,7 +74,7 @@ export default async function FieldOverviewPage() {
         ))}
       </section>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(16rem,0.8fr)]">
+      <div>
         <section className="min-w-0">
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <h2 className="text-sm font-semibold text-[#1E3317]">Recent field orders</h2>
@@ -139,32 +133,6 @@ export default async function FieldOverviewPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-[#1E3317]">Action required</h2>
-          <div className="rounded-lg border border-[#1E3317]/10 bg-white">
-            {data.pendingFarmers > 0 ? (
-              <Link
-                href="/field/farmers?approval=pending"
-                className="block px-4 py-3 hover:bg-[#F7F6F1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1E3317]"
-              >
-                <p className="text-sm font-medium text-[#1E3317]">
-                  {data.pendingFarmers} {data.pendingFarmers === 1 ? "farmer" : "farmers"} awaiting approval
-                </p>
-                <p className="mt-1 text-xs leading-5 text-[#5E6B62]">
-                  Open the pending list to approve or reject them.
-                </p>
-              </Link>
-            ) : (
-              <div className="px-4 py-8 text-center">
-                <p className="text-sm font-medium text-[#1E3317]">Nothing is waiting</p>
-                <p className="mt-1 text-xs leading-5 text-[#5E6B62]">
-                  New farmer sign-ups that need approval will appear here.
-                </p>
               </div>
             )}
           </div>
