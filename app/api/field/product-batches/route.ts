@@ -1,8 +1,11 @@
 import { NextRequest } from "next/server";
+import { inArray } from "drizzle-orm";
+import { db } from "@/db";
+import { fieldProductDetails } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { getBatchBillingRate, inclusiveSalePrice } from "@/lib/gst";
-import { searchProductBatches } from "@/lib/queries/products";
+import { listDiscountedOffers, searchProductBatches, type ProductBatchSearchResult } from "@/lib/queries/products";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,28 +21,20 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
+  const offers = url.searchParams.get("offers") === "1";
   const limit = Math.min(40, Math.max(1, Number(url.searchParams.get("limit")) || 20));
 
-  if (!q) {
+  if (!q && !offers) {
     return fieldJson({ products: [] });
   }
 
   try {
-    const rows = await searchProductBatches(q, limit, { onlyInStock: false });
+    const rows = offers
+      ? await listDiscountedOffers(Math.min(12, limit))
+      : await searchProductBatches(q, limit, { onlyInStock: false });
+    const images = await offerImages(offers ? rows.map((row) => row.productId) : []);
     return fieldJson({
-      products: rows.map((row) => {
-        const rate = getBatchBillingRate(row, "retail");
-        const gst = Number(row.gstRate) || 0;
-        const price = inclusiveSalePrice(rate, gst);
-        const stock = Number(row.batchId != null ? row.batchQty : row.productStockQty) || 0;
-        return {
-          ...row,
-          rate,
-          price,
-          stock,
-          lineKey: `${row.productId}-${row.batchId ?? "none"}`,
-        };
-      }),
+      products: rows.map((row) => toFieldBatch(row, offers ? images.get(row.productId) ?? null : null, offers)),
     });
   } catch (err) {
     return fieldJson(
@@ -47,4 +42,43 @@ export async function GET(req: NextRequest) {
       500
     );
   }
+}
+
+async function offerImages(productIds: number[]) {
+  const map = new Map<number, string | null>();
+  if (productIds.length === 0) return map;
+  const rows = await db
+    .select({
+      productId: fieldProductDetails.productId,
+      images: fieldProductDetails.images,
+    })
+    .from(fieldProductDetails)
+    .where(inArray(fieldProductDetails.productId, productIds));
+  for (const row of rows) {
+    const image = row.images.find((src) => src.trim() && !/images\.unsplash\.com/i.test(src)) ?? null;
+    map.set(row.productId, image);
+  }
+  return map;
+}
+
+function toFieldBatch(row: ProductBatchSearchResult, image: string | null, applyDiscount: boolean) {
+  const listRate = getBatchBillingRate(row, "retail");
+  const discountPercent = Number(row.discountPercent) || 0;
+  const rate = applyDiscount
+    ? Math.round(listRate * (1 - discountPercent / 100) * 100) / 100
+    : listRate;
+  const gst = Number(row.gstRate) || 0;
+  const price = inclusiveSalePrice(rate, gst);
+  const listPrice = inclusiveSalePrice(listRate, gst);
+  const stock = Number(row.batchId != null ? row.batchQty : row.productStockQty) || 0;
+  return {
+    ...row,
+    rate,
+    price,
+    listPrice,
+    discountPercent,
+    image,
+    stock,
+    lineKey: `${row.productId}-${row.batchId ?? "none"}`,
+  };
 }

@@ -218,6 +218,22 @@ export async function searchProductBatches(
   return queryProductBatchRows(productMatch, limit, onlyInStock);
 }
 
+/** In-stock products whose inventory discount is above zero, one batch each. */
+export async function listDiscountedOffers(limit = 12): Promise<ProductBatchSearchResult[]> {
+  const productMatch = and(eq(products.isActive, true), gt(products.discountPercent, "0"));
+  if (!productMatch) return [];
+  const rows = await queryProductBatchRows(productMatch, 400, true);
+  const seen = new Set<number>();
+  const picked: ProductBatchSearchResult[] = [];
+  for (const row of rows) {
+    if (seen.has(row.productId)) continue;
+    seen.add(row.productId);
+    picked.push(row);
+  }
+  picked.sort((a, b) => Number(b.discountPercent) - Number(a.discountPercent));
+  return picked.slice(0, limit);
+}
+
 /**
  * All in-stock batches for one product, in the same per-batch shape as
  * searchProductBatches — for the POS barcode-scan path, where a scan
