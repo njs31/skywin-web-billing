@@ -18,7 +18,7 @@ export default async function FieldOrdersPage() {
       <div>
         <h1 className="text-2xl font-bold">Field orders</h1>
         <p className="text-sm text-slate-500">
-          Orders placed by Field Officers. Each line is the exact billing batch that was deducted.
+          Orders placed by farmers and field officers. Each line is the billing batch that was deducted.
         </p>
       </div>
 

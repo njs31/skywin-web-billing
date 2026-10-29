@@ -10,7 +10,7 @@ export default async function FieldOrdersAdminPage() {
       <div>
         <h1 className="text-2xl font-bold">Field orders</h1>
         <p className="text-sm text-[#2E4A22]/70">
-          Live invoices created when a field officer marks UPI paid.
+          Live invoices created when a farmer or field officer pays. The billed batch is reduced from stock.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
