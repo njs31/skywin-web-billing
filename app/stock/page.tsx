@@ -10,6 +10,8 @@ import { inArray } from "drizzle-orm";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import { StockMovementsReport } from "@/components/stock/stock-movements-report";
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/actions/auth";
+import { matrixAllows } from "@/lib/user-roles";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -21,11 +23,14 @@ import {
 } from "@/components/ui/table";
 
 export default async function StockPage() {
-  const [stock, valuation, duplicateHsn] = await Promise.all([
+  const [stock, valuation, duplicateHsn, user] = await Promise.all([
     getStockStatus(),
     getStockValuation(),
     getDuplicateHsnStock(),
+    getCurrentUser(),
   ]);
+  const canImportStock = matrixAllows(user?.role, "stock_import", "create");
+  const canAdjustStock = matrixAllows(user?.role, "stock_status", "create");
 
   const productIds = stock.map((p) => p.id);
   const allBatches =
@@ -54,12 +59,16 @@ export default async function StockPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button asChild>
-            <Link href="/stock/import">Import Excel</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/stock/adjust">Adjust Stock</Link>
-          </Button>
+          {canImportStock ? (
+            <Button asChild>
+              <Link href="/stock/import">Import Excel</Link>
+            </Button>
+          ) : null}
+          {canAdjustStock ? (
+            <Button asChild variant="outline">
+              <Link href="/stock/adjust">Adjust Stock</Link>
+            </Button>
+          ) : null}
         </div>
       </div>
 

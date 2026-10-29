@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { getSaleById, getSaleEditability } from "@/lib/queries/sales";
 import { getSettings } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/actions/auth";
+import { canEditInvoices } from "@/lib/user-roles";
 import { InvoiceTemplate } from "@/components/invoice/invoice-template";
 import { PrintButton } from "@/components/invoice/print-button";
 import { CancelInvoiceButton } from "@/components/invoice/cancel-invoice-button";
@@ -40,7 +41,7 @@ export default async function InvoiceDetailPage({
   if (!sale) notFound();
   const canCancel = currentUser?.role === "admin" && sale.status !== "cancelled";
   const { editable: canEdit } =
-    currentUser?.role === "admin" && sale.status !== "cancelled"
+    canEditInvoices(currentUser?.role) && sale.status !== "cancelled"
       ? await getSaleEditability(sale.id)
       : { editable: false };
 

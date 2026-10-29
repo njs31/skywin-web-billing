@@ -1,6 +1,6 @@
 "use server";
 
-import { requireNonDealer } from "@/lib/actions/auth";
+import { requireMatrix, requireNonDealer } from "@/lib/actions/auth";
 import { getActivityLogs as getActivityLogsQuery } from "@/lib/queries/activity-logs";
 
 export async function getActivityLogs(opts: {
@@ -9,5 +9,6 @@ export async function getActivityLogs(opts: {
   pageSize?: number;
 }) {
   await requireNonDealer();
+  await requireMatrix("logs", "view");
   return getActivityLogsQuery(opts);
 }

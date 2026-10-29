@@ -394,6 +394,8 @@ export default function UserManagementPage() {
                     <option value="regional_manager">Regional Manager</option>
                     <option value="sales_officer">Sales Officer</option>
                     <option value="dealer">Dealer</option>
+                    <option value="cashier">Cashier</option>
+                    <option value="store_manager">Store Manager</option>
                   </select>
                 </div>
 

@@ -19,7 +19,7 @@ import {
   importStockFromRows as importStockFromRowsQuery,
   type StockImportRow,
 } from "@/lib/queries/stock-import";
-import { getCurrentUser, requireNonDealer, requireUser } from "@/lib/actions/auth";
+import { getCurrentUser, requireMatrix, requireNonDealer, requireUser } from "@/lib/actions/auth";
 
 export async function getStockExportData() {
   await requireNonDealer();
@@ -73,6 +73,7 @@ export async function updateProduct(
   }
 ) {
   await requireNonDealer();
+  await requireMatrix("products", "edit");
   const user = await getCurrentUser();
   return updateProductQuery(id, data, {
     userId: user?.id ?? null,
@@ -100,12 +101,14 @@ export async function updateBatch(
   }
 ) {
   await requireNonDealer();
+  await requireMatrix("products", "edit");
   return updateBatchQuery(batchId, data);
 }
 
 export async function setProductActive(id: number, isActive: boolean) {
   try {
     const user = await requireNonDealer();
+    await requireMatrix("products", "edit");
     const product = await setProductActiveQuery(id, isActive);
     const { recordActivity } = await import("@/lib/queries/activity-logs");
     const name = user.name.trim() || user.phone;
@@ -133,6 +136,7 @@ export async function setProductActive(id: number, isActive: boolean) {
 
 export async function deleteProduct(id: number) {
   const user = await requireNonDealer();
+  await requireMatrix("products", "edit");
   const existing = await getProductByIdQuery(id);
   await deleteProductQuery(id);
   const { recordActivity } = await import("@/lib/queries/activity-logs");
@@ -148,11 +152,13 @@ export async function deleteProduct(id: number) {
 
 export async function importStockFromExcel(rows: StockImportRow[]) {
   await requireNonDealer();
+  await requireMatrix("stock_import", "create");
   return importStockFromRowsQuery(rows);
 }
 
 export async function resolveProductsForImport(rows: StockImportRow[]) {
   await requireNonDealer();
+  await requireMatrix("stock_import", "create");
   const resolved = [];
   const failed = [];
 

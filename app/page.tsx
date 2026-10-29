@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/actions/auth";
+import { matrixAllows } from "@/lib/user-roles";
 import { PaymentDonut } from "@/components/dashboard/charts";
 import { SalesPerformance } from "@/components/dashboard/sales-performance";
 
@@ -106,6 +108,8 @@ export default async function DashboardPage() {
     settled(getBillTypeMix(30)),
     settled(getTopProductsChart(8, 30)),
   ]);
+  const user = await getCurrentUser();
+  const canEnterPurchase = matrixAllows(user?.role, "purchase_entry", "create");
 
   const belowTen = productStats?.lowStock ?? 0;
   const lowStock = (lowStockRows ?? []).slice(0, 7);
@@ -127,9 +131,11 @@ export default async function DashboardPage() {
           <p className="text-sm text-slate-500">Business overview for today</p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="outline">
-            <Link href="/purchases/new">Purchase Entry</Link>
-          </Button>
+          {canEnterPurchase ? (
+            <Button asChild variant="outline">
+              <Link href="/purchases/new">Purchase Entry</Link>
+            </Button>
+          ) : null}
           <Button asChild>
             <Link href="/pos">Open POS</Link>
           </Button>

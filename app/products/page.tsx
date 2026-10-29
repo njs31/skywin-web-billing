@@ -20,6 +20,8 @@ import { ProductExportButtons } from "@/components/products/product-export-butto
 import { getTodayLabelCount } from "@/lib/queries/label-prints";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/actions/auth";
+import { matrixAllows } from "@/lib/user-roles";
 
 const PAGE_SIZE = 50;
 
@@ -57,6 +59,8 @@ export default async function ProductsPage({
   // The printer's tear-off feed, for the per-row print button.
   const settings = await getSettings();
   const presentDots = presentDotsFromMm(settings.labelTearOffMm);
+  const user = await getCurrentUser();
+  const canAddProduct = matrixAllows(user?.role, "products", "create");
 
   // Paging has to carry the sort, or page two quietly reverts to name order.
   const pageHref = (target: number) => {
@@ -100,11 +104,13 @@ export default async function ProductsPage({
               : `${todayLabelCount} labels printed today`}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
-            <Link href="/products/new">Add Product</Link>
-          </Button>
-        </div>
+        {canAddProduct ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Link href="/products/new">Add Product</Link>
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <ProductExportButtons />

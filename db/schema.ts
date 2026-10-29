@@ -45,6 +45,8 @@ export const roleEnum = pgEnum("role", [
   "regional_manager",
   "sales_officer",
   "dealer",
+  "cashier",
+  "store_manager",
 ]);
 
 export const categories = pgTable("categories", {

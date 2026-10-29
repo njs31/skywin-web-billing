@@ -25,6 +25,8 @@ import { ReceiptDateFilter } from "@/components/accounts/receipt-date-filter";
 import { PrintSizeMenu } from "@/components/invoice/print-size-menu";
 import { displayPaymentVoucherNo } from "@/lib/financial-year";
 import { peekNextReceiptVoucherNo } from "@/lib/queries/receipt-voucher";
+import { getCurrentUser } from "@/lib/actions/auth";
+import { matrixAllows } from "@/lib/user-roles";
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const cleanDate = (value?: string) => (value && YMD.test(value) ? value : undefined);
@@ -56,13 +58,15 @@ export default async function ReceiptsPage({
       ? parseInt(customerParam, 10)
       : undefined;
 
-  const [receipts, totalCount, initialCustomerRow, nextVoucherNo] =
+  const [receipts, totalCount, initialCustomerRow, nextVoucherNo, user] =
     await Promise.all([
       getReceipts(page, RECEIPTS_PAGE_SIZE, filters),
       getReceiptCount(filters),
       initialCustomerId ? getCustomerById(initialCustomerId) : Promise.resolve(null),
       peekNextReceiptVoucherNo(),
+      getCurrentUser(),
     ]);
+  const canEditReceipt = matrixAllows(user?.role, "receipts", "edit");
   const initialCustomer = initialCustomerRow
     ? toCustomerPickerOption(initialCustomerRow)
     : undefined;
@@ -172,9 +176,11 @@ export default async function ReceiptsPage({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={`/accounts/receipts/${r.id}/edit`}>Edit</Link>
-                        </Button>
+                        {canEditReceipt ? (
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/accounts/receipts/${r.id}/edit`}>Edit</Link>
+                          </Button>
+                        ) : null}
                         <Button asChild size="sm" variant="outline">
                           <Link href={`/accounts/receipts/${r.id}`}>View</Link>
                         </Button>

@@ -12,6 +12,7 @@ import {
   requireUser,
   requireAdmin,
 } from "@/lib/actions/auth";
+import { canEditInvoices } from "@/lib/user-roles";
 
 export async function createSale(
   input: Parameters<typeof createSaleMutation>[0]
@@ -56,19 +57,22 @@ export async function cancelSale(saleId: number, reason: string) {
 export async function updateSale(
   input: Parameters<typeof updateSaleMutation>[0]
 ) {
-  const admin = await requireAdmin();
+  const editor = await requireUser();
+  if (!canEditInvoices(editor.role)) {
+    throw new Error("Unauthorized");
+  }
   if (input.customerId) {
     await assertCustomerAccess(input.customerId);
   }
   const result = await updateSaleMutation(input);
   const { recordActivity } = await import("@/lib/queries/activity-logs");
-  const actorName = admin.name.trim() || admin.phone;
+  const actorName = editor.name.trim() || editor.phone;
   await recordActivity({
     action: "sale.update",
     message: `${actorName} edited invoice ${result.invoiceNo}`,
     entityType: "sale",
     entityId: result.id,
-    actor: { id: admin.id, name: actorName },
+    actor: { id: editor.id, name: actorName },
   });
   return result;
 }

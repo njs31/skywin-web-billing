@@ -3,6 +3,8 @@ import { getPurchases } from "@/lib/queries/purchases";
 import { formatCurrency } from "@/lib/utils";
 import { PurchaseReport } from "@/components/purchases/purchase-report";
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/actions/auth";
+import { matrixAllows } from "@/lib/user-roles";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -14,7 +16,8 @@ import {
 } from "@/components/ui/table";
 
 export default async function PurchasesPage() {
-  const purchases = await getPurchases();
+  const [purchases, user] = await Promise.all([getPurchases(), getCurrentUser()]);
+  const canEnterPurchase = matrixAllows(user?.role, "purchase_entry", "create");
 
   return (
     <div className="space-y-6 p-6">
@@ -23,9 +26,11 @@ export default async function PurchasesPage() {
           <h1 className="text-2xl font-bold">Purchases</h1>
           <p className="text-sm text-slate-500">Stock inward from suppliers</p>
         </div>
-        <Button asChild>
-          <Link href="/purchases/new">New Purchase</Link>
-        </Button>
+        {canEnterPurchase ? (
+          <Button asChild>
+            <Link href="/purchases/new">New Purchase</Link>
+          </Button>
+        ) : null}
       </div>
 
       <PurchaseReport />
@@ -34,10 +39,15 @@ export default async function PurchasesPage() {
         <CardContent className="p-0">
           {purchases.length === 0 ? (
             <p className="p-6 text-sm text-slate-400">
-              No purchases yet.{" "}
-              <Link href="/purchases/new" className="text-emerald-600 underline">
-                Record your first purchase
-              </Link>
+              No purchases yet.
+              {canEnterPurchase ? (
+                <>
+                  {" "}
+                  <Link href="/purchases/new" className="text-emerald-600 underline">
+                    Record your first purchase
+                  </Link>
+                </>
+              ) : null}
             </p>
           ) : (
             <Table>

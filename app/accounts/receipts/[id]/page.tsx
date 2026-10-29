@@ -5,6 +5,8 @@ import { getSettings } from "@/lib/settings";
 import { PaymentVoucherTemplate } from "@/components/accounts/payment-voucher-template";
 import { PrintButton } from "@/components/invoice/print-button";
 import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/lib/actions/auth";
+import { matrixAllows } from "@/lib/user-roles";
 
 export default async function ReceiptDetailPage({
   params,
@@ -15,9 +17,10 @@ export default async function ReceiptDetailPage({
 }) {
   const { id } = await params;
   const { print, size } = await searchParams;
-  const [payment, settings] = await Promise.all([
+  const [payment, settings, user] = await Promise.all([
     getPartyPaymentById(parseInt(id, 10)),
     getSettings(),
+    getCurrentUser(),
   ]);
   if (!payment || payment.type !== "receipt") notFound();
 
@@ -58,9 +61,11 @@ export default async function ReceiptDetailPage({
           <Link href="/accounts/receipts">Back to Receipts</Link>
         </Button>
         <div className="flex items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href={`/accounts/receipts/${payment.id}/edit`}>Edit</Link>
-          </Button>
+          {matrixAllows(user?.role, "receipts", "edit") ? (
+            <Button asChild variant="outline">
+              <Link href={`/accounts/receipts/${payment.id}/edit`}>Edit</Link>
+            </Button>
+          ) : null}
           <PrintButton
             autoPrint={print === "1"}
             initialSize={size}

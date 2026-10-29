@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/actions/auth";
+import { matrixAllows } from "@/lib/user-roles";
 import { getActivityLogs } from "@/lib/actions/activity-logs";
 import { formatDateTimeIST } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,7 @@ export default async function LogsPage({
   searchParams: Promise<{ q?: string; page?: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user || user.role === "dealer") {
+  if (!user || user.role === "dealer" || !matrixAllows(user.role, "logs", "view")) {
     redirect("/");
   }
 

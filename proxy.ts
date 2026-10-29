@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
-import { canManageField } from "@/lib/user-roles";
+import { canManageField, matrixCanAccessPath } from "@/lib/user-roles";
 
 const FIELD_HOST = "skywin-field.qwicksapp.com";
 const BILLING_ORIGIN = "https://skywin.qwicksapp.com";
@@ -67,6 +67,14 @@ export async function proxy(request: NextRequest) {
       if (role !== "regional_manager") {
         return NextResponse.redirect(new URL("/", request.url));
       }
+    }
+
+    const matrixAccess = matrixCanAccessPath(role, pathname);
+    if (matrixAccess === false) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+    if (matrixAccess === true) {
+      return NextResponse.next();
     }
 
     if (role === "dealer") {

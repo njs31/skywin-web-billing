@@ -4,6 +4,7 @@ import { getSaleById, getSaleEditability } from "@/lib/queries/sales";
 import { getCustomers } from "@/lib/queries/customers";
 import { getSettings } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/actions/auth";
+import { canEditInvoices } from "@/lib/user-roles";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -26,7 +27,7 @@ export default async function EditInvoicePage({
     getCustomers(),
     getSettings(),
   ]);
-  if (currentUser?.role !== "admin") redirect("/invoices");
+  if (!canEditInvoices(currentUser?.role)) redirect("/invoices");
   if (!sale) notFound();
 
   const { editable, reasons } = await getSaleEditability(saleId);

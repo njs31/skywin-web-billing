@@ -14,6 +14,7 @@ import { updateSettings as updateSettingsMutation, type AppSettings } from "@/li
 import {
   assertCustomerAccess,
   requireAdmin,
+  requireMatrix,
   requireNonDealer,
   requirePurchasingAccess,
   requireUser,
@@ -59,6 +60,7 @@ export async function createSaleReturn(
   input: Parameters<typeof createSaleReturnMutation>[0]
 ) {
   const user = await requireNonDealer();
+  await requireMatrix("sales_return", "create");
   if (input.customerId) await assertCustomerAccess(input.customerId);
   const result = await createSaleReturnMutation(input);
   const { recordActivity } = await import("@/lib/queries/activity-logs");
@@ -78,6 +80,7 @@ export async function updateSaleReturn(
   input: Parameters<typeof updateSaleReturnMutation>[1]
 ) {
   await requireNonDealer();
+  await requireMatrix("sales_return", "edit");
   if (input.customerId) await assertCustomerAccess(input.customerId);
   return updateSaleReturnMutation(id, input);
 }
@@ -86,6 +89,7 @@ export async function createPurchaseReturn(
   input: Parameters<typeof createPurchaseReturnMutation>[0]
 ) {
   await requirePurchasingAccess();
+  await requireMatrix("purchase_entry", "create");
   return createPurchaseReturnMutation(input);
 }
 
@@ -93,6 +97,10 @@ export async function createPartyPayment(
   input: Parameters<typeof createPartyPaymentMutation>[0]
 ) {
   await requireUser();
+  await requireMatrix(
+    input.type === "receipt" ? "receipts" : "payments",
+    "create"
+  );
   await assertCustomerAccess(input.customerId);
   return createPartyPaymentMutation(input);
 }
@@ -127,6 +135,7 @@ export async function updateReceipt(
   }
 ) {
   await requireUser();
+  await requireMatrix("receipts", "edit");
   const { getPartyPaymentById, updateReceipt: updateReceiptMutation } =
     await import("@/lib/queries/payments");
   const existing = await getPartyPaymentById(id);
@@ -162,6 +171,7 @@ export async function adjustStock(
   }
 ) {
   const user = await requireNonDealer();
+  await requireMatrix("stock_status", "create");
   const result = await adjustStockMutation(productId, qtyDelta, notes, options);
   const { db } = await import("@/db");
   const { products } = await import("@/db/schema");
@@ -188,6 +198,7 @@ export async function createProduct(
   input: Parameters<typeof createProductMutation>[0]
 ) {
   const user = await requireNonDealer();
+  await requireMatrix("products", "create");
   const product = await createProductMutation(input);
   if (product) {
     const { recordActivity } = await import("@/lib/queries/activity-logs");

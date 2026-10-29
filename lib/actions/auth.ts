@@ -301,6 +301,18 @@ export async function requireNonDealer() {
 }
 
 /** Matches UI: only admin and regional managers manage purchases/suppliers. */
+export async function requireMatrix(
+  form: import("@/lib/user-roles").AccessForm,
+  action: import("@/lib/user-roles").AccessAction
+) {
+  const { matrixRoleCan } = await import("@/lib/user-roles");
+  const user = await requireUser();
+  if (matrixRoleCan(user.role, form, action) === false) {
+    throw new Error("Unauthorized");
+  }
+  return user;
+}
+
 export async function requirePurchasingAccess() {
   const user = await requireUser();
   if (user.role === "dealer" || user.role === "sales_officer") {
@@ -338,7 +350,13 @@ export async function getVisibleCustomerIds(user: {
   role: string;
   customerId: number | null;
 }) {
-  if (user.role === "admin") return null;
+  if (
+    user.role === "admin" ||
+    user.role === "cashier" ||
+    user.role === "store_manager"
+  ) {
+    return null;
+  }
 
   if (user.role === "dealer") {
     return user.customerId ? [user.customerId] : [];

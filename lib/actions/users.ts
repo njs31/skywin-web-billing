@@ -5,7 +5,7 @@ import { users, reportingLines, dealerMappings, customers } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "./auth";
-import { SEED_ADMIN_PHONE } from "@/lib/user-roles";
+import { SEED_ADMIN_PHONE, type UserRole } from "@/lib/user-roles";
 
 async function verifyAdmin() {
   await requireAdmin();
@@ -36,7 +36,7 @@ export async function getCustomersForMapping() {
 export async function createUser(data: {
   name: string;
   phone: string;
-  role: "admin" | "regional_manager" | "sales_officer" | "dealer";
+  role: UserRole;
   customerId?: number | null;
 }) {
   await verifyAdmin();
@@ -90,7 +90,7 @@ export async function deleteUser(id: number) {
 
 export async function updateUserRole(data: {
   userId: number;
-  role: "admin" | "regional_manager" | "sales_officer" | "dealer";
+  role: UserRole;
   customerId?: number | null;
 }) {
   const actor = await requireAdmin();

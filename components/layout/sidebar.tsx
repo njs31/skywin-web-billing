@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import type { User } from "@/db/schema";
+import { matrixCanAccessPath } from "@/lib/user-roles";
 import { useState, useEffect } from "react";
 
 const PURCHASE_ROUTES = ["/purchases", "/suppliers", "/purchase-orders"];
@@ -147,6 +148,8 @@ export function Sidebar({
     .map((group) => {
       const items = group.items.filter((item) => {
         const role = currentUser?.role || "admin";
+        const matrixAccess = matrixCanAccessPath(role, item.href);
+        if (matrixAccess !== null) return matrixAccess;
 
         if (role === "admin") return true;
 
