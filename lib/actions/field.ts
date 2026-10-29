@@ -69,6 +69,17 @@ export async function fieldOverview() {
     todayTotal: orders.todayTotal,
     monthCount: orders.monthCount,
     monthTotal: orders.monthTotal,
+    recentOrders: orders.orders.slice(0, 8).map((order) => ({
+      id: order.id,
+      invoiceNo: order.invoiceNo,
+      externalOrderId: order.externalOrderId,
+      date: order.date,
+      customerName: order.customerName,
+      operatorName: order.operatorName,
+      grandTotal: order.grandTotal,
+      paymentMode: order.paymentMode,
+      status: order.status,
+    })),
   };
 }
 

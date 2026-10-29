@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, productBatches, products, saleItems, sales } from "@/db/schema";
-import { activeSale, createSale } from "@/lib/queries/sales";
+import { activeSale, createSale, istDayRange } from "@/lib/queries/sales";
 import { getBatchBillingRate } from "@/lib/gst";
 import { toNumber } from "@/lib/utils";
 
@@ -212,9 +212,9 @@ export async function listFieldOrders() {
     bySale.set(it.saleId, list);
   }
 
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const startOfMonth = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 1);
+  const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const startOfToday = istDayRange(todayKey)?.from ?? new Date();
+  const startOfMonth = istDayRange(`${todayKey.slice(0, 8)}01`)?.from ?? startOfToday;
 
   const [todayAgg] = await db
     .select({
