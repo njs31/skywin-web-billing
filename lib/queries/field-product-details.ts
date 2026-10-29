@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
   fieldCategories,
@@ -9,6 +9,9 @@ import {
   type FieldUsageRow,
   type FieldVideo,
 } from "@/db/schema";
+import { fieldDetailGaps } from "@/lib/field-product-rules";
+
+export const FIELD_PRODUCT_PAGE_SIZE = 40;
 
 export type FieldProductDetailInput = {
   displayName: string;
@@ -69,6 +72,7 @@ export async function listFieldCatalogProducts() {
           productId: fieldProductDetails.productId,
           description: fieldProductDetails.description,
           images: fieldProductDetails.images,
+          activeIngredient: fieldProductDetails.activeIngredient,
           usage: fieldProductDetails.usage,
           videos: fieldProductDetails.videos,
           updatedAt: fieldProductDetails.updatedAt,
@@ -84,16 +88,171 @@ export async function listFieldCatalogProducts() {
     .map((r) => {
       const d = byId.get(r.productId);
       const images = fieldImages(d?.images);
+      const gaps = fieldDetailGaps({
+        description: d?.description,
+        activeIngredient: d?.activeIngredient,
+        usage: d?.usage,
+      });
       return {
         ...r,
         category: r.category ?? "Not in catalogue",
         categorySlug: r.categorySlug ?? "unassigned",
         sub: r.sub ?? "—",
         image: images[0] ?? null,
-        hasDetails: !!d && !!(clean(d.description) || images.length || d.usage.length || d.videos.length),
+        gaps,
+        hasDetails: gaps.length === 0,
         updatedAt: d?.updatedAt?.toISOString() ?? null,
       };
     });
+}
+
+function productIsMapped() {
+  return sql`exists (
+    select 1 from ${fieldSubcategoryProducts}
+    where ${fieldSubcategoryProducts.productId} = ${products.id}
+  )`;
+}
+
+function productDetailsComplete() {
+  return sql`exists (
+    select 1 from ${fieldProductDetails}
+    where ${fieldProductDetails.productId} = ${products.id}
+      and btrim(coalesce(${fieldProductDetails.description}, '')) <> ''
+      and (
+        btrim(coalesce(${fieldProductDetails.activeIngredient}, '')) <> ''
+        or jsonb_array_length(coalesce(${fieldProductDetails.usage}, '[]'::jsonb)) > 0
+      )
+  )`;
+}
+
+function productInCategory(slug: string) {
+  return sql`exists (
+    select 1 from ${fieldSubcategoryProducts}
+    inner join ${fieldSubcategories} on ${fieldSubcategories.id} = ${fieldSubcategoryProducts.subcategoryId}
+    inner join ${fieldCategories} on ${fieldCategories.id} = ${fieldSubcategories.categoryId}
+    where ${fieldSubcategoryProducts.productId} = ${products.id}
+      and ${fieldCategories.slug} = ${slug}
+  )`;
+}
+
+export async function fieldProductStats() {
+  const [row] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      mapped: sql<number>`count(*) filter (where ${productIsMapped()})::int`,
+      complete: sql<number>`count(*) filter (where ${productDetailsComplete()})::int`,
+    })
+    .from(products)
+    .where(eq(products.isActive, true));
+  const total = Number(row?.total ?? 0);
+  const complete = Number(row?.complete ?? 0);
+  const mapped = Number(row?.mapped ?? 0);
+  return { total, complete, needsDetails: total - complete, mapped };
+}
+
+export async function fieldProductCategories() {
+  return db
+    .select({ slug: fieldCategories.slug, title: fieldCategories.title })
+    .from(fieldCategories)
+    .orderBy(asc(fieldCategories.title), asc(fieldCategories.id));
+}
+
+export async function listFieldProductsPage(filter?: {
+  q?: string;
+  category?: string;
+  status?: "all" | "needs" | "complete";
+  page?: number;
+}) {
+  const pageSize = FIELD_PRODUCT_PAGE_SIZE;
+  const page = Math.max(1, filter?.page ?? 1);
+  const conditions: SQL[] = [eq(products.isActive, true)];
+  const raw = filter?.q?.trim().replace(/[%_]/g, "") ?? "";
+  if (raw) {
+    const pattern = `%${raw}%`;
+    const search = or(ilike(products.name, pattern), ilike(products.sku, pattern));
+    if (search) conditions.push(search);
+  }
+  if (filter?.category === "unassigned") conditions.push(sql`not (${productIsMapped()})`);
+  else if (filter?.category) conditions.push(productInCategory(filter.category));
+  if (filter?.status === "complete") conditions.push(productDetailsComplete());
+  else if (filter?.status === "needs") conditions.push(sql`not (${productDetailsComplete()})`);
+  const where = and(...conditions);
+
+  const [countRow, rows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(products)
+      .where(where),
+    db
+      .select({
+        productId: products.id,
+        name: products.name,
+        sku: products.sku,
+        description: fieldProductDetails.description,
+        images: fieldProductDetails.images,
+        activeIngredient: fieldProductDetails.activeIngredient,
+        usage: fieldProductDetails.usage,
+        updatedAt: fieldProductDetails.updatedAt,
+        category: sql<string | null>`(
+          select ${fieldCategories.title}
+          from ${fieldSubcategoryProducts}
+          inner join ${fieldSubcategories} on ${fieldSubcategories.id} = ${fieldSubcategoryProducts.subcategoryId}
+          inner join ${fieldCategories} on ${fieldCategories.id} = ${fieldSubcategories.categoryId}
+          where ${fieldSubcategoryProducts.productId} = ${products.id}
+          order by ${fieldCategories.title}, ${fieldSubcategories.title}
+          limit 1
+        )`,
+        categorySlug: sql<string | null>`(
+          select ${fieldCategories.slug}
+          from ${fieldSubcategoryProducts}
+          inner join ${fieldSubcategories} on ${fieldSubcategories.id} = ${fieldSubcategoryProducts.subcategoryId}
+          inner join ${fieldCategories} on ${fieldCategories.id} = ${fieldSubcategories.categoryId}
+          where ${fieldSubcategoryProducts.productId} = ${products.id}
+          order by ${fieldCategories.title}, ${fieldSubcategories.title}
+          limit 1
+        )`,
+        sub: sql<string | null>`(
+          select ${fieldSubcategories.title}
+          from ${fieldSubcategoryProducts}
+          inner join ${fieldSubcategories} on ${fieldSubcategories.id} = ${fieldSubcategoryProducts.subcategoryId}
+          inner join ${fieldCategories} on ${fieldCategories.id} = ${fieldSubcategories.categoryId}
+          where ${fieldSubcategoryProducts.productId} = ${products.id}
+          order by ${fieldCategories.title}, ${fieldSubcategories.title}
+          limit 1
+        )`,
+      })
+      .from(products)
+      .leftJoin(fieldProductDetails, eq(fieldProductDetails.productId, products.id))
+      .where(where)
+      .orderBy(asc(products.name), asc(products.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+  ]);
+
+  return {
+    total: Number(countRow[0]?.count ?? 0),
+    page,
+    pageSize,
+    rows: rows.map((row) => {
+      const images = fieldImages(row.images);
+      const gaps = fieldDetailGaps({
+        description: row.description,
+        activeIngredient: row.activeIngredient,
+        usage: row.usage,
+      });
+      return {
+        productId: row.productId,
+        name: row.name,
+        sku: row.sku,
+        image: images[0] ?? null,
+        category: row.category ?? "Not in catalogue",
+        categorySlug: row.categorySlug ?? "unassigned",
+        sub: row.sub ?? "—",
+        gaps,
+        updatedAt: row.updatedAt?.toISOString() ?? null,
+      };
+    }),
+  };
 }
 
 export async function getFieldProductDetail(productId: number) {
@@ -108,8 +267,21 @@ export async function getFieldProductDetail(productId: number) {
     .from(fieldProductDetails)
     .where(eq(fieldProductDetails.productId, productId))
     .limit(1);
+  const [placement] = await db
+    .select({
+      category: fieldCategories.title,
+      categorySlug: fieldCategories.slug,
+      sub: fieldSubcategories.title,
+    })
+    .from(fieldSubcategoryProducts)
+    .innerJoin(fieldSubcategories, eq(fieldSubcategories.id, fieldSubcategoryProducts.subcategoryId))
+    .innerJoin(fieldCategories, eq(fieldCategories.id, fieldSubcategories.categoryId))
+    .where(eq(fieldSubcategoryProducts.productId, productId))
+    .orderBy(asc(fieldCategories.title), asc(fieldSubcategories.title))
+    .limit(1);
   return {
     product,
+    placement: placement ?? null,
     detail: {
       displayName: detail?.displayName ?? "",
       images: fieldImages(detail?.images),

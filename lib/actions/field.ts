@@ -35,7 +35,10 @@ import {
 import { listFieldOrders } from "@/lib/queries/field-orders";
 import {
   getFieldProductDetail,
+  fieldProductCategories,
+  fieldProductStats,
   listFieldCatalogProducts,
+  listFieldProductsPage,
   upsertFieldProductDetail,
   type FieldProductDetailInput,
 } from "@/lib/queries/field-product-details";
@@ -222,6 +225,21 @@ export async function createBillingProductForSub(
 export async function fieldProductsList() {
   await requireFieldAdmin();
   return listFieldCatalogProducts();
+}
+
+export async function fieldProductsPage(filter?: {
+  q?: string;
+  category?: string;
+  status?: "all" | "needs" | "complete";
+  page?: number;
+}) {
+  await requireFieldAdmin();
+  const [stats, categories, list] = await Promise.all([
+    fieldProductStats(),
+    fieldProductCategories(),
+    listFieldProductsPage(filter),
+  ]);
+  return { stats, categories, ...list };
 }
 
 export async function fieldProductDetail(productId: number) {
