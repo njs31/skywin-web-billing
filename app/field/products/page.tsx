@@ -22,7 +22,7 @@ export default async function FieldProductsPage({
       <div>
         <h1 className="text-2xl font-bold">Product details</h1>
         <p className="text-sm text-[#2E4A22]/70">
-          The page farmers see when they tap a product in the Field app. {filled} of {all.length} filled in.
+          Every active product in billing inventory. {filled} of {all.length} have farmer details filled in.
         </p>
       </div>
 
@@ -90,7 +90,7 @@ export default async function FieldProductsPage({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-4 py-6 text-center text-[#2E4A22]/60">
-                  No products. Pin billing products to a subcategory in Catalog first.
+                  No active products in billing inventory.
                 </td>
               </tr>
             ) : null}

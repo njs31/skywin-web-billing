@@ -46,11 +46,12 @@ export async function listFieldCatalogProducts() {
       categorySlug: fieldCategories.slug,
       sub: fieldSubcategories.title,
     })
-    .from(fieldSubcategoryProducts)
-    .innerJoin(products, eq(products.id, fieldSubcategoryProducts.productId))
-    .innerJoin(fieldSubcategories, eq(fieldSubcategories.id, fieldSubcategoryProducts.subcategoryId))
-    .innerJoin(fieldCategories, eq(fieldCategories.id, fieldSubcategories.categoryId))
-    .orderBy(asc(fieldCategories.title), asc(fieldSubcategories.title), asc(products.name));
+    .from(products)
+    .leftJoin(fieldSubcategoryProducts, eq(fieldSubcategoryProducts.productId, products.id))
+    .leftJoin(fieldSubcategories, eq(fieldSubcategories.id, fieldSubcategoryProducts.subcategoryId))
+    .leftJoin(fieldCategories, eq(fieldCategories.id, fieldSubcategories.categoryId))
+    .where(eq(products.isActive, true))
+    .orderBy(asc(products.name), asc(fieldCategories.title), asc(fieldSubcategories.title));
 
   const ids = [...new Set(rows.map((r) => r.productId))];
   const details = ids.length
@@ -75,6 +76,9 @@ export async function listFieldCatalogProducts() {
       const d = byId.get(r.productId);
       return {
         ...r,
+        category: r.category ?? "Not in catalogue",
+        categorySlug: r.categorySlug ?? "unassigned",
+        sub: r.sub ?? "—",
         hasDetails: !!d && !!(clean(d.description) || d.images.length || d.usage.length || d.videos.length),
         updatedAt: d?.updatedAt?.toISOString() ?? null,
       };

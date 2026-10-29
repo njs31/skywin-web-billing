@@ -19,13 +19,14 @@ import {
   Smartphone,
   ScrollText,
   ClipboardList,
+  Leaf,
   ChevronDown,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import type { User } from "@/db/schema";
-import { matrixCanAccessPath } from "@/lib/user-roles";
+import { canManageField, matrixCanAccessPath } from "@/lib/user-roles";
 import { useState, useEffect } from "react";
 
 const PURCHASE_ROUTES = ["/purchases", "/suppliers", "/purchase-orders"];
@@ -40,6 +41,7 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  external?: boolean;
 };
 
 type NavGroup = {
@@ -53,6 +55,12 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/pos", label: "POS Billing", icon: ShoppingCart },
+      {
+        href: "https://skywin-field.qwicksapp.com",
+        label: "SkyWin Field",
+        icon: Leaf,
+        external: true,
+      },
     ],
   },
   {
@@ -150,6 +158,7 @@ export function Sidebar({
     .map((group) => {
       const items = group.items.filter((item) => {
         const role = currentUser?.role || "admin";
+        if (item.external && !canManageField(role)) return false;
         const matrixAccess = matrixCanAccessPath(role, item.href);
         if (matrixAccess !== null) return matrixAccess;
 
@@ -252,18 +261,34 @@ export function Sidebar({
                   <div className="space-y-0.5">
                     {group.items.map((item) => {
                       const Icon = item.icon;
-                      const active = isNavActive(pathname, item.href);
+                      const active = !item.external && isNavActive(pathname, item.href);
+                      const className = cn(
+                        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
+                        active
+                          ? "bg-emerald-600 text-white"
+                          : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                      );
+                      if (item.external) {
+                        return (
+                          <a
+                            key={item.href}
+                            href={item.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={onClose}
+                            className={className}
+                          >
+                            <Icon className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{item.label}</span>
+                          </a>
+                        );
+                      }
                       return (
                         <Link
                           key={item.href}
                           href={item.href}
                           onClick={onClose}
-                          className={cn(
-                            "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
-                            active
-                              ? "bg-emerald-600 text-white"
-                              : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                          )}
+                          className={className}
                         >
                           <Icon className="h-4 w-4 shrink-0" />
                           <span className="truncate">{item.label}</span>
