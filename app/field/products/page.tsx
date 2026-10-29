@@ -62,8 +62,22 @@ export default async function FieldProductsPage({
             {rows.map((p) => (
               <tr key={p.productId} className="border-t border-[#1E3317]/5">
                 <td className="px-4 py-2.5">
-                  <p className="font-semibold">{p.name}</p>
-                  <p className="text-xs text-[#2E4A22]/60">{p.sku || `ID ${p.productId}`}</p>
+                  <div className="flex items-center gap-3">
+                    {p.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.image}
+                        alt=""
+                        className="h-12 w-12 shrink-0 rounded-lg border border-[#1E3317]/10 bg-white object-contain"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 shrink-0 rounded-lg border border-[#1E3317]/10 bg-[#EEF1E6]" />
+                    )}
+                    <div>
+                      <p className="font-semibold">{p.name}</p>
+                      <p className="text-xs text-[#2E4A22]/60">{p.sku || `ID ${p.productId}`}</p>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-2.5 text-[#2E4A22]/80">
                   {p.category} · {p.sub}

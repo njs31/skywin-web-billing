@@ -33,12 +33,16 @@ export async function POST(req: NextRequest) {
   const data = Buffer.from(await file.arrayBuffer());
   await db.insert(fieldMedia).values({ id, mime: file.type, size: data.length, data });
 
-  const url = new URL(`/api/field/media/${id}`, req.nextUrl.origin);
-  const proto = req.headers.get("x-forwarded-proto");
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (host) {
-    url.host = host;
-    if (proto) url.protocol = `${proto}:`;
-  }
-  return NextResponse.json({ url: url.toString() });
+  const proto = (req.headers.get("x-forwarded-proto") || "https").split(",")[0].trim();
+  const rawHost = (req.headers.get("x-forwarded-host") || req.headers.get("host") || "")
+    .split(",")[0]
+    .trim();
+  const hostname = rawHost.replace(/:\d+$/, "");
+  const port = rawHost.match(/:(\d+)$/)?.[1];
+  const keepPort =
+    !!port &&
+    port !== "3000" &&
+    !((proto === "https" && port === "443") || (proto === "http" && port === "80"));
+  const url = `${proto}://${hostname}${keepPort ? `:${port}` : ""}/api/field/media/${id}`;
+  return NextResponse.json({ url });
 }

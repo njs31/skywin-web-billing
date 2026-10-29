@@ -5,6 +5,7 @@ import { fieldProductDetails } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { getBatchBillingRate, inclusiveSalePrice } from "@/lib/gst";
+import { fieldImageUrl } from "@/lib/queries/field-product-details";
 import { listDiscountedOffers, searchProductBatches, type ProductBatchSearchResult } from "@/lib/queries/products";
 
 export const runtime = "nodejs";
@@ -35,9 +36,9 @@ export async function GET(req: NextRequest) {
     const rows = offers
       ? await listDiscountedOffers(limit, { inStockOnly: !allOffers })
       : await searchProductBatches(q, limit, { onlyInStock: false });
-    const images = await offerImages(offers ? rows.map((row) => row.productId) : []);
+    const images = await productImages(rows.map((row) => row.productId));
     return fieldJson({
-      products: rows.map((row) => toFieldBatch(row, offers ? images.get(row.productId) ?? null : null, offers)),
+      products: rows.map((row) => toFieldBatch(row, images.get(row.productId) ?? null, offers)),
     });
   } catch (err) {
     return fieldJson(
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-async function offerImages(productIds: number[]) {
+async function productImages(productIds: number[]) {
   const map = new Map<number, string | null>();
   if (productIds.length === 0) return map;
   const rows = await db
@@ -58,7 +59,7 @@ async function offerImages(productIds: number[]) {
     .from(fieldProductDetails)
     .where(inArray(fieldProductDetails.productId, productIds));
   for (const row of rows) {
-    const image = row.images.find((src) => src.trim() && !/images\.unsplash\.com/i.test(src)) ?? null;
+    const image = row.images.map(fieldImageUrl).find((src) => src && !/images\.unsplash\.com/i.test(src)) ?? null;
     map.set(row.productId, image);
   }
   return map;

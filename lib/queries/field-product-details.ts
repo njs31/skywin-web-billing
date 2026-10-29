@@ -36,6 +36,15 @@ export function videoThumbnail(video: FieldVideo) {
 
 const clean = (s: string | null | undefined) => (s ?? "").trim();
 
+/** Uploads behind the billing container were saved with the internal :3000 port. */
+export function fieldImageUrl(src: string) {
+  return src.trim().replace(/:3000(?=\/)/g, "");
+}
+
+function fieldImages(images: string[] | null | undefined) {
+  return (images ?? []).map(fieldImageUrl).filter(Boolean);
+}
+
 export async function listFieldCatalogProducts() {
   const rows = await db
     .select({
@@ -74,12 +83,14 @@ export async function listFieldCatalogProducts() {
     .filter((r) => (seen.has(r.productId) ? false : (seen.add(r.productId), true)))
     .map((r) => {
       const d = byId.get(r.productId);
+      const images = fieldImages(d?.images);
       return {
         ...r,
         category: r.category ?? "Not in catalogue",
         categorySlug: r.categorySlug ?? "unassigned",
         sub: r.sub ?? "—",
-        hasDetails: !!d && !!(clean(d.description) || d.images.length || d.usage.length || d.videos.length),
+        image: images[0] ?? null,
+        hasDetails: !!d && !!(clean(d.description) || images.length || d.usage.length || d.videos.length),
         updatedAt: d?.updatedAt?.toISOString() ?? null,
       };
     });
@@ -101,7 +112,7 @@ export async function getFieldProductDetail(productId: number) {
     product,
     detail: {
       displayName: detail?.displayName ?? "",
-      images: detail?.images ?? [],
+      images: fieldImages(detail?.images),
       brochureUrl: detail?.brochureUrl ?? "",
       activeIngredient: detail?.activeIngredient ?? "",
       packSizes: detail?.packSizes ?? "",
