@@ -237,9 +237,14 @@ export async function upsertFieldFarmer(input: FieldFarmerInput, existingId?: nu
     targetId = found?.id;
   }
   if (targetId) {
+    const { approval: nextApproval, ...profile } = base;
     [farmer] = await db
       .update(customers)
-      .set({ ...base, ...optional })
+      .set({
+        ...profile,
+        ...optional,
+        ...(input.approval !== undefined ? { approval: nextApproval } : {}),
+      })
       .where(eq(customers.id, targetId))
       .returning();
   }
