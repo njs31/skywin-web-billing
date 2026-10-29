@@ -18,6 +18,7 @@ import {
   Settings,
   Smartphone,
   ScrollText,
+  ClipboardList,
   ChevronDown,
   X,
 } from "lucide-react";
@@ -58,6 +59,7 @@ const navGroups: NavGroup[] = [
     label: "Sales",
     items: [
       { href: "/invoices", label: "Invoices", icon: Receipt },
+      { href: "/field-orders", label: "Field orders", icon: ClipboardList },
       { href: "/quotations", label: "Quotations", icon: FileText },
       { href: "/returns", label: "Sales Return", icon: RotateCcw },
       { href: "/customers", label: "Customers", icon: Users },

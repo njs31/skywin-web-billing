@@ -77,10 +77,6 @@ export type FieldOrderIn = {
   items: FieldOrderLineIn[];
 };
 
-function fieldDeductsStock() {
-  return process.env.FIELD_DEDUCT_STOCK === "true";
-}
-
 export async function placeFieldOrder(input: FieldOrderIn) {
   const orderId = input.orderId.trim();
   if (!orderId) throw new Error("orderId is required");
@@ -120,7 +116,6 @@ export async function placeFieldOrder(input: FieldOrderIn) {
     input.placedGps ? `GPS ${input.placedGps}` : null,
     input.razorpayPaymentId ? `Razorpay ${input.razorpayPaymentId}` : null,
     input.note || null,
-    fieldDeductsStock() ? null : "Test order · inventory not deducted",
   ]
     .filter(Boolean)
     .join(" · ");
