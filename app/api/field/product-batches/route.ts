@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
   const offers = url.searchParams.get("offers") === "1";
-  const limit = Math.min(40, Math.max(1, Number(url.searchParams.get("limit")) || 20));
+  const limit = Math.min(40, Math.max(1, Number(url.searchParams.get("limit")) || (offers ? 40 : 20)));
 
   if (!q && !offers) {
     return fieldJson({ products: [] });
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const rows = offers
-      ? await listDiscountedOffers(Math.min(12, limit))
+      ? await listDiscountedOffers(limit)
       : await searchProductBatches(q, limit, { onlyInStock: false });
     const images = await offerImages(offers ? rows.map((row) => row.productId) : []);
     return fieldJson({
@@ -62,15 +62,17 @@ async function offerImages(productIds: number[]) {
 }
 
 function toFieldBatch(row: ProductBatchSearchResult, image: string | null, applyDiscount: boolean) {
-  const listRate = getBatchBillingRate(row, "retail");
   const discountPercent = Number(row.discountPercent) || 0;
+  const listRate = applyDiscount ? Number(row.saleRate) || 0 : getBatchBillingRate(row, "retail");
   const rate = applyDiscount
     ? Math.round(listRate * (1 - discountPercent / 100) * 100) / 100
     : listRate;
   const gst = Number(row.gstRate) || 0;
   const price = inclusiveSalePrice(rate, gst);
   const listPrice = inclusiveSalePrice(listRate, gst);
-  const stock = Number(row.batchId != null ? row.batchQty : row.productStockQty) || 0;
+  const stock = applyDiscount
+    ? Number(row.productStockQty) || 0
+    : Number(row.batchId != null ? row.batchQty : row.productStockQty) || 0;
   return {
     ...row,
     rate,

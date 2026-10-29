@@ -218,20 +218,25 @@ export async function searchProductBatches(
   return queryProductBatchRows(productMatch, limit, onlyInStock);
 }
 
-/** In-stock products whose inventory discount is above zero, one batch each. */
-export async function listDiscountedOffers(limit = 12): Promise<ProductBatchSearchResult[]> {
-  const productMatch = and(eq(products.isActive, true), gt(products.discountPercent, "0"));
+/** Products whose Disc % is above zero and whose stock column is above zero. */
+export async function listDiscountedOffers(limit = 40): Promise<ProductBatchSearchResult[]> {
+  const productMatch = and(
+    eq(products.isActive, true),
+    gt(products.discountPercent, "0"),
+    gt(products.stockQty, "0")
+  );
   if (!productMatch) return [];
-  const rows = await queryProductBatchRows(productMatch, 400, true);
-  const seen = new Set<number>();
-  const picked: ProductBatchSearchResult[] = [];
+  const rows = await queryProductBatchRows(productMatch, 800, false);
+  const best = new Map<number, ProductBatchSearchResult>();
   for (const row of rows) {
-    if (seen.has(row.productId)) continue;
-    seen.add(row.productId);
-    picked.push(row);
+    const current = best.get(row.productId);
+    const rowQty = Number(row.batchQty) || 0;
+    const currentQty = current ? Number(current.batchQty) || 0 : -1;
+    if (!current || (rowQty > 0 && currentQty <= 0)) best.set(row.productId, row);
   }
-  picked.sort((a, b) => Number(b.discountPercent) - Number(a.discountPercent));
-  return picked.slice(0, limit);
+  return [...best.values()]
+    .sort((a, b) => Number(b.discountPercent) - Number(a.discountPercent) || a.name.localeCompare(b.name))
+    .slice(0, limit);
 }
 
 /**
