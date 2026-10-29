@@ -11,11 +11,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { roleLabel } from "@/lib/user-roles";
 
 export type OfficerRow = {
   id: number;
   name: string;
   phone: string;
+  role: string;
   access: boolean;
   createdAt: Date | string | null;
   farmers: number;
@@ -135,6 +137,7 @@ export function OfficersPanel({ officers }: { officers: OfficerRow[] }) {
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Phone</th>
+              <th className="px-4 py-3">Billing role</th>
               <th className="px-4 py-3">Farmers</th>
               <th className="px-4 py-3">Added</th>
               <th className="px-4 py-3">App access</th>
@@ -144,6 +147,9 @@ export function OfficersPanel({ officers }: { officers: OfficerRow[] }) {
           <tbody>
             {officers.map((officer) => {
               const busy = pending && busyId === officer.id;
+              const digits = officer.phone.replace(/\D/g, "").slice(-10);
+              const protectedAccount = digits === "9999999999";
+              const canDelete = officer.role === "sales_officer" && !protectedAccount;
               return (
                 <tr
                   key={officer.id}
@@ -151,6 +157,7 @@ export function OfficersPanel({ officers }: { officers: OfficerRow[] }) {
                 >
                   <td className="px-4 py-3 font-semibold">{officer.name}</td>
                   <td className="px-4 py-3">{officer.phone}</td>
+                  <td className="px-4 py-3">{roleLabel(officer.role)}</td>
                   <td className="px-4 py-3">{Number(officer.farmers) || 0}</td>
                   <td className="px-4 py-3 text-[#2E4A22]/60">
                     {officer.createdAt ? new Date(officer.createdAt).toLocaleDateString("en-IN") : "—"}
@@ -171,18 +178,26 @@ export function OfficersPanel({ officers }: { officers: OfficerRow[] }) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
-                      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => startEdit(officer)}>
-                        Edit
-                      </Button>
                       <Button
                         type="button"
-                        variant="destructive"
+                        variant="outline"
                         size="sm"
-                        disabled={busy}
-                        onClick={() => remove(officer)}
+                        disabled={busy || protectedAccount}
+                        onClick={() => startEdit(officer)}
                       >
-                        Delete
+                        Edit
                       </Button>
+                      {canDelete ? (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => remove(officer)}
+                        >
+                          Delete
+                        </Button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -190,7 +205,7 @@ export function OfficersPanel({ officers }: { officers: OfficerRow[] }) {
             })}
             {officers.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-[#2E4A22]/50">
+                <td colSpan={7} className="px-4 py-10 text-center text-[#2E4A22]/50">
                   No field officers yet. Add one above so they can sign into the app.
                 </td>
               </tr>

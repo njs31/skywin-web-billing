@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, users } from "@/db/schema";
 import { requireFieldAdmin } from "@/lib/actions/auth";
-import { roleLabel } from "@/lib/user-roles";
+import { FIELD_OFFICER_ROLES, roleLabel } from "@/lib/user-roles";
 import { createProduct } from "@/lib/queries/products";
 import { searchProductBatches } from "@/lib/queries/products";
 import {
@@ -276,7 +276,7 @@ export async function fieldOfficers() {
       farmers: sql<number>`(select count(*)::int from ${customers} where ${customers.assignedOfficerId} = ${users.id})`,
     })
     .from(users)
-    .where(eq(users.role, "sales_officer"))
+    .where(inArray(users.role, [...FIELD_OFFICER_ROLES]))
     .orderBy(users.name);
 }
 
@@ -285,7 +285,7 @@ export async function setFieldOfficerAccess(id: number, access: boolean) {
   await db
     .update(users)
     .set({ fieldAppAccess: access })
-    .where(and(eq(users.id, id), eq(users.role, "sales_officer")));
+    .where(and(eq(users.id, id), inArray(users.role, [...FIELD_OFFICER_ROLES])));
   touchField(["/field/officers"]);
 }
 
@@ -305,12 +305,9 @@ async function validateOfficerInput(input: { name: string; phone: string }, exce
     )
     .limit(1);
   if (existing) {
-    if (existing.role === "sales_officer") {
-      return { ok: false as const, error: `${existing.name} is already a field officer with this number.` };
-    }
     return {
       ok: false as const,
-      error: `${existing.name} already uses this number as ${roleLabel(existing.role)}. They can sign into the Field app and are not listed as officers. Use a different mobile for a new officer.`,
+      error: `${existing.name} is already listed here as ${roleLabel(existing.role)}.`,
     };
   }
   return { ok: true as const, name: cleanName, phone: cleanPhone };
@@ -335,7 +332,7 @@ export async function updateFieldOfficer(id: number, input: { name: string; phon
   const [user] = await db
     .update(users)
     .set({ name: valid.name, phone: valid.phone })
-    .where(and(eq(users.id, id), eq(users.role, "sales_officer")))
+    .where(and(eq(users.id, id), inArray(users.role, [...FIELD_OFFICER_ROLES])))
     .returning();
   if (!user) return { ok: false as const, error: "Officer not found." };
   touchField(["/users"]);

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
+import { canSignInAsFieldOfficer } from "@/lib/user-roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +16,8 @@ export function OPTIONS() {
 }
 
 /**
- * Field app login gate. Officer login: sales_officer with app access, or an
- * admin / regional manager. Manager login: admin / regional manager only.
+ * Field app login gate. Officer login: billing users with app access, except
+ * dealers. Manager login: admin / regional manager only.
  */
 export async function GET(req: NextRequest) {
   if (!(await verifyFieldApiKey(req))) {
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
   const allowed =
     !!user &&
     user.access &&
-    (as === "manager" ? isManager : isManager || user.role === "sales_officer");
+    (as === "manager" ? isManager : canSignInAsFieldOfficer(user.role));
 
   return fieldJson({
     allowed,

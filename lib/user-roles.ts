@@ -24,6 +24,18 @@ export function isUserRole(value: string): value is UserRole {
   return (USER_ROLES as readonly string[]).includes(value);
 }
 
+export const FIELD_OFFICER_ROLES = [
+  "admin",
+  "regional_manager",
+  "sales_officer",
+  "store_manager",
+  "cashier",
+] as const satisfies readonly UserRole[];
+
+export function canSignInAsFieldOfficer(role: string | undefined | null) {
+  return !!role && (FIELD_OFFICER_ROLES as readonly string[]).includes(role);
+}
+
 export function canManageField(role: string | undefined | null) {
   return role === "admin" || role === "regional_manager";
 }
