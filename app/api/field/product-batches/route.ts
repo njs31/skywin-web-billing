@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const offers = url.searchParams.get("offers") === "1";
   const allOffers = offers && url.searchParams.get("all") === "1";
   const limit = allOffers
-    ? Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 500))
+    ? Math.min(2000, Math.max(1, Number(url.searchParams.get("limit")) || 2000))
     : Math.min(40, Math.max(1, Number(url.searchParams.get("limit")) || (offers ? 40 : 20)));
 
   if (!q && !offers) {

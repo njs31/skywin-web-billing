@@ -230,17 +230,70 @@ export async function listDiscountedOffers(
     inStockOnly ? gt(products.stockQty, "0") : undefined
   );
   if (!productMatch) return [];
-  const rows = await queryProductBatchRows(productMatch, inStockOnly ? 800 : 2000, false);
-  const best = new Map<number, ProductBatchSearchResult>();
-  for (const row of rows) {
-    const current = best.get(row.productId);
-    const rowQty = Number(row.batchQty) || 0;
-    const currentQty = current ? Number(current.batchQty) || 0 : -1;
-    if (!current || (rowQty > 0 && currentQty <= 0)) best.set(row.productId, row);
+  const found = await db
+    .select({
+      productId: products.id,
+      name: products.name,
+      sku: products.sku,
+      barcode: products.barcode,
+      hsnCode: products.hsnCode,
+      gstRate: products.gstRate,
+      saleRate: products.saleRate,
+      wholesaleRate: products.wholesaleRate,
+      purchaseRate: products.purchaseRate,
+      mrp: products.mrp,
+      discountPercent: products.discountPercent,
+      unit: products.unit,
+      productStockQty: products.stockQty,
+    })
+    .from(products)
+    .where(productMatch)
+    .orderBy(desc(products.discountPercent), asc(products.name))
+    .limit(limit);
+  if (found.length === 0) return [];
+  const batches = await db
+    .select({
+      id: productBatches.id,
+      productId: productBatches.productId,
+      batchNumber: productBatches.batchNumber,
+      qty: productBatches.qty,
+      purchaseRate: productBatches.purchaseRate,
+      saleRate: productBatches.saleRate,
+      expiryDate: productBatches.expiryDate,
+    })
+    .from(productBatches)
+    .where(inArray(productBatches.productId, found.map((row) => row.productId)));
+  const batchByProduct = new Map<number, (typeof batches)[number]>();
+  for (const batch of batches) {
+    const current = batchByProduct.get(batch.productId);
+    const qty = Number(batch.qty) || 0;
+    const currentQty = current ? Number(current.qty) || 0 : -1;
+    if (!current || (qty > 0 && currentQty <= 0)) batchByProduct.set(batch.productId, batch);
   }
-  return [...best.values()]
-    .sort((a, b) => Number(b.discountPercent) - Number(a.discountPercent) || a.name.localeCompare(b.name))
-    .slice(0, limit);
+  return found.map((row) => {
+    const batch = batchByProduct.get(row.productId);
+    return {
+      productId: row.productId,
+      name: row.name,
+      sku: row.sku,
+      barcode: row.barcode,
+      hsnCode: row.hsnCode,
+      gstRate: row.gstRate,
+      saleRate: row.saleRate,
+      wholesaleRate: row.wholesaleRate,
+      purchaseRate: row.purchaseRate,
+      mrp: row.mrp,
+      discountPercent: row.discountPercent,
+      unit: row.unit ?? "pcs",
+      productStockQty: row.productStockQty,
+      batchId: batch?.id ?? null,
+      batchNumber: batch?.batchNumber ?? null,
+      batchQty: batch?.qty ?? "0",
+      batchPurchaseRate: batch?.purchaseRate ?? null,
+      batchSaleRate: batch?.saleRate ?? null,
+      batchExpiry: batch?.expiryDate ?? null,
+    };
+  });
 }
 
 /**
