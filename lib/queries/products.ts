@@ -218,15 +218,19 @@ export async function searchProductBatches(
   return queryProductBatchRows(productMatch, limit, onlyInStock);
 }
 
-/** Products whose Disc % is above zero and whose stock column is above zero. */
-export async function listDiscountedOffers(limit = 40): Promise<ProductBatchSearchResult[]> {
+/** Products whose Disc % is above zero. Home preview keeps the stock filter. */
+export async function listDiscountedOffers(
+  limit = 40,
+  options?: { inStockOnly?: boolean }
+): Promise<ProductBatchSearchResult[]> {
+  const inStockOnly = options?.inStockOnly !== false;
   const productMatch = and(
     eq(products.isActive, true),
     gt(products.discountPercent, "0"),
-    gt(products.stockQty, "0")
+    inStockOnly ? gt(products.stockQty, "0") : undefined
   );
   if (!productMatch) return [];
-  const rows = await queryProductBatchRows(productMatch, 800, false);
+  const rows = await queryProductBatchRows(productMatch, inStockOnly ? 800 : 2000, false);
   const best = new Map<number, ProductBatchSearchResult>();
   for (const row of rows) {
     const current = best.get(row.productId);

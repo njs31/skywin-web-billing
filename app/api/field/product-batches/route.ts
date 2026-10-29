@@ -22,7 +22,10 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
   const offers = url.searchParams.get("offers") === "1";
-  const limit = Math.min(40, Math.max(1, Number(url.searchParams.get("limit")) || (offers ? 40 : 20)));
+  const allOffers = offers && url.searchParams.get("all") === "1";
+  const limit = allOffers
+    ? Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 500))
+    : Math.min(40, Math.max(1, Number(url.searchParams.get("limit")) || (offers ? 40 : 20)));
 
   if (!q && !offers) {
     return fieldJson({ products: [] });
@@ -30,7 +33,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const rows = offers
-      ? await listDiscountedOffers(limit)
+      ? await listDiscountedOffers(limit, { inStockOnly: !allOffers })
       : await searchProductBatches(q, limit, { onlyInStock: false });
     const images = await offerImages(offers ? rows.map((row) => row.productId) : []);
     return fieldJson({
