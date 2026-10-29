@@ -22,7 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (pathname === "/field" || pathname.startsWith("/field/")) {
-    return <main className="h-screen w-screen overflow-auto bg-[#FFF7F5]">{children}</main>;
+    return <div className="h-screen w-screen overflow-hidden bg-[#FFF7F5]">{children}</div>;
   }
 
   return (

@@ -43,8 +43,8 @@ export function FieldShell({
   const close = () => setOpen(false);
 
   return (
-    <div className="min-h-screen bg-[#F4F3EE] text-[#29332C]">
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-[#1E3317]/10 bg-[#1E3317] px-4 text-white md:hidden">
+    <div className="flex h-full min-h-0 flex-col bg-[#F4F3EE] text-[#29332C]">
+      <header className="z-30 flex h-14 shrink-0 items-center gap-3 border-b border-[#1E3317]/10 bg-[#1E3317] px-4 text-white md:hidden">
         <button
           type="button"
           aria-label={open ? "Close navigation" : "Open navigation"}
@@ -67,10 +67,10 @@ export function FieldShell({
         />
       ) : null}
 
-      <div className="md:flex">
+      <div className="flex min-h-0 flex-1">
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-[#1E3317] text-white transition-transform md:sticky md:top-0 md:h-screen md:translate-x-0",
+            "fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-[#1E3317] text-white transition-transform md:static md:inset-auto md:z-auto md:translate-x-0",
             open ? "translate-x-0" : "-translate-x-full"
           )}
         >
@@ -94,20 +94,38 @@ export function FieldShell({
             {NAV.map((item) => {
               const Icon = item.icon;
               const on = active(pathname, item.href);
+              const className = cn(
+                "flex h-10 items-center gap-2.5 rounded-md px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C6E26A]",
+                on
+                  ? "bg-white/10 font-medium text-white shadow-[inset_3px_0_0_#C6E26A]"
+                  : "text-white/75 hover:bg-white/5 hover:text-white"
+              );
+              const icon = <Icon className="h-4 w-4 shrink-0" aria-hidden />;
+              // Next 16.2 leaves this dynamic route on the loading shell after a
+              // client click. A normal link loads it the same way the address bar does.
+              if (item.href === "/field/products") {
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    onClick={close}
+                    aria-current={on ? "page" : undefined}
+                    className={className}
+                  >
+                    {icon}
+                    {item.label}
+                  </a>
+                );
+              }
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={close}
                   aria-current={on ? "page" : undefined}
-                  className={cn(
-                    "flex h-10 items-center gap-2.5 rounded-md px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C6E26A]",
-                    on
-                      ? "bg-white/10 font-medium text-white shadow-[inset_3px_0_0_#C6E26A]"
-                      : "text-white/75 hover:bg-white/5 hover:text-white"
-                  )}
+                  className={className}
                 >
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  {icon}
                   {item.label}
                 </Link>
               );
@@ -124,7 +142,7 @@ export function FieldShell({
             </Link>
           </div>
         </aside>
-        <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
     </div>
   );
