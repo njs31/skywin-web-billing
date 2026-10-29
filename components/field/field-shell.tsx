@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   ArrowLeft,
@@ -39,11 +40,21 @@ export function FieldShell({
   return (
     <div className="flex min-h-screen bg-[#FFF7F5] text-[#1E3317]">
       <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col bg-[#1E3317] text-white">
-        <div className="border-b border-white/10 px-4 py-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#B8D94A]">
-            SkyWin Field
-          </p>
-          <h1 className="mt-1 text-base font-bold">Admin dashboard</h1>
+        <div className="flex items-center gap-3 border-b border-white/10 px-4 py-4">
+          <Image
+            src="/logo.avif"
+            alt="SkyWin"
+            width={40}
+            height={40}
+            className="h-10 w-10 shrink-0"
+            priority
+          />
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#B8D94A]">
+              SkyWin Field
+            </p>
+            <h1 className="mt-1 text-base font-bold">Admin dashboard</h1>
+          </div>
         </div>
         <nav className="flex-1 space-y-1 p-3">
           {NAV.map((item) => {

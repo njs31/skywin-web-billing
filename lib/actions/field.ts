@@ -5,6 +5,7 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, users } from "@/db/schema";
 import { requireFieldAdmin } from "@/lib/actions/auth";
+import { roleLabel } from "@/lib/user-roles";
 import { createProduct } from "@/lib/queries/products";
 import { searchProductBatches } from "@/lib/queries/products";
 import {
@@ -294,7 +295,7 @@ async function validateOfficerInput(input: { name: string; phone: string }, exce
   if (!cleanName) return { ok: false as const, error: "Name is required" };
   if (cleanPhone.length !== 10) return { ok: false as const, error: "Valid 10-digit phone number is required" };
   const [existing] = await db
-    .select({ id: users.id })
+    .select({ id: users.id, name: users.name, role: users.role })
     .from(users)
     .where(
       and(
@@ -303,7 +304,15 @@ async function validateOfficerInput(input: { name: string; phone: string }, exce
       )
     )
     .limit(1);
-  if (existing) return { ok: false as const, error: "This number is already registered." };
+  if (existing) {
+    if (existing.role === "sales_officer") {
+      return { ok: false as const, error: `${existing.name} is already a field officer with this number.` };
+    }
+    return {
+      ok: false as const,
+      error: `${existing.name} already uses this number as ${roleLabel(existing.role)}. They can sign into the Field app and are not listed as officers. Use a different mobile for a new officer.`,
+    };
+  }
   return { ok: true as const, name: cleanName, phone: cleanPhone };
 }
 
