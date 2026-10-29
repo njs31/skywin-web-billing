@@ -86,7 +86,7 @@ export async function quoteDelhivery(destPin: string, weightGrams: number) {
   });
   const data = (await delhiveryGet(`/api/kinko/v1/invoice/charges/.json?${qs}`)) as
     | Array<{ total_amount?: number | string; charged_weight?: number }>
-    | { total_amount?: number | string };
+    | { total_amount?: number | string; charged_weight?: number };
 
   const row = Array.isArray(data) ? data[0] : data;
   const raw = row?.total_amount;
