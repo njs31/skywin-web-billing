@@ -6,7 +6,7 @@ import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { getBatchBillingRate, inclusiveSalePrice } from "@/lib/gst";
 import { fieldImageUrl } from "@/lib/queries/field-product-details";
-import { listDiscountedOffers, searchProductBatches, type ProductBatchSearchResult } from "@/lib/queries/products";
+import { listDiscountedOffers, listProductBatchesByIds, searchProductBatches, type ProductBatchSearchResult } from "@/lib/queries/products";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,20 +22,23 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
+  const ids = [...new Set((url.searchParams.get("ids") || "").split(",").map((part) => Number(part.trim())).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 400);
   const offers = url.searchParams.get("offers") === "1";
   const allOffers = offers && url.searchParams.get("all") === "1";
   const limit = allOffers
     ? Math.min(2000, Math.max(1, Number(url.searchParams.get("limit")) || 2000))
     : Math.min(40, Math.max(1, Number(url.searchParams.get("limit")) || (offers ? 40 : 20)));
 
-  if (!q && !offers) {
+  if (!q && !offers && ids.length === 0) {
     return fieldJson({ products: [] });
   }
 
   try {
-    const rows = offers
-      ? await listDiscountedOffers(limit, { inStockOnly: !allOffers, listedOnly: true })
-      : await searchProductBatches(q, limit, { onlyInStock: false, listedOnly: true });
+    const rows = ids.length
+      ? await listProductBatchesByIds(ids)
+      : offers
+        ? await listDiscountedOffers(limit, { inStockOnly: !allOffers, listedOnly: true })
+        : await searchProductBatches(q, limit, { onlyInStock: false, listedOnly: true });
     const images = await productImages(rows.map((row) => row.productId));
     const shipping = await productShipping(rows.map((row) => row.productId));
     return fieldJson({

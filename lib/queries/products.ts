@@ -220,6 +220,18 @@ export async function searchProductBatches(
   return queryProductBatchRows(productMatch, limit, onlyInStock);
 }
 
+/** Listed field products for a category, one row per batch. */
+export async function listProductBatchesByIds(ids: number[]): Promise<ProductBatchSearchResult[]> {
+  const unique = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))].slice(0, 400);
+  if (unique.length === 0) return [];
+  const productMatch = and(
+    eq(products.isActive, true),
+    inArray(products.id, unique),
+    inArray(products.id, listedProductIds())
+  );
+  return queryProductBatchRows(productMatch, 2000, false);
+}
+
 /** Products whose Disc % is above zero. Home preview keeps the stock filter. */
 export async function listDiscountedOffers(
   limit = 40,
