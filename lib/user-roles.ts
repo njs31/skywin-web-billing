@@ -38,6 +38,35 @@ export function canSignInAsFieldOfficer(role: string | undefined | null) {
   return !!role && (FIELD_OFFICER_ROLES as readonly string[]).includes(role);
 }
 
+/** Roles that see the whole store's customers, sales and reports (no officer/dealer scoping). */
+export const STORE_WIDE_ROLES = ["admin", "cashier", "store_manager", "manager"] as const;
+
+export function seesWholeStore(role: string | null | undefined): boolean {
+  return !!role && (STORE_WIDE_ROLES as readonly string[]).includes(role);
+}
+
+const PURCHASE_ROUTES = ["/purchases", "/suppliers", "/purchase-orders"];
+const DEALER_NAV = ["/", "/pos", "/invoices", "/customers", "/accounts/outstanding", "/accounts/credit"];
+
+/** Whether a sidebar link is shown for this role. Shared by the sidebar and its tests. */
+export function navItemVisible(
+  role: string,
+  href: string,
+  external = false
+): boolean {
+  if (external && !canManageField(role)) return false;
+  const matrixAccess = matrixCanAccessPath(role, href);
+  if (matrixAccess !== null) return matrixAccess;
+  if (role === "admin") return true;
+  if (role === "regional_manager" || role === "sales_officer") {
+    if (href === "/users" || href === "/settings" || href === "/widget") return false;
+    if (role === "sales_officer" && PURCHASE_ROUTES.some((p) => href === p || href.startsWith(`${p}/`))) return false;
+    return true;
+  }
+  if (role === "dealer") return DEALER_NAV.includes(href);
+  return false;
+}
+
 export function canManageField(role: string | undefined | null) {
   return role === "admin" || role === "regional_manager";
 }

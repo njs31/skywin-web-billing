@@ -350,12 +350,8 @@ export async function getVisibleCustomerIds(user: {
   role: string;
   customerId: number | null;
 }) {
-  if (
-    user.role === "admin" ||
-    user.role === "cashier" ||
-    user.role === "manager" ||
-    user.role === "store_manager"
-  ) {
+  const { seesWholeStore } = await import("@/lib/user-roles");
+  if (seesWholeStore(user.role)) {
     return null;
   }
 

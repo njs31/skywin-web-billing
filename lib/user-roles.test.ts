@@ -4,6 +4,8 @@ import {
   SEED_ADMIN_PHONE,
   canEditInvoices,
   matrixCanAccessPath,
+  navItemVisible,
+  seesWholeStore,
   roleLabel,
   validateRoleChange,
 } from "./user-roles";
@@ -156,5 +158,41 @@ describe("cashier and store manager access", () => {
       assert.equal(matrixCanAccessPath(role, "/customers"), true);
       assert.equal(matrixCanAccessPath(role, "/customers/12"), true);
     }
+  });
+});
+
+describe("Manager menu and data scope", () => {
+  const MANAGER_NAV = [
+    "/", "/pos", "/invoices", "/quotations", "/returns", "/customers", "/einvoice", "/eway-bill",
+    "/purchases", "/purchases/new", "/purchase-orders", "/suppliers",
+    "/products", "/stock", "/stock/import", "/stock/expiry",
+    "/accounts/receipts", "/accounts/payments", "/accounts/credit", "/accounts/outstanding",
+    "/reports",
+  ];
+  it("shows every menu item in Raja's sheet", () => {
+    for (const href of MANAGER_NAV) assert.equal(navItemVisible("manager", href), true, href);
+  });
+  it("hides admin-only and no-access items", () => {
+    for (const href of ["/users", "/logs", "/widget", "/settings", "/field-orders"]) {
+      assert.equal(navItemVisible("manager", href), false, href);
+    }
+    assert.equal(navItemVisible("manager", "https://skywin-field.qwicksapp.com", true), false);
+  });
+  it("keeps other roles' menus as before", () => {
+    assert.equal(navItemVisible("admin", "/users"), true);
+    assert.equal(navItemVisible("sales_officer", "/purchases"), false);
+    assert.equal(navItemVisible("sales_officer", "/invoices"), true);
+    assert.equal(navItemVisible("regional_manager", "/settings"), false);
+    assert.equal(navItemVisible("dealer", "/pos"), true);
+    assert.equal(navItemVisible("dealer", "/products"), false);
+    assert.equal(navItemVisible("cashier", "/purchases/new"), false);
+  });
+  it("sees whole-store sales, dashboard and report data like Store Manager", () => {
+    assert.equal(seesWholeStore("manager"), true);
+    assert.equal(seesWholeStore("store_manager"), true);
+    assert.equal(seesWholeStore("cashier"), true);
+    assert.equal(seesWholeStore("admin"), true);
+    assert.equal(seesWholeStore("sales_officer"), false);
+    assert.equal(seesWholeStore("dealer"), false);
   });
 });

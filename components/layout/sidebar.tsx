@@ -26,16 +26,8 @@ import {
 import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import type { User } from "@/db/schema";
-import { canManageField, matrixCanAccessPath } from "@/lib/user-roles";
+import { navItemVisible } from "@/lib/user-roles";
 import { useState, useEffect } from "react";
-
-const PURCHASE_ROUTES = ["/purchases", "/suppliers", "/purchase-orders"];
-
-function isPurchaseNavItem(href: string) {
-  return PURCHASE_ROUTES.some(
-    (path) => href === path || href.startsWith(`${path}/`)
-  );
-}
 
 type NavItem = {
   href: string;
@@ -158,32 +150,7 @@ export function Sidebar({
     .map((group) => {
       const items = group.items.filter((item) => {
         const role = currentUser?.role || "admin";
-        if (item.external && !canManageField(role)) return false;
-        const matrixAccess = matrixCanAccessPath(role, item.href);
-        if (matrixAccess !== null) return matrixAccess;
-
-        if (role === "admin") return true;
-
-        if (role === "regional_manager" || role === "sales_officer") {
-          if (item.href === "/users" || item.href === "/settings" || item.href === "/widget") return false;
-          if (role === "sales_officer" && isPurchaseNavItem(item.href)) {
-            return false;
-          }
-          return true;
-        }
-
-        if (role === "dealer") {
-          return (
-            item.href === "/" ||
-            item.href === "/pos" ||
-            item.href === "/invoices" ||
-            item.href === "/customers" ||
-            item.href === "/accounts/outstanding" ||
-            item.href === "/accounts/credit"
-          );
-        }
-
-        return false;
+        return navItemVisible(role, item.href, item.external);
       });
 
       return { ...group, items };
