@@ -67,7 +67,7 @@ const navGroups: NavGroup[] = [
     label: "Sales",
     items: [
       { href: "/invoices", label: "Invoices", icon: Receipt },
-      { href: "/field-orders", label: "Field orders", icon: ClipboardList },
+      { href: "/field-orders", label: "Orders", icon: ClipboardList },
       { href: "/quotations", label: "Quotations", icon: FileText },
       { href: "/returns", label: "Sales Return", icon: RotateCcw },
       { href: "/customers", label: "Customers", icon: Users },

@@ -36,13 +36,13 @@ export default async function FieldOverviewPage() {
       label: "Today's UPI",
       value: formatCurrency(data.todayTotal),
       href: "/field/orders",
-      sub: `${data.todayCount} field ${data.todayCount === 1 ? "invoice" : "invoices"}`,
+      sub: `${data.todayCount} ${data.todayCount === 1 ? "order" : "orders"}`,
     },
     {
       label: "This month",
       value: formatCurrency(data.monthTotal),
       href: "/field/orders",
-      sub: `${data.monthCount} field ${data.monthCount === 1 ? "invoice" : "invoices"}`,
+      sub: `${data.monthCount} ${data.monthCount === 1 ? "order" : "orders"}`,
     },
   ];
 
@@ -52,7 +52,7 @@ export default async function FieldOverviewPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-[#1E3317]">Overview</h1>
           <p className="mt-1 text-sm text-[#5E6B62]">
-            Catalogue, farmers, and field invoices for {todayLabel}.
+            Catalogue, farmers, and orders for {todayLabel}.
           </p>
         </div>
         <RefreshButton />
@@ -77,15 +77,15 @@ export default async function FieldOverviewPage() {
       <div>
         <section className="min-w-0">
           <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-semibold text-[#1E3317]">Recent field orders</h2>
+            <h2 className="text-sm font-semibold text-[#1E3317]">Recent orders</h2>
             <Link href="/field/orders" className="text-xs font-medium text-[#245B3E] hover:underline">
-              All field orders
+              All orders
             </Link>
           </div>
           <div className="overflow-hidden rounded-lg border border-[#1E3317]/10 bg-white">
             {data.recentOrders.length === 0 ? (
               <div className="px-4 py-10 text-center">
-                <p className="text-sm font-medium text-[#1E3317]">No field orders yet</p>
+                <p className="text-sm font-medium text-[#1E3317]">No orders yet</p>
                 <p className="mx-auto mt-1 max-w-sm text-sm text-[#5E6B62]">
                   Invoices appear here after a farmer or officer pays in the Field app.
                 </p>

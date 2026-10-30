@@ -174,6 +174,7 @@ export async function listFieldOrders() {
       customerPhone: customers.phone,
       paymentMode: sales.paymentMode,
       grandTotal: sales.grandTotal,
+      paidAmount: sales.paidAmount,
       upiAmount: sales.upiAmount,
       status: sales.status,
       notes: sales.notes,
@@ -182,8 +183,7 @@ export async function listFieldOrders() {
     .from(sales)
     .leftJoin(customers, eq(customers.id, sales.customerId))
     .where(and(activeSale, fieldSaleWhere()))
-    .orderBy(desc(sales.date))
-    .limit(200);
+    .orderBy(desc(sales.date));
 
   const ids = rows.map((r) => r.id);
   const items =
@@ -237,16 +237,54 @@ export async function listFieldOrders() {
     todayTotal: toNumber(todayAgg?.total ?? 0),
     monthCount: Number(monthAgg?.count ?? 0),
     monthTotal: toNumber(monthAgg?.total ?? 0),
-    orders: rows.map((r) => ({
-      ...r,
-      lines: (bySale.get(r.id) ?? []).map((it) => ({
-        name: it.customName || it.name || "Item",
-        productId: it.productId,
-        qty: toNumber(it.qty),
-        batchNumber: it.batchNumber,
-        expiry: it.expiry,
-        amount: toNumber(it.amount),
-      })),
-    })),
+    orders: rows.map((r) => {
+      const paid = toNumber(r.upiAmount) || toNumber(r.paidAmount) || toNumber(r.grandTotal);
+      return {
+        ...r,
+        paid,
+        razorpayPaymentId: razorpayPaymentIdFromNotes(r.notes),
+        waybill: waybillFromNotes(r.notes),
+        lines: (bySale.get(r.id) ?? []).map((it) => ({
+          name: it.customName || it.name || "Item",
+          productId: it.productId,
+          qty: toNumber(it.qty),
+          batchNumber: it.batchNumber,
+          expiry: it.expiry,
+          amount: toNumber(it.amount),
+        })),
+      };
+    }),
   };
+}
+
+export function razorpayPaymentIdFromNotes(notes: string | null) {
+  return notes?.match(/Razorpay\s+(pay_[A-Za-z0-9]+)/)?.[1] ?? null;
+}
+
+export function waybillFromNotes(notes: string | null) {
+  return notes?.match(/\bAWB\s+([A-Za-z0-9]+)/)?.[1] ?? null;
+}
+
+export function delhiveryTrackUrl(waybill: string) {
+  return `https://www.delhivery.com/track-v2/package/${encodeURIComponent(waybill)}`;
+}
+
+/** Remember the Delhivery waybill on the field invoice so Orders can link to tracking. */
+export async function attachFieldWaybill(orderId: string, waybill: string) {
+  const id = orderId.trim();
+  const awb = waybill.trim();
+  if (!id || !awb) return { ok: false as const };
+  const [sale] = await db
+    .select({ id: sales.id, notes: sales.notes })
+    .from(sales)
+    .where(eq(sales.externalOrderId, id))
+    .limit(1);
+  if (!sale) return { ok: false as const };
+  if (waybillFromNotes(sale.notes) === awb) return { ok: true as const };
+  const notes = [sale.notes?.trim(), `AWB ${awb}`].filter(Boolean).join(" · ");
+  await db
+    .update(sales)
+    .set({ notes, transporterName: "Delhivery" })
+    .where(eq(sales.id, sale.id));
+  return { ok: true as const };
 }

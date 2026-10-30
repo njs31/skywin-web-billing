@@ -23,7 +23,7 @@ const NAV = [
   { href: "/field/products", label: "Product details", icon: FileText },
   { href: "/field/farmers", label: "Farmers", icon: Leaf },
   { href: "/field/officers", label: "Officers", icon: Users },
-  { href: "/field/orders", label: "Field orders", icon: ClipboardList },
+  { href: "/field/orders", label: "Orders", icon: ClipboardList },
 ];
 
 function active(pathname: string, href: string) {

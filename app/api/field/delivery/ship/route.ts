@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { createDelhiveryShipment } from "@/lib/delivery/delhivery";
+import { attachFieldWaybill } from "@/lib/queries/field-orders";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
       hsn: String(body.hsn || "3808"),
       quantity: Number(body.quantity) || 1,
     });
+    await attachFieldWaybill(String(body.orderId || ""), ship.waybill).catch(() => undefined);
     return fieldJson(ship);
   } catch (err) {
     return fieldJson({ error: err instanceof Error ? err.message : "Could not book shipment" }, 400);

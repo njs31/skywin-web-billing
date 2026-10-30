@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listFieldOrders } from "@/lib/queries/field-orders";
+import { delhiveryTrackUrl, listFieldOrders } from "@/lib/queries/field-orders";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 import {
   Table,
@@ -16,9 +16,9 @@ export default async function FieldOrdersPage() {
   return (
     <div className="space-y-5 p-6">
       <div>
-        <h1 className="text-2xl font-bold">Field orders</h1>
+        <h1 className="text-2xl font-bold">Orders</h1>
         <p className="text-sm text-slate-500">
-          Orders placed by farmers and field officers. Each line is the billing batch that was deducted.
+          Every order from the Field app, with products, the amount paid, the Razorpay transaction, and tracking.
         </p>
       </div>
 
@@ -31,26 +31,28 @@ export default async function FieldOrdersPage() {
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="border-b border-slate-100 px-4 py-3">
-          <h2 className="text-base font-semibold">All field invoices</h2>
+          <h2 className="text-base font-semibold">All orders</h2>
           <p className="text-sm text-slate-500">{data.orders.length} shown</p>
         </div>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>When</TableHead>
-              <TableHead>Field order</TableHead>
+              <TableHead>Order</TableHead>
               <TableHead>Invoice</TableHead>
               <TableHead>Officer</TableHead>
               <TableHead>Farmer</TableHead>
-              <TableHead>Items / batch</TableHead>
-              <TableHead className="text-right">Total</TableHead>
+              <TableHead>Products</TableHead>
+              <TableHead className="text-right">Amount paid</TableHead>
+              <TableHead>Transaction</TableHead>
+              <TableHead>Tracking</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {data.orders.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-500">
-                  No field orders yet. Place one from the Field Officer app after UPI.
+                <TableCell colSpan={9} className="py-10 text-center text-sm text-slate-500">
+                  No orders yet. An order appears here after a farmer pays in the app.
                 </TableCell>
               </TableRow>
             )}
@@ -75,13 +77,28 @@ export default async function FieldOrdersPage() {
                     <div key={i}>
                       {l.name} × {l.qty}
                       {l.batchNumber ? ` · batch ${l.batchNumber}` : ""}
-                      {l.expiry ? ` · exp ${l.expiry}` : ""}
+                      {l.amount ? ` · ${formatCurrency(l.amount)}` : ""}
                     </div>
                   ))}
                 </TableCell>
                 <TableCell className="text-right font-medium">
-                  {formatCurrency(o.grandTotal)}
+                  {formatCurrency(o.paid)}
                   <div className="text-xs font-normal text-slate-500">{o.paymentMode.toUpperCase()}</div>
+                </TableCell>
+                <TableCell className="font-mono text-xs">{o.razorpayPaymentId ?? "—"}</TableCell>
+                <TableCell className="text-sm">
+                  {o.waybill ? (
+                    <a
+                      href={delhiveryTrackUrl(o.waybill)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-emerald-700 hover:underline"
+                    >
+                      {o.waybill}
+                    </a>
+                  ) : (
+                    "—"
+                  )}
                 </TableCell>
               </TableRow>
             ))}
