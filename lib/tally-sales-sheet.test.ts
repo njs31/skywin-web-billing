@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as XLSX from "xlsx";
-import { buildSalesTallyRow } from "./tally-sales-sheet";
+import { buildSalesTallyRow, isTallyCreditSale } from "./tally-sales-sheet";
 
 function columnIndex(letter: string) {
   let n = 0;
@@ -55,4 +55,12 @@ test("sales sheet column P is Taxability type and column U is the taxable amount
   assert.equal(headers[columnIndex("V")], "sgst");
   assert.equal(headers[columnIndex("W")], "net amount");
   assert.equal(headers[columnIndex("Z")], "Gst type");
+});
+
+test("credit sheet takes credit bills and GSTIN bills; the rest go to Cash Sales", () => {
+  assert.equal(isTallyCreditSale("credit", null), true);
+  assert.equal(isTallyCreditSale("upi", "33CWDPA5565P1Z9"), true);
+  assert.equal(isTallyCreditSale("cash", null), false);
+  assert.equal(isTallyCreditSale("upi", ""), false);
+  assert.equal(isTallyCreditSale("card", "URP"), false);
 });

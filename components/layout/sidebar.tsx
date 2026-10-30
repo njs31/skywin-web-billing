@@ -177,6 +177,7 @@ export function Sidebar({
             item.href === "/" ||
             item.href === "/pos" ||
             item.href === "/invoices" ||
+            item.href === "/customers" ||
             item.href === "/accounts/outstanding" ||
             item.href === "/accounts/credit"
           );

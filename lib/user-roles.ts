@@ -5,6 +5,7 @@ export const USER_ROLES = [
   "dealer",
   "cashier",
   "store_manager",
+  "manager",
 ] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];
@@ -18,6 +19,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   dealer: "Dealer",
   cashier: "Cashier",
   store_manager: "Store Manager",
+  manager: "Manager",
 };
 
 export function isUserRole(value: string): value is UserRole {
@@ -106,8 +108,12 @@ type Grants = Partial<Record<AccessAction, true>>;
 
 const ALL: Grants = { view: true, create: true, edit: true };
 
-/** Skywin Access Control sheet: Cashier and Store Manager. */
-const MATRIX: Record<"cashier" | "store_manager", Record<AccessForm, Grants>> = {
+type MatrixRole = "cashier" | "store_manager" | "manager";
+
+const CV: Grants = { create: true, view: true };
+
+/** Skywin Access Control sheets: Cashier, Store Manager, and Manager (Skywin-Manager-Access.xlsx, 30 Oct 2026). */
+const MATRIX: Record<MatrixRole, Record<AccessForm, Grants>> = {
   cashier: {
     dashboard: { view: true },
     pos: { create: true },
@@ -154,10 +160,33 @@ const MATRIX: Record<"cashier" | "store_manager", Record<AccessForm, Grants>> = 
     reports: { view: true },
     logs: {},
   },
+  manager: {
+    dashboard: { view: true },
+    pos: { create: true },
+    invoices: { view: true },
+    quotations: CV,
+    sales_return: CV,
+    einvoice: { create: true },
+    eway: { create: true },
+    purchase_book: CV,
+    purchase_entry: CV,
+    purchase_orders: CV,
+    suppliers: CV,
+    products: CV,
+    stock_status: CV,
+    stock_import: CV,
+    near_expiry: CV,
+    receipts: CV,
+    payments: CV,
+    credit: CV,
+    outstanding: CV,
+    reports: { view: true },
+    logs: {},
+  },
 };
 
-export function isMatrixRole(role: string): role is "cashier" | "store_manager" {
-  return role === "cashier" || role === "store_manager";
+export function isMatrixRole(role: string): role is MatrixRole {
+  return role === "cashier" || role === "store_manager" || role === "manager";
 }
 
 /** Null for roles that keep their older rules. */
@@ -187,10 +216,12 @@ export function canEditInvoices(role: string | null | undefined) {
 
 type PathGate =
   | { form: AccessForm; kind: "any" | AccessAction }
+  | "allow"
   | "deny";
 
-function holds(role: "cashier" | "store_manager", gate: PathGate) {
+function holds(role: MatrixRole, gate: PathGate) {
   if (gate === "deny") return false;
+  if (gate === "allow") return true;
   const grants = MATRIX[role][gate.form];
   if (gate.kind === "any") return !!(grants.view || grants.create || grants.edit);
   return grants[gate.kind] === true;
@@ -212,12 +243,13 @@ function gateForPath(pathname: string): PathGate {
     path === "/field" ||
     path.startsWith("/field/") ||
     path === "/field-orders" ||
-    path.startsWith("/field-orders/") ||
-    path === "/customers" ||
-    path.startsWith("/customers/")
+    path.startsWith("/field-orders/")
   ) {
     return "deny";
   }
+  // Customers page is open to every role (Raja, 30 Oct 2026). The list
+  // itself stays scoped per role by getScopedCustomerIds.
+  if (path === "/customers" || path.startsWith("/customers/")) return "allow";
   if (path === "/einvoice" || path.startsWith("/einvoice/")) {
     return { form: "einvoice", kind: "create" };
   }
@@ -299,7 +331,7 @@ function gateForPath(pathname: string): PathGate {
   return "deny";
 }
 
-/** Null when this role is not Cashier or Store Manager. */
+/** Null when this role is not Cashier, Store Manager, or Manager. */
 export function matrixCanAccessPath(role: string, pathname: string): boolean | null {
   if (!isMatrixRole(role)) return null;
   return holds(role, gateForPath(pathname));

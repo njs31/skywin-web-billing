@@ -34,6 +34,7 @@ export function TallyExportButton() {
         // Helper to format sheet columns
         const sheetsMapping = [
           { name: "sales", rows: data.sales },
+          { name: "Cash Sales", rows: data["Cash Sales"] },
           { name: "purchase", rows: data.purchase },
           { name: "credit note", rows: data["credit note"] },
           { name: "debit note", rows: data["debit note"] },

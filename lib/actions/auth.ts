@@ -353,6 +353,7 @@ export async function getVisibleCustomerIds(user: {
   if (
     user.role === "admin" ||
     user.role === "cashier" ||
+    user.role === "manager" ||
     user.role === "store_manager"
   ) {
     return null;

@@ -65,3 +65,35 @@ export function unitWithoutQuantity(unit: string | null | undefined): string {
   const stripped = raw.replace(/^[\d\s.,×xX/\-]+/, "").trim();
   return stripped || raw;
 }
+
+/** Long unit words → the 3-letter GST UQC the portal accepts. */
+const PER_UNIT_SHORT: Record<string, string> = {
+  GRAM: "GMS",
+  GRAMS: "GMS",
+  GRMS: "GMS",
+  KGS: "KGS",
+  METRE: "MTR",
+  METER: "MTR",
+  METRES: "MTR",
+  METERS: "MTR",
+  LITRE: "LTR",
+  LITER: "LTR",
+  LITRES: "LTR",
+  PACKET: "PAC",
+  PACKETS: "PAC",
+  PIECES: "PCS",
+  PIECE: "PCS",
+};
+
+/**
+ * Invoice "per" column (Raja, 30 Oct 2026): the GST portal accepts at most
+ * 3 characters, so drop any pack quantity ("54 SQF" → "SQF", "500 GM" →
+ * "GM") and turn known long unit words into their UQC ("Gram" → "GMS",
+ * "Metre" → "MTR", "Litre" → "LTR"). Unknown words are left as-is rather
+ * than cut off.
+ */
+export function invoicePerUnit(unit: string | null | undefined): string {
+  const base = unitWithoutQuantity(unit || "PCS").toUpperCase().replace(/\.$/, "").trim();
+  if (base.length <= 3) return base;
+  return PER_UNIT_SHORT[base] ?? base;
+}

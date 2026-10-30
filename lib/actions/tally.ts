@@ -25,7 +25,7 @@ import { getSettings } from "@/lib/settings";
 import { isPlaceholderGstin } from "@/lib/gst";
 import { stateNameFromGstin } from "@/lib/gst-states";
 import { unitWithoutQuantity } from "@/lib/units";
-import { buildSalesTallyRow } from "@/lib/tally-sales-sheet";
+import { buildSalesTallyRow, isTallyCreditSale } from "@/lib/tally-sales-sheet";
 import { tallyReceiptIncluded } from "@/lib/tally-receipt-filter";
 
 function taxabilityType(rate: number) {
@@ -95,7 +95,9 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       and(gte(sales.date, start), lte(sales.date, end), ne(sales.status, "cancelled"))
     );
 
-  const salesRows = dbSales.map((s) => {
+  const creditSalesRows: ReturnType<typeof buildSalesTallyRow>[] = [];
+  const cashSalesRows: ReturnType<typeof buildSalesTallyRow>[] = [];
+  dbSales.forEach((s) => {
     const qty = parseFloat(s.qty);
     const rate = parseFloat(s.rate);
     const taxable = parseFloat(s.amount);
@@ -110,7 +112,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       s.customerDistrict,
       s.customerPinCode,
     ]);
-    return buildSalesTallyRow({
+    const row = buildSalesTallyRow({
       date: format(new Date(s.date), "dd/MM/yyyy"),
       invoiceNo: s.invoiceNo,
       partyName: s.customerRecordName ?? s.customerName ?? "Walk-in",
@@ -138,6 +140,8 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       state: stateNameFromGstin(s.customerGstin, businessState),
       billedTo,
     });
+    if (isTallyCreditSale(s.paymentMode, s.customerGstin)) creditSalesRows.push(row);
+    else cashSalesRows.push(row);
   });
 
   const dbPurchases = await db
@@ -259,6 +263,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Amount: net,
       cgst,
       sgst,
+      "taxable amount": taxable,
       "net amount": net,
       "credit note ledger": "sales return",
       "GST NO.": c.customerGstin ?? "",
@@ -323,6 +328,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Amount: net,
       cgst,
       sgst,
+      "taxable amount": taxable,
       "net amount": net,
       "debit note ledger": "purchase return",
       "GST NO.": d.supplierGstin ?? "",
@@ -441,7 +447,8 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
   });
 
   return {
-    sales: salesRows,
+    sales: creditSalesRows,
+    "Cash Sales": cashSalesRows,
     purchase: purchaseRows,
     "credit note": creditNoteRows,
     "debit note": debitNoteRows,

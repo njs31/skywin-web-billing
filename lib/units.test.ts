@@ -6,6 +6,7 @@ import {
   parseQtyInput,
   formatQtyWithUnit,
   unitWithoutQuantity,
+  invoicePerUnit,
 } from "./units";
 
 describe("units of measurement", () => {
@@ -51,5 +52,22 @@ describe("units of measurement", () => {
     assert.equal(unitWithoutQuantity("Packet"), "Packet");
     assert.equal(unitWithoutQuantity(null), "pcs");
     assert.equal(unitWithoutQuantity("   "), "pcs");
+  });
+});
+
+describe("invoice per column", () => {
+  it("drops the pack quantity and stays within 3 characters", () => {
+    assert.equal(invoicePerUnit("54 SQF"), "SQF");
+    assert.equal(invoicePerUnit("540 SQF"), "SQF");
+    assert.equal(invoicePerUnit("500 GM"), "GM");
+    assert.equal(invoicePerUnit("1 LTR"), "LTR");
+    assert.equal(invoicePerUnit("10 KG"), "KG");
+    assert.equal(invoicePerUnit("Pcs"), "PCS");
+    assert.equal(invoicePerUnit(null), "PCS");
+    assert.equal(invoicePerUnit("Gram"), "GMS");
+    assert.equal(invoicePerUnit("10 GRMS"), "GMS");
+    assert.equal(invoicePerUnit("Metre"), "MTR");
+    assert.equal(invoicePerUnit("Litre"), "LTR");
+    assert.equal(invoicePerUnit("Packet"), "PAC");
   });
 });

@@ -6,6 +6,7 @@ import {
   toNumber,
 } from "@/lib/utils";
 import { amountInIndianWords } from "@/lib/print-helpers";
+import { invoicePerUnit } from "@/lib/units";
 import { equalCgstSgst } from "@/lib/gst";
 import { invoiceSettlement } from "@/lib/sale-settlement";
 import {
@@ -438,7 +439,7 @@ function WholesaleInvoiceLayout({
                     {formatNumber(item.rate, 2)}
                   </td>
                   <td className="border-r border-slate-900 px-1 py-1 text-center">
-                    {unit}
+                    {invoicePerUnit(item.unit)}
                   </td>
                   <td className="border-r border-slate-900 px-1 py-1 text-right">
                     {disc > 0 ? formatNumber(disc, 2) : ""}

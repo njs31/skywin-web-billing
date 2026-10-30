@@ -95,7 +95,7 @@ describe("cashier and store manager access", () => {
     assert.equal(matrixCanAccessPath("cashier", "/suppliers"), true);
     assert.equal(matrixCanAccessPath("cashier", "/logs"), false);
     assert.equal(matrixCanAccessPath("cashier", "/users"), false);
-    assert.equal(matrixCanAccessPath("cashier", "/customers"), false);
+    assert.equal(matrixCanAccessPath("cashier", "/customers"), true);
     assert.equal(canEditInvoices("cashier"), false);
   });
 
@@ -118,5 +118,43 @@ describe("cashier and store manager access", () => {
     assert.equal(matrixCanAccessPath("dealer", "/pos"), null);
     assert.equal(canEditInvoices("regional_manager"), false);
     assert.equal(canEditInvoices("admin"), true);
+  });
+
+  it("Manager follows Skywin-Manager-Access.xlsx", () => {
+    assert.equal(roleLabel("manager"), "Manager");
+    assert.equal(matrixCanAccessPath("manager", "/"), true);
+    assert.equal(matrixCanAccessPath("manager", "/pos"), true);
+    assert.equal(matrixCanAccessPath("manager", "/invoices"), true);
+    assert.equal(matrixCanAccessPath("manager", "/invoices/9/edit"), false);
+    assert.equal(matrixCanAccessPath("manager", "/quotations/new"), true);
+    assert.equal(matrixCanAccessPath("manager", "/returns"), true);
+    assert.equal(matrixCanAccessPath("manager", "/einvoice"), true);
+    assert.equal(matrixCanAccessPath("manager", "/eway-bill"), true);
+    assert.equal(matrixCanAccessPath("manager", "/purchases"), true);
+    assert.equal(matrixCanAccessPath("manager", "/purchases/new"), true);
+    assert.equal(matrixCanAccessPath("manager", "/purchases/9/edit"), false);
+    assert.equal(matrixCanAccessPath("manager", "/purchase-orders/new"), true);
+    assert.equal(matrixCanAccessPath("manager", "/suppliers"), true);
+    assert.equal(matrixCanAccessPath("manager", "/products/new"), true);
+    assert.equal(matrixCanAccessPath("manager", "/stock/import"), true);
+    assert.equal(matrixCanAccessPath("manager", "/stock/adjust"), true);
+    assert.equal(matrixCanAccessPath("manager", "/stock/expiry"), true);
+    assert.equal(matrixCanAccessPath("manager", "/accounts/receipts"), true);
+    assert.equal(matrixCanAccessPath("manager", "/accounts/receipts/4/edit"), false);
+    assert.equal(matrixCanAccessPath("manager", "/accounts/payments"), true);
+    assert.equal(matrixCanAccessPath("manager", "/accounts/credit"), true);
+    assert.equal(matrixCanAccessPath("manager", "/accounts/outstanding"), true);
+    assert.equal(matrixCanAccessPath("manager", "/reports"), true);
+    assert.equal(matrixCanAccessPath("manager", "/logs"), false);
+    assert.equal(matrixCanAccessPath("manager", "/users"), false);
+    assert.equal(matrixCanAccessPath("manager", "/settings"), false);
+    assert.equal(canEditInvoices("manager"), false);
+  });
+
+  it("opens the Customers page to every role", () => {
+    for (const role of ["cashier", "store_manager", "manager"]) {
+      assert.equal(matrixCanAccessPath(role, "/customers"), true);
+      assert.equal(matrixCanAccessPath(role, "/customers/12"), true);
+    }
   });
 });
