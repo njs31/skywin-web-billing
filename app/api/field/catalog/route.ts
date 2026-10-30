@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import { db } from "@/db";
+import { fieldListedProducts } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { getFieldCatalogTree } from "@/lib/queries/field-catalog";
@@ -16,6 +18,8 @@ export async function GET(req: NextRequest) {
   }
   try {
     const categories = await getFieldCatalogTree();
+    const allowedRows = await db.select({ productId: fieldListedProducts.productId }).from(fieldListedProducts);
+    const allowed = new Set(allowedRows.map((row) => row.productId));
     return fieldJson({
       categories: categories.map((category) => ({
         id: category.slug,
@@ -30,7 +34,7 @@ export async function GET(req: NextRequest) {
           iconKey: sub.iconKey,
           iconUri: sub.iconUri,
           iconTint: sub.iconTint,
-          productIds: sub.productIds,
+          productIds: sub.productIds.filter((id) => allowed.has(id)),
         })),
       })),
     });

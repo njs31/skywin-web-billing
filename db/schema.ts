@@ -912,6 +912,18 @@ export const fieldProductDetails = pgTable("field_product_details", {
 
 export type FieldProductDetail = typeof fieldProductDetails.$inferSelect;
 
+/** Products the field app and field admin may sell, with the pack size Delhivery quotes on. */
+export const fieldListedProducts = pgTable("field_listed_products", {
+  productId: integer("product_id")
+    .primaryKey()
+    .references(() => products.id, { onDelete: "cascade" }),
+  weightGrams: integer("weight_grams"),
+  lengthCm: numeric("length_cm", { precision: 8, scale: 2 }),
+  widthCm: numeric("width_cm", { precision: 8, scale: 2 }),
+  heightCm: numeric("height_cm", { precision: 8, scale: 2 }),
+  sourceCode: text("source_code").notNull(),
+});
+
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => "bytea",
 });

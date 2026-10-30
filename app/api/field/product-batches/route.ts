@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { fieldProductDetails } from "@/db/schema";
+import { fieldListedProducts, fieldProductDetails } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { getBatchBillingRate, inclusiveSalePrice } from "@/lib/gst";
@@ -34,11 +34,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const rows = offers
-      ? await listDiscountedOffers(limit, { inStockOnly: !allOffers })
-      : await searchProductBatches(q, limit, { onlyInStock: false });
+      ? await listDiscountedOffers(limit, { inStockOnly: !allOffers, listedOnly: true })
+      : await searchProductBatches(q, limit, { onlyInStock: false, listedOnly: true });
     const images = await productImages(rows.map((row) => row.productId));
+    const shipping = await productShipping(rows.map((row) => row.productId));
     return fieldJson({
-      products: rows.map((row) => toFieldBatch(row, images.get(row.productId) ?? null, offers)),
+      products: rows.map((row) => toFieldBatch(row, images.get(row.productId) ?? null, shipping.get(row.productId), offers)),
     });
   } catch (err) {
     return fieldJson(
@@ -65,7 +66,37 @@ async function productImages(productIds: number[]) {
   return map;
 }
 
-function toFieldBatch(row: ProductBatchSearchResult, image: string | null, applyDiscount: boolean) {
+async function productShipping(productIds: number[]) {
+  const map = new Map<number, { weightGrams: number | null; lengthCm: number | null; widthCm: number | null; heightCm: number | null }>();
+  const ids = [...new Set(productIds)];
+  if (!ids.length) return map;
+  const rows = await db
+    .select({
+      productId: fieldListedProducts.productId,
+      weightGrams: fieldListedProducts.weightGrams,
+      lengthCm: fieldListedProducts.lengthCm,
+      widthCm: fieldListedProducts.widthCm,
+      heightCm: fieldListedProducts.heightCm,
+    })
+    .from(fieldListedProducts)
+    .where(inArray(fieldListedProducts.productId, ids));
+  for (const row of rows) {
+    map.set(row.productId, {
+      weightGrams: row.weightGrams,
+      lengthCm: row.lengthCm == null ? null : Number(row.lengthCm),
+      widthCm: row.widthCm == null ? null : Number(row.widthCm),
+      heightCm: row.heightCm == null ? null : Number(row.heightCm),
+    });
+  }
+  return map;
+}
+
+function toFieldBatch(
+  row: ProductBatchSearchResult,
+  image: string | null,
+  ship: { weightGrams: number | null; lengthCm: number | null; widthCm: number | null; heightCm: number | null } | undefined,
+  applyDiscount: boolean
+) {
   const discountPercent = Number(row.discountPercent) || 0;
   const listRate = applyDiscount ? Number(row.saleRate) || 0 : getBatchBillingRate(row, "retail");
   const rate = applyDiscount
@@ -85,6 +116,10 @@ function toFieldBatch(row: ProductBatchSearchResult, image: string | null, apply
     discountPercent,
     image,
     stock,
+    weightGrams: ship?.weightGrams ?? null,
+    lengthCm: ship?.lengthCm ?? null,
+    widthCm: ship?.widthCm ?? null,
+    heightCm: ship?.heightCm ?? null,
     lineKey: `${row.productId}-${row.batchId ?? "none"}`,
   };
 }

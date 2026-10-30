@@ -9,6 +9,7 @@ import {
   type FieldUsageRow,
   type FieldVideo,
 } from "@/db/schema";
+import { listedProductIds } from "@/lib/field-listed";
 import { fieldDetailGaps } from "@/lib/field-product-rules";
 
 export const FIELD_PRODUCT_PAGE_SIZE = 40;
@@ -62,7 +63,7 @@ export async function listFieldCatalogProducts() {
     .leftJoin(fieldSubcategoryProducts, eq(fieldSubcategoryProducts.productId, products.id))
     .leftJoin(fieldSubcategories, eq(fieldSubcategories.id, fieldSubcategoryProducts.subcategoryId))
     .leftJoin(fieldCategories, eq(fieldCategories.id, fieldSubcategories.categoryId))
-    .where(eq(products.isActive, true))
+    .where(and(eq(products.isActive, true), inArray(products.id, listedProductIds())))
     .orderBy(asc(products.name), asc(fieldCategories.title), asc(fieldSubcategories.title));
 
   const ids = [...new Set(rows.map((r) => r.productId))];
@@ -143,7 +144,7 @@ export async function fieldProductStats() {
       complete: sql<number>`count(*) filter (where ${productDetailsComplete()})::int`,
     })
     .from(products)
-    .where(eq(products.isActive, true));
+    .where(and(eq(products.isActive, true), inArray(products.id, listedProductIds())));
   const total = Number(row?.total ?? 0);
   const complete = Number(row?.complete ?? 0);
   const mapped = Number(row?.mapped ?? 0);
@@ -165,7 +166,7 @@ export async function listFieldProductsPage(filter?: {
 }) {
   const pageSize = FIELD_PRODUCT_PAGE_SIZE;
   const page = Math.max(1, filter?.page ?? 1);
-  const conditions: SQL[] = [eq(products.isActive, true)];
+  const conditions: SQL[] = [eq(products.isActive, true), inArray(products.id, listedProductIds())];
   const raw = filter?.q?.trim().replace(/[%_]/g, "") ?? "";
   if (raw) {
     const pattern = `%${raw}%`;
@@ -188,6 +189,7 @@ export async function listFieldProductsPage(filter?: {
         productId: products.id,
         name: products.name,
         sku: products.sku,
+        stockQty: products.stockQty,
         description: fieldProductDetails.description,
         images: fieldProductDetails.images,
         activeIngredient: fieldProductDetails.activeIngredient,
@@ -244,6 +246,7 @@ export async function listFieldProductsPage(filter?: {
         productId: row.productId,
         name: row.name,
         sku: row.sku,
+        stock: Number(row.stockQty) || 0,
         image: images[0] ?? null,
         category: row.category ?? "Not in catalogue",
         categorySlug: row.categorySlug ?? "unassigned",

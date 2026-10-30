@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import { products, categories, productBatches, stockMovements, sales, saleItems, productChangeLogs } from "@/db/schema";
+import { listedProductIds } from "@/lib/field-listed";
 import { ilike, or, sql, asc, desc, eq, and, gt, inArray, gte, lte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { parseSkuFromName } from "@/lib/gst";
@@ -191,7 +192,7 @@ async function queryProductBatchRows(
 export async function searchProductBatches(
   query: string,
   limit = 30,
-  options?: { onlyInStock?: boolean }
+  options?: { onlyInStock?: boolean; listedOnly?: boolean }
 ): Promise<ProductBatchSearchResult[]> {
   const q = query.trim();
   if (!q) return [];
@@ -206,6 +207,7 @@ export async function searchProductBatches(
 
   const productMatch = and(
     eq(products.isActive, true),
+    options?.listedOnly ? inArray(products.id, listedProductIds()) : undefined,
     or(
       ilike(products.name, `%${q}%`),
       ilike(products.sku, `%${q}%`),
@@ -221,11 +223,12 @@ export async function searchProductBatches(
 /** Products whose Disc % is above zero. Home preview keeps the stock filter. */
 export async function listDiscountedOffers(
   limit = 40,
-  options?: { inStockOnly?: boolean }
+  options?: { inStockOnly?: boolean; listedOnly?: boolean }
 ): Promise<ProductBatchSearchResult[]> {
   const inStockOnly = options?.inStockOnly !== false;
   const productMatch = and(
     eq(products.isActive, true),
+    options?.listedOnly ? inArray(products.id, listedProductIds()) : undefined,
     gt(products.discountPercent, "0"),
     inStockOnly ? gt(products.stockQty, "0") : undefined
   );

@@ -8,6 +8,7 @@ type ProductRow = {
   productId: number;
   name: string;
   sku: string | null;
+  stock: number;
   image: string | null;
   category: string;
   categorySlug: string;
@@ -101,7 +102,7 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
 
       <section aria-label="Inventory summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Active products", value: stats.total, hint: "Billing inventory" },
+          { label: "Active products", value: stats.total, hint: "Field list, live inventory stock" },
           { label: "Complete details", value: stats.complete, hint: "Description plus ingredient or usage" },
           { label: "Needs details", value: stats.needsDetails, hint: "Missing that farmer-facing writeup" },
           { label: "In catalog", value: stats.mapped, hint: "Pinned to a subcategory" },
@@ -218,7 +219,7 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
                     ? "No active products are in this catalog category."
                     : status === "complete"
                       ? "No product has a description and crop information yet."
-                      : "Active billing products appear here."}
+                      : "Products from the field list appear here."}
             </p>
           </div>
         ) : (
@@ -227,6 +228,7 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
               <thead className="border-b border-[#1E3317]/10 text-left text-xs text-[#5E6B62]">
                 <tr>
                   <th className="px-3 py-2 font-medium">Product</th>
+                  <th className="px-3 py-2 font-medium">Stock</th>
                   <th className="px-3 py-2 font-medium">Catalog</th>
                   <th className="px-3 py-2 font-medium">Details</th>
                   <th className="px-3 py-2 font-medium">Updated</th>
@@ -278,6 +280,9 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
                           </p>
                         </div>
                       </div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-[#1E3317]">
+                      {row.stock.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                     </td>
                     <td className="max-w-[14rem] px-3 py-2.5">
                       {row.categorySlug === "unassigned" ? (
