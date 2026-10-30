@@ -5,6 +5,8 @@ import { fieldListedProducts, fieldProductDetails } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { getBatchBillingRate, inclusiveSalePrice } from "@/lib/gst";
+import { catalogProductIdsForQuery } from "@/lib/field-catalog-match";
+import { getFieldCatalogTree } from "@/lib/queries/field-catalog";
 import { fieldImageUrl } from "@/lib/queries/field-product-details";
 import { listDiscountedOffers, listProductBatchesByIds, searchProductBatches, type ProductBatchSearchResult } from "@/lib/queries/products";
 
@@ -34,8 +36,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const categoryIds = !ids.length && !offers && q ? catalogProductIdsForQuery(await getFieldCatalogTree(), q) : null;
     const rows = ids.length
       ? await listProductBatchesByIds(ids)
+      : categoryIds
+        ? (await listProductBatchesByIds(categoryIds)).slice(0, Math.max(limit, 40))
       : offers
         ? await listDiscountedOffers(limit, { inStockOnly: !allOffers, listedOnly: true })
         : await searchProductBatches(q, limit, { onlyInStock: false, listedOnly: true });
