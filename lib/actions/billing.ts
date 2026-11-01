@@ -289,7 +289,8 @@ export async function getStockMovementsReportData(
   fromDate: string,
   toDate: string
 ) {
-  await requireUser();
+  // Whole-store stock history: dealers (including the Razorpay review login) must not read it.
+  await requireNonDealer();
   const { getStockMovementsReport } = await import("@/lib/queries/reports");
   return getStockMovementsReport(fromDate, toDate);
 }
