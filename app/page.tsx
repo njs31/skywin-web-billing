@@ -85,6 +85,8 @@ async function settled<T>(promise: Promise<T>): Promise<T | null> {
 }
 
 export default async function DashboardPage() {
+  const user = await getCurrentUser();
+  const dealerView = user?.role === "dealer";
   const [
     todaySales,
     recentSales,
@@ -99,16 +101,15 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     settled(getTodaySalesTotal()),
     settled(getRecentSales(5)),
-    settled(getLowStockProducts(10)),
-    settled(getProductStats()),
+    dealerView ? Promise.resolve(null) : settled(getLowStockProducts(10)),
+    dealerView ? Promise.resolve(null) : settled(getProductStats()),
     settled(getOutstandingSummary()),
-    settled(getStockValuation()),
+    dealerView ? Promise.resolve(null) : settled(getStockValuation()),
     settled(getSalesTrend(30)),
     settled(getPaymentModeMix(30)),
     settled(getBillTypeMix(30)),
     settled(getTopProductsChart(8, 30)),
   ]);
-  const user = await getCurrentUser();
   const canEnterPurchase = matrixAllows(user?.role, "purchase_entry", "create");
 
   const belowTen = productStats?.lowStock ?? 0;

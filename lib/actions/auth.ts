@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { users, reportingLines, dealerMappings } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { sendWhatsAppOtp } from "@/lib/services/interakt";
+import { isReviewerPhone, REVIEWER_PHONE } from "@/lib/reviewer";
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SEC,
@@ -100,6 +101,42 @@ export async function loginWithAdminPassword(phone: string, password: string) {
   return { success: true as const, role: user.role };
 }
 
+/** Reviewer signs in with REVIEWER_PASSWORD. The account must be a dealer. */
+export async function loginWithReviewerPassword(phone: string, password: string) {
+  const cleanPhone = phone.trim().replace(/\D/g, "").slice(-10);
+  if (!isReviewerPhone(cleanPhone)) {
+    return { success: false as const, error: "Password login is only for the admin account." };
+  }
+
+  if (tooManyAttempts(`review:${cleanPhone}`)) {
+    return { success: false as const, error: "Too many attempts. Try again later." };
+  }
+
+  const expected = process.env.REVIEWER_PASSWORD;
+  if (!expected) {
+    return {
+      success: false as const,
+      error: "REVIEWER_PASSWORD is not configured on the server.",
+    };
+  }
+
+  if (!password || !passwordsMatch(password, expected)) {
+    return { success: false as const, error: "Invalid password." };
+  }
+
+  const [reviewer] = await db
+    .select()
+    .from(users)
+    .where(eq(users.phone, REVIEWER_PHONE))
+    .limit(1);
+  if (!reviewer || reviewer.role !== "dealer" || !reviewer.customerId) {
+    return { success: false as const, error: "Review account is not set up." };
+  }
+
+  await setSession(reviewer);
+  return { success: true as const, role: reviewer.role };
+}
+
 export async function sendOtp(phone: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
   if (!cleanPhone || cleanPhone.length < 10) {
@@ -110,10 +147,10 @@ export async function sendOtp(phone: string) {
     return { success: false as const, error: "Too many attempts. Try again later." };
   }
 
-  if (cleanPhone === ADMIN_PHONE) {
+  if (cleanPhone === ADMIN_PHONE || isReviewerPhone(cleanPhone)) {
     return {
       success: false as const,
-      error: "Admin uses password login. Enter the admin password instead of OTP.",
+      error: "This number signs in with a password, not an OTP.",
     };
   }
 
@@ -170,10 +207,10 @@ export async function verifyOtpAndLogin(phone: string, otpInput: string) {
     return { success: false as const, error: "Too many attempts. Try again later." };
   }
 
-  if (cleanPhone === ADMIN_PHONE) {
+  if (cleanPhone === ADMIN_PHONE || isReviewerPhone(cleanPhone)) {
     return {
       success: false as const,
-      error: "Admin uses password login, not OTP.",
+      error: "This number signs in with a password, not an OTP.",
     };
   }
 

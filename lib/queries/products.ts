@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import { products, categories, productBatches, stockMovements, sales, saleItems, productChangeLogs } from "@/db/schema";
 import { listedProductIds } from "@/lib/field-listed";
-import { ilike, or, sql, asc, desc, eq, and, gt, inArray, gte, lte, isNotNull } from "drizzle-orm";
+import { ilike, like, or, sql, asc, desc, eq, and, gt, inArray, gte, lte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { parseSkuFromName } from "@/lib/gst";
 import {
@@ -32,14 +32,19 @@ function productMatches(q: string) {
   );
 }
 
-export async function searchProducts(query: string, limit = 20) {
+export async function searchProducts(query: string, limit = 20, skuPrefix?: string) {
   const q = query.trim();
   if (!q) return [];
 
   return db
     .select()
     .from(products)
-    .where(productMatches(q))
+    .where(
+      and(
+        productMatches(q),
+        skuPrefix ? like(products.sku, `${skuPrefix}%`) : undefined
+      )
+    )
     .orderBy(asc(products.name))
     .limit(limit);
 }
@@ -192,7 +197,7 @@ async function queryProductBatchRows(
 export async function searchProductBatches(
   query: string,
   limit = 30,
-  options?: { onlyInStock?: boolean; listedOnly?: boolean }
+  options?: { onlyInStock?: boolean; listedOnly?: boolean; skuPrefix?: string }
 ): Promise<ProductBatchSearchResult[]> {
   const q = query.trim();
   if (!q) return [];
@@ -208,6 +213,7 @@ export async function searchProductBatches(
   const productMatch = and(
     eq(products.isActive, true),
     options?.listedOnly ? inArray(products.id, listedProductIds()) : undefined,
+    options?.skuPrefix ? like(products.sku, `${options.skuPrefix}%`) : undefined,
     or(
       ilike(products.name, `%${q}%`),
       ilike(products.sku, `%${q}%`),

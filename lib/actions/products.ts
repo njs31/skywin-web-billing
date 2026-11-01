@@ -15,11 +15,17 @@ import {
   getProductsExportForDateRange,
 } from "@/lib/queries/products";
 import { getProductByScanCode as getProductByScanCodeQuery } from "@/lib/queries/stock-import";
+import { DEMO_SKU_PREFIX, isDemoSku, REVIEWER_PHONE } from "@/lib/reviewer";
 import {
   importStockFromRows as importStockFromRowsQuery,
   type StockImportRow,
 } from "@/lib/queries/stock-import";
 import { getCurrentUser, requireMatrix, requireNonDealer, requireUser } from "@/lib/actions/auth";
+
+async function catalogSkuPrefix() {
+  const user = await getCurrentUser();
+  return user?.phone === REVIEWER_PHONE ? DEMO_SKU_PREFIX : undefined;
+}
 
 export async function getStockExportData() {
   await requireNonDealer();
@@ -33,7 +39,7 @@ export async function getProductsExportData(fromDate: string, toDate: string) {
 
 export async function searchProducts(query: string, limit = 20) {
   await requireUser();
-  return searchProductsQuery(query, limit);
+  return searchProductsQuery(query, limit, await catalogSkuPrefix());
 }
 
 export async function searchProductBatches(
@@ -42,19 +48,29 @@ export async function searchProductBatches(
   options?: { onlyInStock?: boolean }
 ) {
   await requireUser();
-  return searchProductBatchesQuery(query, limit, options);
+  return searchProductBatchesQuery(query, limit, {
+    ...options,
+    skuPrefix: await catalogSkuPrefix(),
+  });
 }
 
 /** Batches for one product, for the POS scan flow to offer a choice when
  *  a scanned barcode's product has more than one. */
 export async function getProductBatchesForScan(productId: number) {
   await requireUser();
+  const prefix = await catalogSkuPrefix();
+  if (prefix) {
+    const product = await getProductByIdQuery(productId);
+    if (!isDemoSku(product?.sku)) return [];
+  }
   return getProductBatchesByIdQuery(productId);
 }
 
 export async function getProductByScanCode(code: string) {
   await requireUser();
-  return getProductByScanCodeQuery(code);
+  const product = await getProductByScanCodeQuery(code);
+  if ((await catalogSkuPrefix()) && !isDemoSku(product?.sku)) return null;
+  return product;
 }
 
 export async function updateProduct(

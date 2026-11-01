@@ -8,8 +8,10 @@ import {
   verifyOtpAndLogin,
   loginWithPhone,
   loginWithAdminPassword,
+  loginWithReviewerPassword,
 } from "@/lib/actions/auth";
 import { BUSINESS } from "@/lib/business";
+import { REVIEWER_PHONE } from "@/lib/reviewer";
 import { AlertCircle, ArrowLeft, CheckCircle2, RefreshCw } from "lucide-react";
 
 const ADMIN_PHONE = "9999999999";
@@ -53,7 +55,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (phone === ADMIN_PHONE) {
+    if (phone === ADMIN_PHONE || phone === REVIEWER_PHONE) {
       setStep("password");
       setPassword("");
       return;
@@ -96,13 +98,16 @@ export default function LoginPage() {
     setSuccess("");
 
     if (!password) {
-      setError("Enter the admin password");
+      setError(phone === REVIEWER_PHONE ? "Enter the password" : "Enter the admin password");
       return;
     }
 
     startTransition(async () => {
       try {
-        const res = await loginWithAdminPassword(phone, password);
+        const res =
+          phone === REVIEWER_PHONE
+            ? await loginWithReviewerPassword(phone, password)
+            : await loginWithAdminPassword(phone, password);
         if (res.success) {
           setSuccess("Signed in. Opening workspace…");
           setTimeout(() => {
@@ -178,14 +183,18 @@ export default function LoginPage() {
     step === "phone"
       ? "Sign in"
       : step === "password"
-        ? "Admin password"
+        ? phone === REVIEWER_PHONE
+          ? "Account password"
+          : "Admin password"
         : "Enter OTP";
 
   const stepHint =
     step === "phone"
       ? "Use your registered mobile number. We’ll send a WhatsApp code."
       : step === "password"
-        ? "Enter the admin password for this workspace."
+        ? phone === REVIEWER_PHONE
+          ? "Enter the password for this review account."
+          : "Enter the admin password for this workspace."
         : `Code sent to +91 ${phone}`;
 
   const submitLabel =
