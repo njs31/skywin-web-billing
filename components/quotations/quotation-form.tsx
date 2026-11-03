@@ -13,18 +13,13 @@ import {
 } from "@/lib/gst";
 import { quotationLineDiscountPercent } from "@/lib/quotation-discount";
 import { formatCurrency, toNumber } from "@/lib/utils";
-import type { Customer, Product } from "@/db/schema";
+import type { Product } from "@/db/schema";
+import type { CustomerPickerOption } from "@/lib/queries/customers";
+import { CustomerSearchSelect } from "@/components/accounts/customer-search-select";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ProductBatchSearchResults } from "@/components/products/product-batch-search-results";
 import { useRouter } from "next/navigation";
 
@@ -43,9 +38,10 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
-export function QuotationForm({ customers }: { customers: Customer[] }) {
+export function QuotationForm() {
   const router = useRouter();
-  const [customerId, setCustomerId] = useState("");
+  const [customer, setCustomer] = useState<CustomerPickerOption | null>(null);
+  const customerId = customer ? String(customer.id) : "";
   const [paymentTerms, setPaymentTerms] = useState("IMMEDIATE");
   const [dispatchedThrough, setDispatchedThrough] = useState("");
   const [destination, setDestination] = useState("");
@@ -126,7 +122,6 @@ export function QuotationForm({ customers }: { customers: Customer[] }) {
       setError("Select a customer and add at least one item.");
       return;
     }
-    const customer = customers.find((c) => c.id === parseInt(customerId, 10));
     setError("");
     startTransition(async () => {
       try {
@@ -160,19 +155,7 @@ export function QuotationForm({ customers }: { customers: Customer[] }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label>Customer</Label>
-          <Select value={customerId} onValueChange={setCustomerId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select Customer" />
-            </SelectTrigger>
-            <SelectContent>
-              {customers.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                  {c.phone ? ` (${c.phone})` : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CustomerSearchSelect selected={customer} onSelect={setCustomer} />
         </div>
         <div>
           <Label>Mode/Terms of Payment</Label>

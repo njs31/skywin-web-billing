@@ -1,11 +1,8 @@
-import { getCustomers } from "@/lib/queries/customers";
 import { QuotationForm } from "@/components/quotations/quotation-form";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-export default async function NewQuotationPage() {
-  const customers = await getCustomers();
-
+export default function NewQuotationPage() {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -19,7 +16,7 @@ export default async function NewQuotationPage() {
           <Link href="/quotations">Back to Quotations</Link>
         </Button>
       </div>
-      <QuotationForm customers={customers} />
+      <QuotationForm />
     </div>
   );
 }
