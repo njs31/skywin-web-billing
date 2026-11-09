@@ -35,14 +35,19 @@ import {
   clipGstinInput,
   gstinMatchesSearch,
 } from "@/lib/gst";
-import { formatCurrency, toNumber } from "@/lib/utils";
+import { formatCurrency, formatNumber, toNumber } from "@/lib/utils";
 import { checkBelowCost } from "@/lib/pricing";
 import {
   einvoiceReadiness,
   ewayBillReadiness,
 } from "@/lib/gst";
 import { isMeasuredUnit, UNIT_OPTIONS } from "@/lib/units";
-import { saleRateBracket } from "@/lib/print-branding";
+import {
+  lineBasic,
+  lineFinalAmount,
+  lineFinalRate,
+  lineGstLabel,
+} from "@/lib/invoice-line-display";
 import type { Customer, Product } from "@/db/schema";
 import type { ProductBatchSearchResult } from "@/lib/queries/products";
 import { Button } from "@/components/ui/button";
@@ -906,8 +911,15 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
                 Cart is empty
               </p>
             ) : (
-              <div className="max-h-64 space-y-2 overflow-auto">
-                {cart.map((item) => (
+              <div className="max-h-96 space-y-2 overflow-auto">
+                {cart.map((item) => {
+                  const lineAmount = calculateLineAmount(
+                    item.qty,
+                    item.rate,
+                    item.discountValue,
+                    item.discountType
+                  );
+                  return (
                   <div
                     key={item.id}
                     className="rounded-lg border border-slate-100 p-2.5 bg-white shadow-sm"
@@ -927,20 +939,79 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
                           {item.batchExpiry ? ` · Exp ${item.batchExpiry}` : ""}
                         </p>
                       ) : null}
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {formatCurrency(
-                            calculateLineAmount(
-                              item.qty,
-                              item.rate,
-                              item.discountValue,
-                              item.discountType
-                            )
-                          )}
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-semibold tabular-nums text-slate-900">
+                          {formatCurrency(lineFinalAmount({ amount: lineAmount, gstRate: item.gstRate }))}
                         </p>
-                        <p className="text-[10px] text-slate-500">
-                          {saleRateBracket(item.rate, item.gstRate)}
+                        <p className="text-[10px] tabular-nums text-slate-500">
+                          Taxable {formatCurrency(lineAmount)}
                         </p>
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-[1fr_1.35fr_0.6fr_1fr] overflow-hidden rounded-md border border-emerald-100 text-[11px]">
+                      {["MRP", "Dis. Rate", "GST", "Final Rate"].map((h, i) => (
+                        <div
+                          key={h}
+                          className={`border-b border-emerald-100 bg-emerald-50/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-emerald-800 ${
+                            i === 3 ? "text-right" : ""
+                          }`}
+                        >
+                          {h}
+                        </div>
+                      ))}
+                      <div className="flex items-center px-1.5 py-1 tabular-nums text-slate-700">
+                        {formatNumber(lineBasic(item), 2)}
+                      </div>
+                      <div className="flex items-center border-x border-emerald-100 px-1 py-0.5">
+                        <div className="flex h-6 w-full items-center rounded border border-slate-200 bg-white">
+                          <div className="flex h-full shrink-0 overflow-hidden rounded-l border-r border-slate-200">
+                            {(["percent", "value"] as const).map((t) => (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() =>
+                                  updateLineDiscount(item.id, item.discountValue, t)
+                                }
+                                className={`w-5 text-[10px] font-bold ${
+                                  item.discountType === t
+                                    ? "bg-slate-800 text-white"
+                                    : "bg-slate-50 text-slate-500 hover:bg-slate-100"
+                                }`}
+                                aria-label={t === "percent" ? "Discount in percent" : "Discount in rupees"}
+                              >
+                                {t === "percent" ? "%" : "₹"}
+                              </button>
+                            ))}
+                          </div>
+                          <input
+                            type="number"
+                            value={
+                              billType === "wholesale"
+                                ? String(item.discountValue ?? 0)
+                                : item.discountValue || ""
+                            }
+                            min={0}
+                            onChange={(e) =>
+                              updateLineDiscount(
+                                item.id,
+                                parseFloat(e.target.value) || 0,
+                                item.discountType
+                              )
+                            }
+                            className="h-full w-full min-w-0 px-1 text-right text-xs tabular-nums focus:outline-none"
+                            placeholder="Disc"
+                            aria-label={`Discount for ${item.name}`}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center border-r border-emerald-100 px-1.5 py-1 tabular-nums text-slate-700">
+                        {lineGstLabel(item)}
+                      </div>
+                      <div className="flex items-center justify-end bg-emerald-50/40 px-1.5 py-1 font-semibold tabular-nums text-emerald-800">
+                        {formatNumber(
+                          lineFinalRate({ qty: item.qty, amount: lineAmount, gstRate: item.gstRate }),
+                          2
+                        )}
                       </div>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -981,37 +1052,6 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
                         </span>
                       )}
 
-                      <div className="flex h-7 items-center rounded border border-slate-200 bg-white">
-                        <select
-                          value={item.discountType}
-                          onChange={(e) =>
-                            updateLineDiscount(
-                              item.id,
-                              item.discountValue,
-                              e.target.value as "percent" | "value"
-                            )
-                          }
-                          className="h-full border-r border-slate-200 bg-slate-50 px-1 text-[10px] font-semibold text-slate-600 focus:outline-none"
-                        >
-                          <option value="percent">%</option>
-                          <option value="value">₹</option>
-                        </select>
-                        <input
-                          type="number"
-                          value={item.discountValue || ""}
-                          min={0}
-                          onChange={(e) =>
-                            updateLineDiscount(
-                              item.id,
-                              parseFloat(e.target.value) || 0,
-                              item.discountType
-                            )
-                          }
-                          className="h-full w-14 px-1 text-center text-xs focus:outline-none"
-                          placeholder="Disc"
-                        />
-                      </div>
-
                       <Button
                         size="icon"
                         variant="ghost"
@@ -1032,7 +1072,8 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
                       ) : null;
                     })()}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

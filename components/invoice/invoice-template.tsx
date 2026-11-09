@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   formatCurrency,
   formatDateIST,
@@ -15,12 +16,17 @@ import {
   totalLineDiscount,
 } from "@/lib/invoice-discount";
 import {
+  lineBasic,
+  lineFinalAmount,
+  lineGstLabel,
+  wholesaleDiscountColumns,
+} from "@/lib/invoice-line-display";
+import {
   DEFAULT_LANDLINE,
   PRINT_LOGO_SRC,
   PRINT_TRADE_NAME,
   customerArea,
   printPhoneLine,
-  saleRateBracket,
   thankYouMessage,
 } from "@/lib/print-branding";
 
@@ -279,6 +285,28 @@ function MetaCell({
   );
 }
 
+/** A label + value row under the A4 items table (value sits in Amount). */
+function SummaryRow({
+  label,
+  span,
+  children,
+}: {
+  label: string;
+  span: number;
+  children: ReactNode;
+}) {
+  return (
+    <tr className="border-b border-slate-300">
+      <td className="border-r border-slate-900 px-1 py-1" />
+      <td className="border-r border-slate-900 px-1 py-1 text-right font-semibold">
+        {label}
+      </td>
+      <td className="border-r border-slate-900" colSpan={span} />
+      <td className="px-1 py-1 text-right font-semibold">{children}</td>
+    </tr>
+  );
+}
+
 /**
  * Full A4 tax-invoice — used for wholesale and "others" bills. Unchanged from
  * the original single-layout template.
@@ -316,6 +344,12 @@ function WholesaleInvoiceLayout({
   });
 
   const cancelled = sale.status === "cancelled";
+  // Wholesale bills get a rupee discount column next to the percent one.
+  // "others" bills keep a single Disc. % column, as before.
+  const showDiscAmount = (sale.billType ?? "retail") === "wholesale";
+  // Columns between Description and Amount: HSN, Basic, Qty, per, GST,
+  // Disc %, [Disc ₹], Taxable.
+  const midSpan = showDiscAmount ? 8 : 7;
 
   return (
     <div className="mx-auto max-w-[210mm] bg-white p-3 text-slate-900 print-sheet print:p-2">
@@ -403,16 +437,27 @@ function WholesaleInvoiceLayout({
                 HSN/SAC
               </th>
               <th className="border-r border-slate-900 px-1 py-1 text-right">
-                Quantity
+                Basic
               </th>
               <th className="border-r border-slate-900 px-1 py-1 text-right">
-                Rate
+                Quantity
               </th>
               <th className="border-r border-slate-900 px-1 py-1 text-center">
                 per
               </th>
               <th className="border-r border-slate-900 px-1 py-1 text-right">
+                GST
+              </th>
+              <th className="border-r border-slate-900 px-1 py-1 text-right">
                 Disc. %
+              </th>
+              {showDiscAmount && (
+                <th className="border-r border-slate-900 px-1 py-1 text-right">
+                  Disc. ₹
+                </th>
+              )}
+              <th className="border-r border-slate-900 px-1 py-1 text-right">
+                Taxable
               </th>
               <th className="px-1 py-1 text-right">Amount</th>
             </tr>
@@ -420,7 +465,7 @@ function WholesaleInvoiceLayout({
           <tbody>
             {items.map((item, idx) => {
               const unit = (item.unit || "PCS").toUpperCase();
-              const disc = discPercent(item);
+              const disc = wholesaleDiscountColumns(item);
               return (
                 <tr key={idx} className="border-b border-slate-300 align-top">
                   <td className="border-r border-slate-900 px-1 py-1">
@@ -433,87 +478,75 @@ function WholesaleInvoiceLayout({
                     {item.hsnCode ?? "-"}
                   </td>
                   <td className="border-r border-slate-900 px-1 py-1 text-right">
-                    {formatNumber(item.qty, 2)} {unit}
+                    {formatNumber(lineBasic(item), 2)}
                   </td>
-                  <td className="border-r border-slate-900 px-1 py-1 text-right">
-                    {formatNumber(item.rate, 2)}
+                  <td className="whitespace-nowrap border-r border-slate-900 px-1 py-1 text-right">
+                    {formatNumber(item.qty, 2)} {unit}
                   </td>
                   <td className="border-r border-slate-900 px-1 py-1 text-center">
                     {invoicePerUnit(item.unit)}
                   </td>
                   <td className="border-r border-slate-900 px-1 py-1 text-right">
-                    {disc > 0 ? formatNumber(disc, 2) : ""}
+                    {lineGstLabel(item)}
                   </td>
-                  <td className="px-1 py-1 text-right">
-                    <p>{formatNumber(item.amount, 2)}</p>
-                    <p className="text-[8px] leading-tight text-slate-500">
-                      {saleRateBracket(item.rate, item.gstRate)}
-                    </p>
+                  <td className="border-r border-slate-900 px-1 py-1 text-right">
+                    {showDiscAmount
+                      ? disc.percent
+                      : discPercent(item) > 0
+                        ? formatNumber(discPercent(item), 2)
+                        : ""}
+                  </td>
+                  {showDiscAmount && (
+                    <td className="border-r border-slate-900 px-1 py-1 text-right">
+                      {disc.amount}
+                    </td>
+                  )}
+                  <td className="border-r border-slate-900 px-1 py-1 text-right">
+                    {formatNumber(item.amount, 2)}
+                  </td>
+                  <td className="px-1 py-1 text-right font-semibold">
+                    {formatNumber(lineFinalAmount(item), 2)}
                   </td>
                 </tr>
               );
             })}
-            <tr className="border-b border-slate-300">
-              <td className="border-r border-slate-900 px-1 py-1" />
-              <td className="border-r border-slate-900 px-1 py-1 text-right font-semibold">
-                {interstate ? "Output IGST" : "Output CGST"}
-              </td>
-              <td className="border-r border-slate-900" colSpan={5} />
-              <td className="px-1 py-1 text-right font-semibold">
-                {interstate
-                  ? formatNumber(sale.igst, 2)
-                  : formatNumber(sale.cgst, 2)}
-              </td>
-            </tr>
+            <SummaryRow label="Taxable Value" span={midSpan}>
+              {formatNumber(taxableTotal, 2)}
+            </SummaryRow>
+            <SummaryRow label={interstate ? "Output IGST" : "Output CGST"} span={midSpan}>
+              {interstate ? formatNumber(sale.igst, 2) : formatNumber(sale.cgst, 2)}
+            </SummaryRow>
             {!interstate && (
-              <tr className="border-b border-slate-300">
-                <td className="border-r border-slate-900 px-1 py-1" />
-                <td className="border-r border-slate-900 px-1 py-1 text-right font-semibold">
-                  Output SGST
-                </td>
-                <td className="border-r border-slate-900" colSpan={5} />
-                <td className="px-1 py-1 text-right font-semibold">
-                  {formatNumber(sale.sgst, 2)}
-                </td>
-              </tr>
+              <SummaryRow label="Output SGST" span={midSpan}>
+                {formatNumber(sale.sgst, 2)}
+              </SummaryRow>
             )}
             {Math.abs(roundOff) >= 0.005 && (
-              <tr className="border-b border-slate-300">
-                <td className="border-r border-slate-900 px-1 py-1" />
-                <td className="border-r border-slate-900 px-1 py-1 text-right font-semibold">
-                  {roundOff < 0 ? "Less : ROUND OFF" : "Add : ROUND OFF"}
-                </td>
-                <td className="border-r border-slate-900" colSpan={5} />
-                <td className="px-1 py-1 text-right font-semibold">
-                  {roundOff < 0 ? `(-)${formatNumber(Math.abs(roundOff), 2)}` : formatNumber(roundOff, 2)}
-                </td>
-              </tr>
+              <SummaryRow
+                label={roundOff < 0 ? "Less : ROUND OFF" : "Add : ROUND OFF"}
+                span={midSpan}
+              >
+                {roundOff < 0 ? `(-)${formatNumber(Math.abs(roundOff), 2)}` : formatNumber(roundOff, 2)}
+              </SummaryRow>
             )}
             <tr className="border-b border-slate-900 font-bold">
               <td className="border-r border-slate-900 px-1 py-1" />
               <td className="border-r border-slate-900 px-1 py-1 text-right">
                 Total
               </td>
-              <td className="border-r border-slate-900 px-1 py-1" />
+              <td className="border-r border-slate-900 px-1 py-1" colSpan={2} />
               <td className="border-r border-slate-900 px-1 py-1 text-right">
                 {formatNumber(totalQty, 2)} PCS
               </td>
-              <td className="border-r border-slate-900" colSpan={3} />
+              <td className="border-r border-slate-900" colSpan={midSpan - 3} />
               <td className="px-1 py-1 text-right">
                 {formatCurrency(sale.grandTotal)}
               </td>
             </tr>
             {settlement.received > 0 ? (
-              <tr className="border-b border-slate-300">
-                <td className="border-r border-slate-900 px-1 py-1" />
-                <td className="border-r border-slate-900 px-1 py-1 text-right font-semibold">
-                  Less : {settlement.label} RECEIVED
-                </td>
-                <td className="border-r border-slate-900" colSpan={5} />
-                <td className="px-1 py-1 text-right font-semibold">
-                  {formatNumber(settlement.received, 2)}
-                </td>
-              </tr>
+              <SummaryRow label={`Less : ${settlement.label} RECEIVED`} span={midSpan}>
+                {formatNumber(settlement.received, 2)}
+              </SummaryRow>
             ) : null}
             {settlement.received > 0 ? (
               <tr className="border-b border-slate-900 font-bold">
@@ -521,7 +554,7 @@ function WholesaleInvoiceLayout({
                 <td className="border-r border-slate-900 px-1 py-1 text-right">
                   Balance Due
                 </td>
-                <td className="border-r border-slate-900" colSpan={5} />
+                <td className="border-r border-slate-900" colSpan={midSpan} />
                 <td className="px-1 py-1 text-right">
                   {formatCurrency(settlement.balance)}
                 </td>
@@ -834,10 +867,11 @@ function RetailReceiptLayout({
         <thead>
           <tr className="border-b border-dashed border-slate-400 text-left">
             <th className="py-0.5 font-semibold">Item</th>
-            <th className="py-0.5 pl-2 text-right font-semibold">Qty</th>
-            <th className="py-0.5 pl-2 text-right font-semibold">Rate</th>
-            <th className="py-0.5 pl-2 text-right font-semibold">Disc</th>
-            <th className="py-0.5 pl-2 text-right font-semibold">Amt</th>
+            <th className="py-0.5 pl-1 text-right font-semibold">Basic</th>
+            <th className="py-0.5 pl-1 text-right font-semibold">Qty</th>
+            <th className="py-0.5 pl-1 text-right font-semibold">GST</th>
+            <th className="py-0.5 pl-1 text-right font-semibold">Disc</th>
+            <th className="py-0.5 pl-1 text-right font-semibold">Amt</th>
           </tr>
         </thead>
         <tbody>
@@ -849,16 +883,16 @@ function RetailReceiptLayout({
                 <td className="py-0.5 pr-1">
                   {item.productName ?? item.customName ?? "Custom Item"}
                 </td>
-                <td className="py-0.5 pl-2 text-right whitespace-nowrap">
+                <td className="py-0.5 pl-1 text-right">
+                  {formatNumber(lineBasic(item), 2)}
+                </td>
+                <td className="py-0.5 pl-1 text-right whitespace-nowrap">
                   {formatNumber(item.qty, 2)} {unit}
                 </td>
-                <td className="py-0.5 pl-2 text-right">{formatNumber(item.rate, 2)}</td>
-                <td className="py-0.5 pl-2 text-right whitespace-nowrap">{disc || "—"}</td>
-                <td className="py-0.5 pl-2 text-right">
-                  <p>{formatNumber(item.amount, 2)}</p>
-                  <p className="text-[8px] leading-tight text-slate-500">
-                    {saleRateBracket(item.rate, item.gstRate)}
-                  </p>
+                <td className="py-0.5 pl-1 text-right">{lineGstLabel(item)}</td>
+                <td className="py-0.5 pl-1 text-right whitespace-nowrap">{disc || "—"}</td>
+                <td className="py-0.5 pl-1 text-right font-semibold">
+                  {formatNumber(lineFinalAmount(item), 2)}
                 </td>
               </tr>
             );
