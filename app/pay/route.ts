@@ -12,16 +12,41 @@ function esc(value: string) {
     .replace(/'/g, "&#39;");
 }
 
+
+/** JSON for inline <script>: escapes characters that could close the tag. */
+function js(value: unknown) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+const ALLOWED_RETURN_HOSTS = new Set(["skywin.qwicksapp.com", "skywin-field.qwicksapp.com"]);
+
+function safeReturn(raw: string | null) {
+  const fallback = "skywinfield://pay";
+  if (!raw) return fallback;
+  try {
+    const u = new URL(raw);
+    if (u.protocol === "skywinfield:") return raw;
+    if (u.protocol === "https:" && ALLOWED_RETURN_HOSTS.has(u.hostname)) return raw;
+  } catch {}
+  return fallback;
+}
+
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams;
   const { keyId } = razorpayKeys();
-  const orderId = q.get("order") || "";
-  const amount = q.get("amount") || "0";
+  const orderId = (q.get("order") || "").trim();
+  const amountRaw = q.get("amount") || "0";
+  const amount = /^\d{1,10}$/.test(amountRaw) ? amountRaw : "0";
   const name = q.get("name") || "SkyWin Field";
   const contact = (q.get("contact") || "").replace(/\D/g, "").slice(-10);
-  const ret = q.get("return") || "skywinfield://pay";
+  const ret = safeReturn(q.get("return"));
   const embed = q.get("embed") === "1";
-  if (!orderId) {
+  if (!/^order_[A-Za-z0-9]{6,40}$/.test(orderId)) {
     return new NextResponse("Missing order", { status: 400 });
   }
 
@@ -51,18 +76,18 @@ export async function GET(req: NextRequest) {
         window.ReactNativeWebView.postMessage(JSON.stringify(payload));
         return;
       }
-      const u = new URL(${JSON.stringify(ret)});
+      const u = new URL(${js(ret)});
       Object.keys(payload).forEach(function (k) { u.searchParams.set(k, payload[k]); });
       window.location = u.toString();
     }
     const options = {
-      key: ${JSON.stringify(keyId)},
-      amount: ${JSON.stringify(amount)},
+      key: ${js(keyId)},
+      amount: ${js(amount)},
       currency: "INR",
       name: "SkyWin Biotech",
       description: "Field order",
-      order_id: ${JSON.stringify(orderId)},
-      prefill: { name: ${JSON.stringify(name)}, contact: ${JSON.stringify(contact)} },
+      order_id: ${js(orderId)},
+      prefill: { name: ${js(name)}, contact: ${js(contact)} },
       theme: { color: "#1E3317" },
       handler: function (response) {
         send({
