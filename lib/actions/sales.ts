@@ -7,11 +7,13 @@ import {
   getSalesReport,
   searchSalesForReturn as searchSalesForReturnQuery,
 } from "@/lib/queries/sales";
+import { revalidatePath } from "next/cache";
 import {
   assertCustomerAccess,
   requireUser,
   requireAdmin,
 } from "@/lib/actions/auth";
+import { refundFieldPayment } from "@/lib/field-order-refunds";
 import { canEditInvoices } from "@/lib/user-roles";
 
 export async function createSale(
@@ -42,15 +44,26 @@ export async function cancelSale(saleId: number, reason: string) {
     throw new Error("A cancellation reason is required.");
   }
   const actorName = admin.name || admin.phone || "admin";
+  const refund = await refundFieldPayment({
+    saleId,
+    amountPaise: null,
+    reason: trimmed,
+    actorName,
+  });
   const result = await cancelSaleMutation(saleId, trimmed, actorName);
   const { recordActivity } = await import("@/lib/queries/activity-logs");
+  const refunded = refund.skipped
+    ? ""
+    : ` and refunded ₹${refund.amountRupees.toFixed(2)} through Razorpay`;
   await recordActivity({
     action: "sale.cancel",
-    message: `${actorName} cancelled invoice ${result.invoiceNo}`,
+    message: `${actorName} cancelled invoice ${result.invoiceNo}${refunded}`,
     entityType: "sale",
     entityId: saleId,
     actor: { id: admin.id, name: actorName },
   });
+  revalidatePath("/field/orders");
+  revalidatePath("/field-orders");
   return result;
 }
 

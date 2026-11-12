@@ -1,0 +1,2 @@
+ALTER TABLE sales
+  ADD COLUMN IF NOT EXISTS refunded_amount numeric(14,2) DEFAULT 0 NOT NULL;

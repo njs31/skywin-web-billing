@@ -263,6 +263,10 @@ export const sales = pgTable(
     upiAmount: numeric("upi_amount", { precision: 14, scale: 2 })
       .default("0")
       .notNull(),
+    /** Sum of Razorpay refunds against this invoice, in rupees. */
+    refundedAmount: numeric("refunded_amount", { precision: 14, scale: 2 })
+      .default("0")
+      .notNull(),
     poNumber: text("po_number"),
     purchaseOrderId: integer("purchase_order_id"),
     quotationNumber: text("quotation_number"),
@@ -906,12 +910,40 @@ export const fieldProductDetails = pgTable("field_product_details", {
   headline: text("headline"),
   description: text("description"),
   antidote: text("antidote"),
+  brand: text("brand"),
+  instructions: text("instructions"),
+  crops: text("crops"),
+  minOrderQty: numeric("min_order_qty", { precision: 14, scale: 2 }),
+  maxOrderQty: numeric("max_order_qty", { precision: 14, scale: 2 }),
   usage: jsonb("usage").$type<FieldUsageRow[]>().default([]).notNull(),
   videos: jsonb("videos").$type<FieldVideo[]>().default([]).notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export type FieldProductDetail = typeof fieldProductDetails.$inferSelect;
+
+/** Crop recommendations written by an admin on the field site or a field officer in the app. */
+export const fieldRecommendations = pgTable(
+  "field_recommendations",
+  {
+    id: serial("id").primaryKey(),
+    crop: text("crop").notNull(),
+    stage: text("stage").default("").notNull(),
+    problem: text("problem").notNull(),
+    note: text("note").default("").notNull(),
+    productIds: jsonb("product_ids").$type<number[]>().default([]).notNull(),
+    authorUserId: integer("author_user_id").references(() => users.id, { onDelete: "set null" }),
+    authorName: text("author_name").notNull(),
+    authorRole: text("author_role").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    cropIdx: index("field_recommendations_crop_idx").on(table.crop),
+  })
+);
+
+export type FieldRecommendationRow = typeof fieldRecommendations.$inferSelect;
 
 /** Products the field app and field admin may sell, with the pack size Delhivery quotes on. */
 export const fieldListedProducts = pgTable("field_listed_products", {

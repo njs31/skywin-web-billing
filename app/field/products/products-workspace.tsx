@@ -3,12 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { fieldProductsPage } from "@/lib/actions/field";
+import { formatGst, formatInr, formatQty } from "@/lib/field-product-rules";
 
 type ProductRow = {
   productId: number;
   name: string;
   sku: string | null;
+  brand: string | null;
+  description: string | null;
+  mrp: string | null;
+  gstRate: string;
+  hsnCode: string | null;
   stock: number;
+  minOrderQty: string | null;
+  maxOrderQty: string | null;
+  instructions: string | null;
+  usageLines: string[];
+  crops: string[];
   image: string | null;
   category: string;
   categorySlug: string;
@@ -27,13 +38,17 @@ type PageData = {
 };
 
 function savedOn(iso: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "";
   return new Date(iso).toLocaleDateString("en-IN", {
     timeZone: "Asia/Kolkata",
     day: "numeric",
     month: "short",
     year: "numeric",
   });
+}
+
+function Blank({ value }: { value: string }) {
+  return value === "—" ? <span className="text-[#5E6B62]">—</span> : <span className="text-[#1E3317]">{value}</span>;
 }
 
 export function ProductsWorkspace({ initial }: { initial: PageData }) {
@@ -96,8 +111,10 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-[#1E3317]">Product details</h1>
-        <p className="mt-1 text-sm text-[#5E6B62]">Manage the product information displayed in SkyWin Field.</p>
+        <h1 className="text-xl font-semibold tracking-tight text-[#1E3317]">Product catalogue</h1>
+        <p className="mt-1 text-sm text-[#5E6B62]">
+          SKU, brand, description, MRP, GST, HSN, stock, order quantities, usage, and applicable crops.
+        </p>
       </div>
 
       <section aria-label="Inventory summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -133,7 +150,7 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
                 setQuery("");
               }
             }}
-            placeholder="Search name or SKU"
+            placeholder="Search name, SKU, brand, or HSN"
             className="h-9 w-full rounded-md border border-[#1E3317]/15 bg-white px-3 pr-16 text-sm text-[#29332C] outline-none focus:ring-2 focus:ring-[#1E3317]"
           />
           <span className="absolute inset-y-0 right-1 flex items-center gap-1">
@@ -212,7 +229,7 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
             </p>
             <p className="mt-1 text-sm text-[#5E6B62]">
               {query.trim()
-                ? "Try another name or SKU."
+                ? "Try another name, SKU, brand, or HSN."
                 : status === "needs" && !category
                   ? "Every active product already has a description and crop information."
                   : category
@@ -224,21 +241,32 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[1480px] text-sm">
+              <caption className="sr-only">Product catalogue</caption>
               <thead className="border-b border-[#1E3317]/10 text-left text-xs text-[#5E6B62]">
                 <tr>
                   <th className="px-3 py-2 font-medium">Product</th>
-                  <th className="px-3 py-2 font-medium">Stock</th>
-                  <th className="px-3 py-2 font-medium">Catalog</th>
-                  <th className="px-3 py-2 font-medium">Details</th>
-                  <th className="px-3 py-2 font-medium">Updated</th>
+                  <th className="px-3 py-2 font-medium">SKU</th>
+                  <th className="px-3 py-2 font-medium">Brand</th>
+                  <th className="px-3 py-2 font-medium">Description</th>
+                  <th className="px-3 py-2 font-medium">MRP</th>
+                  <th className="px-3 py-2 font-medium">GST</th>
+                  <th className="px-3 py-2 font-medium">HSN</th>
+                  <th className="px-3 py-2 font-medium">Available stock</th>
+                  <th className="px-3 py-2 font-medium">Min qty</th>
+                  <th className="px-3 py-2 font-medium">Max qty</th>
+                  <th className="px-3 py-2 font-medium">Usage</th>
+                  <th className="px-3 py-2 font-medium">Applicable crops</th>
                   <th className="px-3 py-2 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
-                  <tr key={row.productId} className="border-t border-[#1E3317]/10 hover:bg-[#F7F6F1]">
-                    <td className="max-w-[22rem] px-3 py-2.5">
+                {rows.map((row) => {
+                  const usageText = [row.instructions, ...row.usageLines].filter(Boolean).join("\n");
+                  const saved = savedOn(row.updatedAt);
+                  return (
+                  <tr key={row.productId} className="border-t border-[#1E3317]/10 align-top hover:bg-[#F7F6F1]">
+                    <td className="max-w-[16rem] px-3 py-2.5">
                       <div className="flex items-start gap-3">
                         {row.image ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -261,62 +289,104 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
                         )}
                         <div className="min-w-0">
                           <p className="font-medium break-words text-[#1E3317]">{row.name}</p>
-                          <p className="mt-0.5 flex items-center gap-2 text-xs text-[#5E6B62]">
-                            <span className="truncate">{row.sku || `ID ${row.productId}`}</span>
-                            {row.sku ? (
-                              <button
-                                type="button"
-                                className="shrink-0 font-medium text-[#245B3E] hover:underline"
-                                onClick={() => {
-                                  void navigator.clipboard.writeText(row.sku || "").then(() => {
-                                    setCopied(row.productId);
-                                    window.setTimeout(() => setCopied((current) => (current === row.productId ? null : current)), 1200);
-                                  });
-                                }}
-                              >
-                                {copied === row.productId ? "Copied" : "Copy"}
-                              </button>
-                            ) : null}
-                          </p>
+                          {row.categorySlug === "unassigned" ? (
+                            <Link href="/field/catalog" className="mt-0.5 block text-xs font-medium text-[#245B3E] hover:underline">
+                              Not in catalogue
+                            </Link>
+                          ) : (
+                            <Link href={`/field/catalog/${row.categorySlug}`} className="mt-0.5 block break-words text-xs text-[#5E6B62] hover:underline">
+                              {row.category}
+                              {row.sub !== "—" ? ` · ${row.sub}` : ""}
+                            </Link>
+                          )}
+                          {row.gaps.length === 0 ? (
+                            <p className="mt-0.5 text-xs text-[#245B3E]">Complete{row.image ? "" : " · no photo"}</p>
+                          ) : (
+                            <p className="mt-0.5 text-xs text-[#5E6B62]">Needs {row.gaps.join(", ")}</p>
+                          )}
+                          {saved ? <p className="mt-0.5 text-xs text-[#5E6B62]">Updated {saved}</p> : null}
                         </div>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-[#1E3317]">
-                      {row.stock.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="max-w-[14rem] px-3 py-2.5">
-                      {row.categorySlug === "unassigned" ? (
-                        <Link href="/field/catalog" className="font-medium text-[#245B3E] hover:underline">
-                          Not in catalogue
-                        </Link>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <p className="font-medium text-[#1E3317]">{row.sku || "—"}</p>
+                      {row.sku ? (
+                        <button
+                          type="button"
+                          className="mt-0.5 text-xs font-medium text-[#245B3E] hover:underline"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(row.sku || "").then(() => {
+                              setCopied(row.productId);
+                              window.setTimeout(() => setCopied((current) => (current === row.productId ? null : current)), 1200);
+                            });
+                          }}
+                        >
+                          {copied === row.productId ? "Copied" : "Copy"}
+                        </button>
                       ) : (
-                        <Link href={`/field/catalog/${row.categorySlug}`} className="break-words font-medium text-[#1E3317] hover:underline">
-                          {row.category}
-                        </Link>
+                        <p className="mt-0.5 text-xs text-[#5E6B62]">ID {row.productId}</p>
                       )}
-                      <p className="mt-0.5 break-words text-xs text-[#5E6B62]">{row.sub === "—" ? "No subcategory" : row.sub}</p>
+                    </td>
+                    <td className="max-w-[8rem] px-3 py-2.5 break-words">
+                      <Blank value={row.brand || "—"} />
                     </td>
                     <td className="max-w-[16rem] px-3 py-2.5">
-                      {row.gaps.length === 0 ? (
-                        <span className="text-[#245B3E]">
-                          Complete
-                          {row.image ? null : <span className="mt-0.5 block text-xs text-[#5E6B62]">No photo</span>}
-                        </span>
+                      {row.description ? (
+                        <p className="line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-[#29332C]" title={row.description}>
+                          {row.description}
+                        </p>
                       ) : (
-                        <span className="text-[#29332C]">
-                          Needs details
-                          <span className="mt-0.5 block text-xs text-[#5E6B62]">{row.gaps.join(", ")}</span>
-                        </span>
+                        <span className="text-[#5E6B62]">—</span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-[#5E6B62]">{savedOn(row.updatedAt)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                      <Blank value={formatInr(row.mrp)} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                      <Blank value={formatGst(row.gstRate)} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs">
+                      <Blank value={row.hsnCode || "—"} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                      <Blank value={formatQty(row.stock)} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                      <Blank value={formatQty(row.minOrderQty)} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                      <Blank value={formatQty(row.maxOrderQty)} />
+                    </td>
+                    <td className="max-w-[18rem] px-3 py-2.5">
+                      {usageText ? (
+                        <div className="space-y-1" title={usageText}>
+                          {row.instructions ? (
+                            <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-[#29332C]">{row.instructions}</p>
+                          ) : null}
+                          {row.usageLines.slice(0, 3).map((line, index) => (
+                            <p key={`${row.productId}-${index}`} className="line-clamp-2 text-xs leading-5 text-[#5E6B62]">
+                              {line}
+                            </p>
+                          ))}
+                          {row.usageLines.length > 3 ? (
+                            <p className="text-xs text-[#5E6B62]">+{row.usageLines.length - 3} more</p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-[#5E6B62]">—</span>
+                      )}
+                    </td>
+                    <td className="max-w-[12rem] px-3 py-2.5 text-xs leading-5 text-[#29332C]">
+                      {row.crops.length ? row.crops.join(", ") : <span className="text-[#5E6B62]">—</span>}
+                    </td>
                     <td className="px-3 py-2.5 text-right">
                       <Link href={`/field/products/${row.productId}`} className="text-xs font-medium text-[#245B3E] hover:underline">
                         Edit
                       </Link>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

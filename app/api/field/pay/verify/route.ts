@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
-import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
+import { captureVerifiedPayment, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     }
     const ok = verifyRazorpaySignature({ orderId, paymentId, signature });
     if (!ok) return fieldJson({ ok: false, error: "Payment signature did not match." }, 400);
+    await captureVerifiedPayment({ orderId, paymentId });
     return fieldJson({ ok: true, razorpayOrderId: orderId, razorpayPaymentId: paymentId });
   } catch (err) {
     return fieldJson({ ok: false, error: err instanceof Error ? err.message : "Verify failed" }, 400);

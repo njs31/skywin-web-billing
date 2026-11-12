@@ -12,6 +12,7 @@ import {
   Leaf,
   Menu,
   Package,
+  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -22,6 +23,7 @@ const NAV = [
   { href: "/field/catalog", label: "Catalog", icon: Package },
   { href: "/field/products", label: "Product details", icon: FileText },
   { href: "/field/farmers", label: "Farmers", icon: Leaf },
+  { href: "/field/recommendations", label: "Recommendations", icon: Sparkles },
   { href: "/field/officers", label: "Officers", icon: Users },
   { href: "/field/orders", label: "Orders", icon: ClipboardList },
 ];

@@ -233,7 +233,7 @@ const customerSchema = z.object({
   village: z.string().optional(),
   taluk: z.string().optional(),
   district: z.string().optional(),
-  type: z.enum(["retail", "wholesale", "farmer"]).default("retail"),
+  type: z.enum(["retail", "wholesale", "farmer"]).default("farmer"),
   creditLimit: z.number().min(0).optional(),
 });
 

@@ -15,6 +15,10 @@ export default async function FieldProductDetailPage({ params }: { params: Promi
         productId={found.product.id}
         productName={found.product.name}
         sku={found.product.sku}
+        mrp={found.product.mrp}
+        gstRate={found.product.gstRate}
+        hsnCode={found.product.hsnCode}
+        stockQty={found.product.stockQty}
         placement={found.placement}
         updatedAt={found.updatedAt}
         initial={found.detail}

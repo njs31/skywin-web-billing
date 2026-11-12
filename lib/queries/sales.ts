@@ -28,6 +28,10 @@ import {
 import { getSettings } from "@/lib/settings";
 import { getIndianFinancialYearBounds, WHOLESALE_INVOICE_PREFIX, WHOLESALE_INVOICE_SEQ_FLOOR } from "@/lib/financial-year";
 import { allocateReceiptVoucherNo } from "@/lib/queries/receipt-voucher";
+import {
+  saleCancellationStockNote,
+  saleEditRestoreStockNote,
+} from "@/lib/return-stock";
 import { format } from "date-fns";
 import { desc, asc, eq, ne, gte, lt, lte, sql, and, inArray } from "drizzle-orm";
 
@@ -76,6 +80,8 @@ export const createSaleSchema = z.object({
   distanceKm: z.number().nonnegative().optional(),
   eInvoiceRequested: z.boolean().optional(),
   externalOrderId: z.string().optional(),
+  /** When false, the invoice is saved but batch qty and product stock stay unchanged. */
+  deductStock: z.boolean().optional(),
   items: z.array(saleItemSchema).min(1),
 });
 
@@ -121,6 +127,7 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     paidAmount: row.paid_amount == null ? null : String(row.paid_amount),
     cashAmount: String(row.cash_amount ?? "0"),
     upiAmount: String(row.upi_amount ?? "0"),
+    refundedAmount: String(row.refunded_amount ?? "0"),
     poNumber: (row.po_number as string | null) ?? null,
     purchaseOrderId:
       row.purchase_order_id == null ? null : Number(row.purchase_order_id),
@@ -986,10 +993,17 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const executeSale = () =>
     db.transaction(async (tx) => {
       const productInfo = await lockProductsWithBatches(tx, productIds);
-      checkStockAndHsn(productInfo, productQtyMap, normalizedItems);
+      const deductStock = data.deductStock !== false;
+      checkStockAndHsn(
+        productInfo,
+        deductStock ? productQtyMap : new Map(),
+        normalizedItems
+      );
 
       // Allocate deductions in memory (pinned batch or FEFO) from the locked snapshot.
-      const itemDeductions = allocateDeductions(productInfo, normalizedItems);
+      const itemDeductions = deductStock
+        ? allocateDeductions(productInfo, normalizedItems)
+        : normalizedItems.map(() => [] as Deduction[]);
 
       const { finalCustomerId, finalCustomerName } = await resolveSaleCustomer(
         tx,
@@ -1045,11 +1059,11 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
         const discountPercent =
           item.discountType === "percent" ? item.discountValue : 0;
 
-        return sql`(${item.productId ?? null}::int, ${item.customName || null}::text, ${item.qty.toFixed(2)}::numeric, ${item.rate.toFixed(2)}::numeric, ${discountPercent.toFixed(2)}::numeric, ${item.discountType}::text, ${item.discountValue.toFixed(2)}::numeric, ${item.gstRate.toFixed(2)}::numeric, ${amount.toFixed(2)}::numeric, ${item.hsnCode || null}::text, ${item.unit?.trim() || null}::text, ${deductions[0]?.batchId ?? null}::int, ${batchLabel}::text)`;
+        return sql`(${item.productId ?? null}::int, ${item.customName || null}::text, ${item.qty.toFixed(2)}::numeric, ${item.rate.toFixed(2)}::numeric, ${discountPercent.toFixed(2)}::numeric, ${item.discountType}::text, ${item.discountValue.toFixed(2)}::numeric, ${item.gstRate.toFixed(2)}::numeric, ${amount.toFixed(2)}::numeric, ${item.hsnCode || null}::text, ${item.unit?.trim() || null}::text, ${deductions[0]?.batchId ?? item.batchId ?? null}::int, ${batchLabel}::text)`;
       });
 
       const movementValues: ReturnType<typeof sql>[] = [];
-      normalizedItems.forEach((item, idx) => {
+      deductStock && normalizedItems.forEach((item, idx) => {
         const deductions = itemDeductions[idx];
         if (!item.productId || deductions.length === 0) return;
         const batchLabel = deductions
@@ -1156,7 +1170,9 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       }
 
       // Apply all batch deductions and product stock/expiry updates in one statement.
-      await applyBatchDeductions(tx, itemDeductions, productIds);
+      if (deductStock) {
+        await applyBatchDeductions(tx, itemDeductions, productIds);
+      }
 
       return created;
     });
@@ -2046,7 +2062,7 @@ export async function cancelSale(saleId: number, reason: string, actor: string) 
         qty: it.qty,
       })),
       saleId,
-      `Cancellation of ${sale.invoiceNo}`
+      saleCancellationStockNote(sale.invoiceNo)
     );
 
     // Reverse the auto customer receipt (allocations cascade on delete).
@@ -2287,7 +2303,7 @@ export async function updateSale(input: UpdateSaleInput) {
         qty: it.qty,
       })),
       data.saleId,
-      `Edit of ${sale.invoiceNo} (restore)`
+      saleEditRestoreStockNote(sale.invoiceNo)
     );
     await deleteSaleLinesReceiptsAndMovements(tx, data.saleId);
 

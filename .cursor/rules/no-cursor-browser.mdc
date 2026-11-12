@@ -1,0 +1,10 @@
+---
+description: Never use Cursor's built-in browser to test the app
+alwaysApply: true
+---
+
+# No Cursor browser testing
+
+Never open, navigate, click, screenshot, or lock the Cursor IDE browser (cursor-ide-browser MCP) to test this app.
+
+Verify with unit tests, curl against a running server, SQL, or logs. If a visual check is needed, tell the user to look in their own browser.

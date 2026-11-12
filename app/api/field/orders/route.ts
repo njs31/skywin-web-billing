@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
+import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
 import { listFieldOrders, placeFieldOrder } from "@/lib/queries/field-orders";
 
 export const runtime = "nodejs";
@@ -35,8 +36,15 @@ export async function GET(req: NextRequest) {
   if (!(await verifyFieldApiKey(req))) {
     return fieldJson({ error: "Unauthorized" }, 401);
   }
+  const viewerPhone = req.nextUrl.searchParams.get("viewer") || "";
   try {
-    const data = await listFieldOrders();
+    let officerId: number | undefined;
+    if (viewerPhone.trim()) {
+      const viewer = await fieldAppUserByPhone(viewerPhone);
+      if (!viewer) return fieldJson({ orders: [], todayCount: 0, todayTotal: 0, monthCount: 0, monthTotal: 0 });
+      if (fieldOfficerSeesOwnFarmers(viewer.role)) officerId = viewer.id;
+    }
+    const data = await listFieldOrders(officerId ? { officerId } : undefined);
     return fieldJson(data);
   } catch (err) {
     return fieldJson(
@@ -59,6 +67,7 @@ export async function POST(req: NextRequest) {
       farmerName: String(body.farmerName || body.farmer || ""),
       farmerPhone: String(body.farmerPhone || body.phone || ""),
       officerName: String(body.officerName || body.officer || ""),
+      officerPhone: body.officerPhone ? String(body.officerPhone) : undefined,
       deliveryDate: body.deliveryDate ? String(body.deliveryDate) : undefined,
       note: body.note ? String(body.note) : undefined,
       placedGps: body.placedGps ? String(body.placedGps) : undefined,

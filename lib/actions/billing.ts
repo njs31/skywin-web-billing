@@ -79,10 +79,17 @@ export async function updateSaleReturn(
   id: number,
   input: Parameters<typeof updateSaleReturnMutation>[1]
 ) {
-  await requireNonDealer();
-  await requireMatrix("sales_return", "edit");
-  if (input.customerId) await assertCustomerAccess(input.customerId);
-  return updateSaleReturnMutation(id, input);
+  const { clientSafeReturnError } = await import("@/lib/return-stock");
+  try {
+    await requireNonDealer();
+    await requireMatrix("sales_return", "edit");
+    if (input.customerId) await assertCustomerAccess(input.customerId);
+    await updateSaleReturnMutation(id, input);
+    return { ok: true as const };
+  } catch (err) {
+    // Returned, not thrown: production redacts thrown server-action messages.
+    return { ok: false as const, error: clientSafeReturnError(err) };
+  }
 }
 
 export async function createPurchaseReturn(

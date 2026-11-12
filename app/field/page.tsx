@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fieldOverview } from "@/lib/actions/field";
+import { orderLocationMapsUrl } from "@/lib/queries/field-orders";
 import { RefreshButton } from "@/components/field/refresh-button";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 
@@ -101,6 +102,7 @@ export default async function FieldOverviewPage() {
                       <th className="px-3 py-2 font-medium">When</th>
                       <th className="px-3 py-2 text-right font-medium">Amount</th>
                       <th className="px-3 py-2 font-medium">Payment</th>
+                      <th className="px-3 py-2 font-medium">Location</th>
                       <th className="px-3 py-2 font-medium">Status</th>
                     </tr>
                   </thead>
@@ -124,6 +126,20 @@ export default async function FieldOverviewPage() {
                           {formatCurrency(order.grandTotal)}
                         </td>
                         <td className="px-3 py-2.5">{titleCase(order.paymentMode)}</td>
+                        <td className="px-3 py-2.5">
+                          {order.placedGps ? (
+                            <a
+                              href={orderLocationMapsUrl(order.placedGps)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium text-[#245B3E] hover:underline"
+                            >
+                              {order.placedGps}
+                            </a>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td className="px-3 py-2.5">
                           <span className="rounded-md bg-[#EEF1E6] px-1.5 py-0.5 text-xs font-medium text-[#245B3E]">
                             {titleCase(order.status)}

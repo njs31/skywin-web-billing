@@ -62,8 +62,12 @@ function titleCaseApproval(value: string | null | undefined): "Approved" | "Pend
 function farmerConditions(filter?: {
   q?: string;
   approval?: FieldFarmerApproval | "all";
+  officerId?: number;
 }) {
   const conditions = [eq(customers.type, "farmer")];
+  if (filter?.officerId) {
+    conditions.push(eq(customers.assignedOfficerId, filter.officerId));
+  }
   if (filter?.approval && filter.approval !== "all") {
     conditions.push(eq(customers.approval, filter.approval));
   }
@@ -110,6 +114,7 @@ function farmerConditions(filter?: {
 export async function countFieldFarmers(filter?: {
   q?: string;
   approval?: FieldFarmerApproval | "all";
+  officerId?: number;
 }) {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -121,6 +126,7 @@ export async function countFieldFarmers(filter?: {
 export async function listFieldFarmers(filter?: {
   q?: string;
   approval?: FieldFarmerApproval | "all";
+  officerId?: number;
   limit?: number;
   offset?: number;
 }) {
@@ -160,7 +166,7 @@ function farmRowsBy(map: Map<number, typeof farms.$inferSelect[]>, id: number) {
   return map.get(id) ?? [];
 }
 
-export async function getFieldFarmer(id: number) {
+export async function getFieldFarmer(id: number, officerId?: number) {
   const [row] = await db
     .select({
       farmer: customers,
@@ -171,6 +177,7 @@ export async function getFieldFarmer(id: number) {
     .where(and(eq(customers.id, id), eq(customers.type, "farmer")))
     .limit(1);
   if (!row) return null;
+  if (officerId && row.farmer.assignedOfficerId !== officerId) return null;
   const farmRows = await db
     .select()
     .from(farms)

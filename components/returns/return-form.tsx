@@ -302,7 +302,11 @@ export function ReturnForm({
     startTransition(async () => {
       try {
         if (isEdit && initialReturn) {
-          await updateSaleReturn(initialReturn.id, payload);
+          const result = await updateSaleReturn(initialReturn.id, payload);
+          if (!result.ok) {
+            setError(result.error);
+            return;
+          }
           router.push(`/returns/${initialReturn.id}`);
           router.refresh();
           return;
