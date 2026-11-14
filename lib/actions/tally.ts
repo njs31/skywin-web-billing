@@ -199,6 +199,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       Amount: net,
       cgst,
       sgst,
+      "taxable amount": taxable,
       "net amount": net,
       "sales ledger": ledgerLabel("sales", gstRate),
       "purchase ledger": ledgerLabel("purchase", gstRate),
