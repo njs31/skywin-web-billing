@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, users } from "@/db/schema";
-import { requireFieldAdmin } from "@/lib/actions/auth";
+import { requireAdmin, requireFieldAdmin } from "@/lib/actions/auth";
+import { refundAmountPaise } from "@/lib/field-order-refund-rules";
+import { refundFieldPayment } from "@/lib/field-order-refunds";
 import { FIELD_OFFICER_ROLES, roleLabel } from "@/lib/user-roles";
 import { createProduct } from "@/lib/queries/products";
 import { searchProductBatches } from "@/lib/queries/products";
@@ -78,6 +80,7 @@ export async function fieldOverview() {
       grandTotal: order.grandTotal,
       paymentMode: order.paymentMode,
       status: order.status,
+      placedGps: order.placedGps,
     })),
   };
 }
@@ -429,8 +432,35 @@ export async function deleteFieldOfficer(id: number) {
 }
 
 export async function fieldOrdersDashboard() {
-  await requireFieldAdmin();
-  return listFieldOrders();
+  const user = await requireFieldAdmin();
+  const data = await listFieldOrders();
+  return { ...data, canRefund: user.role === "admin" };
+}
+
+export async function refundFieldOrder(saleId: number, amount: string, reason: string) {
+  const admin = await requireAdmin();
+  const trimmed = (reason ?? "").trim();
+  if (trimmed.length < 3) throw new Error("A refund reason is required.");
+  const paise = refundAmountPaise(amount, Number.MAX_SAFE_INTEGER);
+  const actorName = admin.name || admin.phone || "admin";
+  const result = await refundFieldPayment({
+    saleId,
+    amountPaise: paise,
+    reason: trimmed,
+    actorName,
+  });
+  if (result.skipped || !result.refundId) {
+    throw new Error("Nothing left to refund on this order.");
+  }
+  await recordActivity({
+    action: "sale.refund",
+    message: `${actorName} refunded ₹${result.amountRupees.toFixed(2)} on sale ${saleId} through Razorpay ${result.refundId}`,
+    entityType: "sale",
+    entityId: saleId,
+    actor: { id: admin.id, name: actorName },
+  });
+  touchField(["/field-orders", `/invoices/${saleId}`]);
+  return result;
 }
 
 function splitList(value: string) {

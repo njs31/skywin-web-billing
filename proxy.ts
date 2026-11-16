@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
-import { canManageField, matrixCanAccessPath } from "@/lib/user-roles";
+import { canManageField, isSalesManager, matrixCanAccessPath, salesManagerMayOpen } from "@/lib/user-roles";
 
 const FIELD_HOST = "skywin-field.qwicksapp.com";
+const FIELD_ORIGIN = "https://skywin-field.qwicksapp.com";
 const BILLING_ORIGIN = "https://skywin.qwicksapp.com";
 
 function requestHost(request: NextRequest) {
@@ -29,6 +30,12 @@ export async function proxy(request: NextRequest) {
   if (fieldSite) {
     if (pathname === "/login" || pathname === "/privacy" || pathname === "/delete-account") return NextResponse.next();
     if (!session) return NextResponse.redirect(new URL("/login", request.url));
+    if (isSalesManager(session.role)) {
+      if (!salesManagerMayOpen(pathname)) {
+        return NextResponse.redirect(new URL("/field/team", request.url));
+      }
+      return NextResponse.next();
+    }
     if (!canManageField(session.role)) {
       return NextResponse.redirect(BILLING_ORIGIN);
     }
@@ -53,6 +60,10 @@ export async function proxy(request: NextRequest) {
   }
 
   const role = session.role;
+
+  if (isSalesManager(role)) {
+    return NextResponse.redirect(`${FIELD_ORIGIN}/login`);
+  }
 
   if (role !== "admin") {
     if (

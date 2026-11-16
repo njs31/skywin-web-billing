@@ -68,7 +68,7 @@ export default function LoginPage() {
           if (res.success) {
             setSuccess("Signed in. Opening workspace…");
             setTimeout(() => {
-              router.push(fieldSite ? "/field" : "/");
+              router.push(fieldSite ? (res.role === "sales_manager" ? "/field/team" : "/field") : "/");
               router.refresh();
             }, 500);
           } else {
@@ -111,7 +111,7 @@ export default function LoginPage() {
         if (res.success) {
           setSuccess("Signed in. Opening workspace…");
           setTimeout(() => {
-            router.push(fieldSite ? "/field" : "/");
+            router.push(fieldSite ? (res.role === "sales_manager" ? "/field/team" : "/field") : "/");
             router.refresh();
           }, 500);
         } else {
@@ -139,7 +139,7 @@ export default function LoginPage() {
         if (res.success) {
           setSuccess("Verified. Opening workspace…");
           setTimeout(() => {
-            router.push(fieldSite ? "/field" : "/");
+            router.push(fieldSite ? (res.role === "sales_manager" ? "/field/team" : "/field") : "/");
             router.refresh();
           }, 500);
         } else {

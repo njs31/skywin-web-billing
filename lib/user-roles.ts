@@ -2,6 +2,7 @@ export const USER_ROLES = [
   "admin",
   "regional_manager",
   "sales_officer",
+  "sales_manager",
   "dealer",
   "cashier",
   "store_manager",
@@ -15,7 +16,8 @@ export const SEED_ADMIN_PHONE = "9999999999";
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
   regional_manager: "Regional Manager",
-  sales_officer: "Sales Officer",
+  sales_officer: "Field officer",
+  sales_manager: "Sales officer",
   dealer: "Dealer",
   cashier: "Cashier",
   store_manager: "Store Manager",
@@ -69,6 +71,15 @@ export function navItemVisible(
 
 export function canManageField(role: string | undefined | null) {
   return role === "admin" || role === "regional_manager";
+}
+
+/** Web login for the sales officer who manages field officers. Not a phone-app role. */
+export function isSalesManager(role: string | null | undefined) {
+  return role === "sales_manager";
+}
+
+export function salesManagerMayOpen(pathname: string) {
+  return pathname === "/field/team" || pathname.startsWith("/field/team/");
 }
 
 export function roleLabel(role: string): string {

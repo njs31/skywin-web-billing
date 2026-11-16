@@ -46,7 +46,7 @@ export function CancelInvoiceButton({
   return (
     <div className="flex flex-col items-end gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
       <p className="text-sm font-medium text-red-800">
-        Cancel {invoiceNo}? Stock is returned and the customer receipt reversed.
+        Cancel {invoiceNo}? Stock is returned and the customer receipt reversed. If it was paid through Razorpay, the remaining amount is refunded first. A partial refund is done from Field orders.
       </p>
       <input
         className="w-72 rounded border border-slate-300 px-2 py-1 text-sm"

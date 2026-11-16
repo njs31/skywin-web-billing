@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, productBatches, products, saleItems, sales } from "@/db/schema";
+import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
 import { activeSale, createSale, istDayRange } from "@/lib/queries/sales";
 import { getBatchBillingRate } from "@/lib/gst";
 import { toNumber } from "@/lib/utils";
@@ -68,6 +69,7 @@ export type FieldOrderIn = {
   farmerName: string;
   farmerPhone: string;
   officerName: string;
+  officerPhone?: string;
   deliveryDate?: string;
   note?: string;
   placedGps?: string;
@@ -105,10 +107,28 @@ export async function placeFieldOrder(input: FieldOrderIn) {
   const byId = new Map(catalog.map((p) => [p.id, p]));
 
   const phone = digitsPhone(input.farmerPhone);
+  const viewer = input.officerPhone ? await fieldAppUserByPhone(input.officerPhone) : null;
+  const owner = viewer && fieldOfficerSeesOwnFarmers(viewer.role) ? viewer : null;
+  if (owner && phone) {
+    const [existing] = await db
+      .select({ id: customers.id, assignedOfficerId: customers.assignedOfficerId })
+      .from(customers)
+      .where(sql`regexp_replace(coalesce(${customers.phone}, ''), '\\D', '', 'g') = ${phone}`)
+      .limit(1);
+    if (existing?.assignedOfficerId && existing.assignedOfficerId !== owner.id) {
+      throw new Error("This farmer is assigned to another field officer.");
+    }
+  }
   const farmer = await findOrCreateFarmerCustomer(
     input.farmerName,
     phone
   );
+  if (owner && farmer.assignedOfficerId !== owner.id) {
+    await db
+      .update(customers)
+      .set({ assignedOfficerId: owner.id, fieldOfficerName: owner.name, type: "farmer" })
+      .where(eq(customers.id, farmer.id));
+  }
   const notes = [
     `Field order ${orderId}`,
     input.officerName ? `Officer ${input.officerName}` : null,
@@ -162,7 +182,7 @@ export async function placeFieldOrder(input: FieldOrderIn) {
   };
 }
 
-export async function listFieldOrders() {
+export async function listFieldOrders(scope?: { officerId?: number }) {
   const rows = await db
     .select({
       id: sales.id,
@@ -176,13 +196,19 @@ export async function listFieldOrders() {
       grandTotal: sales.grandTotal,
       paidAmount: sales.paidAmount,
       upiAmount: sales.upiAmount,
+      refundedAmount: sales.refundedAmount,
       status: sales.status,
       notes: sales.notes,
       deliveryNote: sales.deliveryNote,
+      destination: sales.destination,
     })
     .from(sales)
     .leftJoin(customers, eq(customers.id, sales.customerId))
-    .where(and(activeSale, fieldSaleWhere()))
+    .where(
+      scope?.officerId
+        ? and(fieldSaleWhere(), eq(customers.assignedOfficerId, scope.officerId))
+        : fieldSaleWhere()
+    )
     .orderBy(desc(sales.date));
 
   const ids = rows.map((r) => r.id);
@@ -216,13 +242,17 @@ export async function listFieldOrders() {
   const startOfToday = istDayRange(todayKey)?.from ?? new Date();
   const startOfMonth = istDayRange(`${todayKey.slice(0, 8)}01`)?.from ?? startOfToday;
 
+  const ownedByOfficer = scope?.officerId
+    ? sql`${sales.customerId} in (select ${customers.id} from ${customers} where ${customers.assignedOfficerId} = ${scope.officerId})`
+    : undefined;
+
   const [todayAgg] = await db
     .select({
       count: sql<number>`count(*)::int`,
       total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
     })
     .from(sales)
-    .where(and(activeSale, fieldSaleWhere(), gte(sales.date, startOfToday)));
+    .where(and(activeSale, fieldSaleWhere(), gte(sales.date, startOfToday), ownedByOfficer));
 
   const [monthAgg] = await db
     .select({
@@ -230,7 +260,7 @@ export async function listFieldOrders() {
       total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
     })
     .from(sales)
-    .where(and(activeSale, fieldSaleWhere(), gte(sales.date, startOfMonth)));
+    .where(and(activeSale, fieldSaleWhere(), gte(sales.date, startOfMonth), ownedByOfficer));
 
   return {
     todayCount: Number(todayAgg?.count ?? 0),
@@ -239,11 +269,14 @@ export async function listFieldOrders() {
     monthTotal: toNumber(monthAgg?.total ?? 0),
     orders: rows.map((r) => {
       const paid = toNumber(r.upiAmount) || toNumber(r.paidAmount) || toNumber(r.grandTotal);
+      const refunded = toNumber(r.refundedAmount);
       return {
         ...r,
         paid,
+        refunded,
         razorpayPaymentId: razorpayPaymentIdFromNotes(r.notes),
         waybill: waybillFromNotes(r.notes),
+        placedGps: placedGpsFromSale(r.destination, r.notes),
         lines: (bySale.get(r.id) ?? []).map((it) => ({
           name: it.customName || it.name || "Item",
           productId: it.productId,
@@ -255,6 +288,18 @@ export async function listFieldOrders() {
       };
     }),
   };
+}
+
+/** Coordinate saved when the farmer or officer placed the order. */
+export function placedGpsFromSale(destination: string | null | undefined, notes: string | null | undefined) {
+  const fromNotes = notes?.match(/GPS\s+(-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?)/)?.[1]?.replace(/\s+/g, " ").trim();
+  const dest = destination?.trim().replace(/\s+/g, " ") || "";
+  if (/^-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?$/.test(dest)) return dest.replace(/\s*,\s*/, ", ");
+  return fromNotes?.replace(/\s*,\s*/, ", ") || null;
+}
+
+export function orderLocationMapsUrl(gps: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gps)}`;
 }
 
 export function razorpayPaymentIdFromNotes(notes: string | null) {

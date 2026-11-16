@@ -121,6 +121,7 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     paidAmount: row.paid_amount == null ? null : String(row.paid_amount),
     cashAmount: String(row.cash_amount ?? "0"),
     upiAmount: String(row.upi_amount ?? "0"),
+    refundedAmount: String(row.refunded_amount ?? "0"),
     poNumber: (row.po_number as string | null) ?? null,
     purchaseOrderId:
       row.purchase_order_id == null ? null : Number(row.purchase_order_id),

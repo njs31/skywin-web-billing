@@ -3,15 +3,18 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { logout } from "@/lib/actions/auth";
 import {
   ArrowLeft,
   ClipboardList,
   FileText,
   LayoutDashboard,
   Leaf,
+  LogOut,
   Menu,
   Package,
+  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -22,9 +25,12 @@ const NAV = [
   { href: "/field/catalog", label: "Catalog", icon: Package },
   { href: "/field/products", label: "Product details", icon: FileText },
   { href: "/field/farmers", label: "Farmers", icon: Leaf },
+  { href: "/field/recommendations", label: "Recommendations", icon: Sparkles },
   { href: "/field/officers", label: "Officers", icon: Users },
   { href: "/field/orders", label: "Orders", icon: ClipboardList },
 ];
+
+const TEAM_NAV = [{ href: "/field/team", label: "My team", icon: Users }];
 
 function active(pathname: string, href: string) {
   if (href === "/field") return pathname === "/field";
@@ -34,13 +40,19 @@ function active(pathname: string, href: string) {
 export function FieldShell({
   children,
   billingHref = "/",
+  teamOnly = false,
+  userName = "",
 }: {
   children: React.ReactNode;
   billingHref?: string;
+  teamOnly?: boolean;
+  userName?: string;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  const nav = teamOnly ? TEAM_NAV : NAV;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#F4F3EE] text-[#29332C]">
@@ -87,11 +99,11 @@ export function FieldShell({
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#C6E26A]">
                 SkyWin Field
               </p>
-              <p className="truncate text-sm text-white/80">Admin</p>
+              <p className="truncate text-sm text-white/80">{teamOnly ? userName || "Sales officer" : "Admin"}</p>
             </div>
           </div>
           <nav className="flex-1 space-y-0.5 p-2" aria-label="Field admin">
-            {NAV.map((item) => {
+            {nav.map((item) => {
               const Icon = item.icon;
               const on = active(pathname, item.href);
               const className = cn(
@@ -132,14 +144,31 @@ export function FieldShell({
             })}
           </nav>
           <div className="border-t border-white/10 p-2">
-            <Link
-              href={billingHref}
-              onClick={close}
-              className="flex h-10 items-center gap-2.5 rounded-md px-3 text-sm text-white/75 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C6E26A]"
-            >
-              <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
-              Back to billing
-            </Link>
+            {teamOnly ? (
+              <button
+                type="button"
+                onClick={() => {
+                  close();
+                  void logout().then(() => {
+                    router.push("/login");
+                    router.refresh();
+                  });
+                }}
+                className="flex h-10 w-full items-center gap-2.5 rounded-md px-3 text-sm text-white/75 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C6E26A]"
+              >
+                <LogOut className="h-4 w-4 shrink-0" aria-hidden />
+                Sign out
+              </button>
+            ) : (
+              <Link
+                href={billingHref}
+                onClick={close}
+                className="flex h-10 items-center gap-2.5 rounded-md px-3 text-sm text-white/75 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C6E26A]"
+              >
+                <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+                Back to billing
+              </Link>
+            )}
           </div>
         </aside>
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8">{children}</main>

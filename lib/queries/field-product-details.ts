@@ -10,7 +10,14 @@ import {
   type FieldVideo,
 } from "@/db/schema";
 import { listedProductIds } from "@/lib/field-listed";
-import { fieldDetailGaps } from "@/lib/field-product-rules";
+import {
+  applicableCrops,
+  fieldDetailGaps,
+  orderQtyPairError,
+  parseOrderQty,
+  qtyInput,
+  usageInstructionLines,
+} from "@/lib/field-product-rules";
 
 export const FIELD_PRODUCT_PAGE_SIZE = 40;
 
@@ -23,6 +30,11 @@ export type FieldProductDetailInput = {
   headline: string;
   description: string;
   antidote: string;
+  brand: string;
+  instructions: string;
+  crops: string;
+  minOrderQty: string;
+  maxOrderQty: string;
   usage: FieldUsageRow[];
   videos: FieldVideo[];
 };
@@ -170,7 +182,12 @@ export async function listFieldProductsPage(filter?: {
   const raw = filter?.q?.trim().replace(/[%_]/g, "") ?? "";
   if (raw) {
     const pattern = `%${raw}%`;
-    const search = or(ilike(products.name, pattern), ilike(products.sku, pattern));
+    const search = or(
+      ilike(products.name, pattern),
+      ilike(products.sku, pattern),
+      ilike(products.hsnCode, pattern),
+      ilike(fieldProductDetails.brand, pattern)
+    );
     if (search) conditions.push(search);
   }
   if (filter?.category === "unassigned") conditions.push(sql`not (${productIsMapped()})`);
@@ -189,8 +206,16 @@ export async function listFieldProductsPage(filter?: {
         productId: products.id,
         name: products.name,
         sku: products.sku,
+        mrp: products.mrp,
+        gstRate: products.gstRate,
+        hsnCode: products.hsnCode,
         stockQty: products.stockQty,
         description: fieldProductDetails.description,
+        brand: fieldProductDetails.brand,
+        instructions: fieldProductDetails.instructions,
+        crops: fieldProductDetails.crops,
+        minOrderQty: fieldProductDetails.minOrderQty,
+        maxOrderQty: fieldProductDetails.maxOrderQty,
         images: fieldProductDetails.images,
         activeIngredient: fieldProductDetails.activeIngredient,
         usage: fieldProductDetails.usage,
@@ -246,7 +271,17 @@ export async function listFieldProductsPage(filter?: {
         productId: row.productId,
         name: row.name,
         sku: row.sku,
+        brand: row.brand?.trim() || null,
+        description: row.description?.trim() || null,
+        mrp: row.mrp,
+        gstRate: row.gstRate,
+        hsnCode: row.hsnCode?.trim() || null,
         stock: Number(row.stockQty) || 0,
+        minOrderQty: row.minOrderQty,
+        maxOrderQty: row.maxOrderQty,
+        instructions: row.instructions?.trim() || null,
+        usageLines: usageInstructionLines(row.usage),
+        crops: applicableCrops(row.crops, row.usage),
         image: images[0] ?? null,
         category: row.category ?? "Not in catalogue",
         categorySlug: row.categorySlug ?? "unassigned",
@@ -260,7 +295,16 @@ export async function listFieldProductsPage(filter?: {
 
 export async function getFieldProductDetail(productId: number) {
   const [product] = await db
-    .select({ id: products.id, name: products.name, sku: products.sku, saleRate: products.saleRate })
+    .select({
+      id: products.id,
+      name: products.name,
+      sku: products.sku,
+      saleRate: products.saleRate,
+      mrp: products.mrp,
+      gstRate: products.gstRate,
+      hsnCode: products.hsnCode,
+      stockQty: products.stockQty,
+    })
     .from(products)
     .where(eq(products.id, productId))
     .limit(1);
@@ -294,6 +338,11 @@ export async function getFieldProductDetail(productId: number) {
       headline: detail?.headline ?? "",
       description: detail?.description ?? "",
       antidote: detail?.antidote ?? "",
+      brand: detail?.brand ?? "",
+      instructions: detail?.instructions ?? "",
+      crops: detail?.crops ?? "",
+      minOrderQty: qtyInput(detail?.minOrderQty),
+      maxOrderQty: qtyInput(detail?.maxOrderQty),
       usage: detail?.usage ?? [],
       videos: detail?.videos ?? [],
     } satisfies FieldProductDetailInput,
@@ -302,6 +351,8 @@ export async function getFieldProductDetail(productId: number) {
 }
 
 export async function upsertFieldProductDetail(productId: number, input: FieldProductDetailInput) {
+  const qtyError = orderQtyPairError(input.minOrderQty ?? "", input.maxOrderQty ?? "");
+  if (qtyError) throw new Error(qtyError);
   const values = {
     displayName: clean(input.displayName) || null,
     images: input.images.map(clean).filter(Boolean),
@@ -311,6 +362,11 @@ export async function upsertFieldProductDetail(productId: number, input: FieldPr
     headline: clean(input.headline) || null,
     description: clean(input.description) || null,
     antidote: clean(input.antidote) || null,
+    brand: clean(input.brand) || null,
+    instructions: clean(input.instructions) || null,
+    crops: clean(input.crops) || null,
+    minOrderQty: parseOrderQty(input.minOrderQty).value,
+    maxOrderQty: parseOrderQty(input.maxOrderQty).value,
     usage: input.usage
       .map((u) => ({
         crop: clean(u.crop),
@@ -346,6 +402,15 @@ export async function publicFieldProductDetail(productId: number) {
     headline: detail.headline,
     description: detail.description,
     antidote: detail.antidote,
+    brand: detail.brand || null,
+    mrp: product.mrp != null && product.mrp !== "" ? Number(product.mrp) : null,
+    gstRate: Number(product.gstRate),
+    hsnCode: product.hsnCode,
+    stock: Number(product.stockQty) || 0,
+    minOrderQty: detail.minOrderQty ? Number(detail.minOrderQty) : null,
+    maxOrderQty: detail.maxOrderQty ? Number(detail.maxOrderQty) : null,
+    instructions: detail.instructions || null,
+    crops: applicableCrops(detail.crops, detail.usage),
     usage: detail.usage,
     videos: detail.videos.map((v) => ({ ...v, thumbnail: videoThumbnail(v) })),
   };

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { saveFieldProductDetail } from "@/lib/actions/field";
 import type { FieldProductDetailInput } from "@/lib/queries/field-product-details";
-import { fieldDetailGaps, fieldDetailHasPhoto, httpUrlError } from "@/lib/field-product-rules";
+import { fieldDetailGaps, fieldDetailHasPhoto, formatGst, formatInr, formatQty, httpUrlError, orderQtyPairError } from "@/lib/field-product-rules";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,10 @@ export function ProductDetailForm({
   productId,
   productName,
   sku,
+  mrp,
+  gstRate,
+  hsnCode,
+  stockQty,
   placement,
   updatedAt,
   initial,
@@ -32,6 +36,10 @@ export function ProductDetailForm({
   productId: number;
   productName: string;
   sku: string | null;
+  mrp: string | null;
+  gstRate: string;
+  hsnCode: string | null;
+  stockQty: string;
   placement: { category: string; categorySlug: string; sub: string } | null;
   updatedAt: string | null;
   initial: FieldProductDetailInput;
@@ -41,6 +49,7 @@ export function ProductDetailForm({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [brochureError, setBrochureError] = useState("");
+  const [qtyError, setQtyError] = useState("");
   const [videoError, setVideoError] = useState("");
   const [discard, setDiscard] = useState(false);
   const [f, setF] = useState(initial);
@@ -67,12 +76,14 @@ export function ProductDetailForm({
 
   function submit() {
     const nextBrochure = httpUrlError(f.brochureUrl);
+    const nextQty = orderQtyPairError(f.minOrderQty, f.maxOrderQty);
     const nextVideo = f.videos.some((video) => httpUrlError(video.url))
       ? "Each video link must start with http:// or https://."
       : "";
     setBrochureError(nextBrochure);
+    setQtyError(nextQty);
     setVideoError(nextVideo);
-    if (nextBrochure || nextVideo) return;
+    if (nextBrochure || nextQty || nextVideo) return;
     setError("");
     setSaved(false);
     start(async () => {
@@ -132,19 +143,33 @@ export function ProductDetailForm({
         <div className="space-y-4">
           <section className="rounded-lg border border-[#1E3317]/10 bg-white p-4">
             <h2 className="text-sm font-semibold text-[#1E3317]">Billing product</h2>
-            <p className="mt-1 text-xs text-[#5E6B62]">Name, SKU, and price stay with billing inventory. This page does not change them.</p>
+            <p className="mt-1 text-xs text-[#5E6B62]">
+              SKU, MRP, GST, HSN, and available stock come from billing inventory. This page does not change them.
+            </p>
             <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
               <div>
                 <dt className="text-xs text-[#5E6B62]">Name</dt>
                 <dd className="mt-1 break-words font-medium text-[#1E3317]">{productName}</dd>
               </div>
               <div>
-                <dt className="text-xs text-[#5E6B62]">SKU</dt>
+                <dt className="text-xs text-[#5E6B62]">Product code / SKU</dt>
                 <dd className="mt-1 font-medium text-[#1E3317]">{sku || "—"}</dd>
               </div>
               <div>
-                <dt className="text-xs text-[#5E6B62]">Product ID</dt>
-                <dd className="mt-1 font-medium tabular-nums text-[#1E3317]">{productId}</dd>
+                <dt className="text-xs text-[#5E6B62]">MRP</dt>
+                <dd className="mt-1 font-medium tabular-nums text-[#1E3317]">{formatInr(mrp)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#5E6B62]">GST / tax rate</dt>
+                <dd className="mt-1 font-medium tabular-nums text-[#1E3317]">{formatGst(gstRate)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#5E6B62]">HSN code</dt>
+                <dd className="mt-1 font-medium text-[#1E3317]">{hsnCode?.trim() || "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-[#5E6B62]">Available stock</dt>
+                <dd className="mt-1 font-medium tabular-nums text-[#1E3317]">{formatQty(stockQty)}</dd>
               </div>
             </dl>
           </section>
@@ -171,6 +196,73 @@ export function ProductDetailForm({
 
           <section className="space-y-3 rounded-lg border border-[#1E3317]/10 bg-white p-4">
             <h2 className="text-sm font-semibold text-[#1E3317]">Farmer-facing information</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="brand">Brand</Label>
+                <Input
+                  id="brand"
+                  value={f.brand}
+                  placeholder="Brand name"
+                  onChange={(event) => set("brand", event.target.value)}
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <Label htmlFor="crops">Applicable crops</Label>
+                <Input
+                  id="crops"
+                  value={f.crops}
+                  placeholder="Paddy, maize, cotton"
+                  onChange={(event) => set("crops", event.target.value)}
+                  aria-describedby="crops-help"
+                  className={fieldClass}
+                />
+                <p id="crops-help" className="mt-1 text-xs text-[#5E6B62]">
+                  Separate crops with commas. Crops on the usage rows are included as well.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="min-qty">Minimum order quantity</Label>
+                <Input
+                  id="min-qty"
+                  inputMode="decimal"
+                  value={f.minOrderQty}
+                  placeholder="No minimum"
+                  onChange={(event) => {
+                    set("minOrderQty", event.target.value);
+                    if (qtyError) setQtyError("");
+                  }}
+                  aria-invalid={qtyError ? true : undefined}
+                  aria-describedby={qtyError ? "qty-error" : "min-qty-help"}
+                  className={fieldClass}
+                />
+                <p id="min-qty-help" className="mt-1 text-xs text-[#5E6B62]">
+                  Leave blank when an order can be any quantity.
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="max-qty">Maximum order quantity</Label>
+                <Input
+                  id="max-qty"
+                  inputMode="decimal"
+                  value={f.maxOrderQty}
+                  placeholder="No maximum"
+                  onChange={(event) => {
+                    set("maxOrderQty", event.target.value);
+                    if (qtyError) setQtyError("");
+                  }}
+                  aria-invalid={qtyError ? true : undefined}
+                  className={fieldClass}
+                />
+              </div>
+            </div>
+            {qtyError ? (
+              <p id="qty-error" className="text-xs text-[#8E3B34]">
+                {qtyError}
+              </p>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label htmlFor="display-name">Display name</Label>
@@ -237,7 +329,22 @@ export function ProductDetailForm({
               <Input id="headline" value={f.headline} onChange={(event) => set("headline", event.target.value)} className={fieldClass} />
             </div>
             <div>
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="instructions">Usage / application instructions</Label>
+              <textarea
+                id="instructions"
+                rows={4}
+                className={area}
+                value={f.instructions}
+                onChange={(event) => set("instructions", event.target.value)}
+                aria-describedby="instructions-help"
+                placeholder="How to mix and apply this product."
+              />
+              <p id="instructions-help" className="mt-1 text-xs text-[#5E6B62]">
+                Dose rows below are shown with this text on the catalogue.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="description">Product description</Label>
               <textarea
                 id="description"
                 rows={8}
@@ -258,7 +365,10 @@ export function ProductDetailForm({
 
           <section className="space-y-3 rounded-lg border border-[#1E3317]/10 bg-white p-4">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-[#1E3317]">Recommended usage</h2>
+              <div>
+                <h2 className="text-sm font-semibold text-[#1E3317]">Usage by crop</h2>
+                <p className="mt-1 text-xs text-[#5E6B62]">Each crop here is an applicable crop on the catalogue.</p>
+              </div>
               <button
                 type="button"
                 className="text-xs font-medium text-[#245B3E] hover:underline"
@@ -356,12 +466,13 @@ export function ProductDetailForm({
             )}
             {hasPhoto ? null : <p className="mt-2 text-xs text-[#5E6B62]">No photo yet. The written details still show in the app.</p>}
             <p className="mt-3 text-xs leading-5 text-[#5E6B62]">
-              Pack sizes, headline, antidote, brochure, and videos stay optional.
+              Brand, order quantities, crops, application instructions, pack sizes, headline, antidote, brochure, and videos stay optional.
             </p>
           </section>
           <section className="rounded-lg border border-[#1E3317]/10 bg-white p-4">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-[#5E6B62]">App preview</h2>
             <p className="mt-2 font-medium text-[#1E3317]">{f.displayName || productName}</p>
+            {f.brand ? <p className="mt-1 text-xs text-[#5E6B62]">{f.brand}</p> : null}
             {f.images[0] ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={f.images[0]} alt="" className="mt-2 h-36 w-full object-contain" />
@@ -371,6 +482,8 @@ export function ProductDetailForm({
             {f.activeIngredient ? <p className="mt-2 text-xs text-[#29332C]">{f.activeIngredient}</p> : null}
             {f.headline ? <p className="mt-2 text-xs font-medium text-[#1E3317]">{f.headline}</p> : null}
             {f.description ? <p className="mt-2 line-clamp-4 text-xs text-[#5E6B62]">{f.description}</p> : null}
+            {f.instructions ? <p className="mt-2 line-clamp-3 text-xs text-[#29332C]">{f.instructions}</p> : null}
+            {f.crops ? <p className="mt-2 text-xs text-[#29332C]">{f.crops}</p> : null}
             {f.videos.some((video) => ytThumb(video.url)) ? (
               <div className="mt-2 grid grid-cols-3 gap-1">
                 {f.videos.map((video, index) =>

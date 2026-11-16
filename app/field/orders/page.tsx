@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { fieldOrdersDashboard } from "@/lib/actions/field";
-import { delhiveryTrackUrl } from "@/lib/queries/field-orders";
+import { OrderRefundPanel } from "@/components/field/order-refund-panel";
+import { delhiveryTrackUrl, orderLocationMapsUrl } from "@/lib/queries/field-orders";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 
 export default async function FieldOrdersAdminPage() {
@@ -11,8 +12,8 @@ export default async function FieldOrdersAdminPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-[#1E3317]">Orders</h1>
         <p className="mt-1 text-sm text-[#5E6B62]">
-          {data.orders.length} {data.orders.length === 1 ? "order" : "orders"} from the Field app. Each one
-          shows the products, the amount paid, the Razorpay transaction, and Delhivery tracking.
+          {data.orders.length} {data.orders.length === 1 ? "order" : "orders"} from the Field app. An administrator
+          cancels an order here. Refunds, including a partial refund, are sent through Razorpay.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -79,12 +80,54 @@ export default async function FieldOrdersAdminPage() {
                   </div>
                   <div>
                     <dt className="text-xs text-[#5E6B62]">Amount paid</dt>
-                    <dd className="font-semibold tabular-nums text-[#1E3317]">{formatCurrency(order.paid)}</dd>
+                    <dd className="font-semibold tabular-nums text-[#1E3317]">
+                      {formatCurrency(order.paid)}
+                      {order.status === "cancelled" ? (
+                        <span className="ml-2 text-xs font-medium text-[#8E3B34]">Cancelled</span>
+                      ) : null}
+                      {order.refunded > 0 && order.status !== "cancelled" ? (
+                        <span className="mt-0.5 block text-xs font-normal text-[#5E6B62]">
+                          Refunded {formatCurrency(order.refunded)}
+                        </span>
+                      ) : null}
+                    </dd>
                   </div>
+                  {data.canRefund ? (
+                    <div>
+                      <dt className="text-xs text-[#5E6B62]">Refund</dt>
+                      <dd className="mt-1">
+                        <OrderRefundPanel
+                          saleId={order.id}
+                          invoiceNo={order.invoiceNo}
+                          paid={order.paid}
+                          refunded={order.refunded}
+                          status={order.status}
+                          paymentId={order.razorpayPaymentId}
+                        />
+                      </dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt className="text-xs text-[#5E6B62]">Transaction id</dt>
                     <dd className="break-all font-mono text-xs text-[#1E3317]">
                       {order.razorpayPaymentId || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-[#5E6B62]">Order location</dt>
+                    <dd>
+                      {order.placedGps ? (
+                        <a
+                          href={orderLocationMapsUrl(order.placedGps)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-medium text-[#245B3E] hover:underline"
+                        >
+                          {order.placedGps}
+                        </a>
+                      ) : (
+                        <span className="text-[#5E6B62]">Not captured</span>
+                      )}
                     </dd>
                   </div>
                   <div>

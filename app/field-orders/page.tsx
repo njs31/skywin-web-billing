@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/actions/auth";
+import { OrderRefundPanel } from "@/components/field/order-refund-panel";
 import { delhiveryTrackUrl, listFieldOrders } from "@/lib/queries/field-orders";
 import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
 import {
@@ -11,14 +13,15 @@ import {
 } from "@/components/ui/table";
 
 export default async function FieldOrdersPage() {
-  const data = await listFieldOrders();
+  const [data, user] = await Promise.all([listFieldOrders(), getCurrentUser()]);
+  const canRefund = user?.role === "admin";
 
   return (
     <div className="space-y-5 p-6">
       <div>
         <h1 className="text-2xl font-bold">Orders</h1>
         <p className="text-sm text-slate-500">
-          Every order from the Field app, with products, the amount paid, the Razorpay transaction, and tracking.
+          Every order from the Field app. An administrator cancels an order here. Refunds, including a partial refund, are sent through Razorpay.
         </p>
       </div>
 
@@ -46,12 +49,13 @@ export default async function FieldOrdersPage() {
               <TableHead className="text-right">Amount paid</TableHead>
               <TableHead>Transaction</TableHead>
               <TableHead>Tracking</TableHead>
+              {canRefund ? <TableHead>Refund</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {data.orders.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="py-10 text-center text-sm text-slate-500">
+                <TableCell colSpan={canRefund ? 10 : 9} className="py-10 text-center text-sm text-slate-500">
                   No orders yet. An order appears here after a farmer pays in the app.
                 </TableCell>
               </TableRow>
@@ -83,7 +87,10 @@ export default async function FieldOrdersPage() {
                 </TableCell>
                 <TableCell className="text-right font-medium">
                   {formatCurrency(o.paid)}
-                  <div className="text-xs font-normal text-slate-500">{o.paymentMode.toUpperCase()}</div>
+                  <div className="text-xs font-normal text-slate-500">
+                    {o.status === "cancelled" ? "Cancelled" : o.paymentMode.toUpperCase()}
+                    {o.refunded > 0 ? ` · refunded ${formatCurrency(o.refunded)}` : ""}
+                  </div>
                 </TableCell>
                 <TableCell className="font-mono text-xs">{o.razorpayPaymentId ?? "—"}</TableCell>
                 <TableCell className="text-sm">
@@ -100,6 +107,18 @@ export default async function FieldOrdersPage() {
                     "—"
                   )}
                 </TableCell>
+                {canRefund ? (
+                  <TableCell className="min-w-64 align-top">
+                    <OrderRefundPanel
+                      saleId={o.id}
+                      invoiceNo={o.invoiceNo}
+                      paid={o.paid}
+                      refunded={o.refunded}
+                      status={o.status}
+                      paymentId={o.razorpayPaymentId}
+                    />
+                  </TableCell>
+                ) : null}
               </TableRow>
             ))}
           </TableBody>

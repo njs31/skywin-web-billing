@@ -2,6 +2,7 @@ import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, farms, users } from "@/db/schema";
 import { FIELD_OFFICER_ROLES } from "@/lib/user-roles";
+import { matchVillageOfficer } from "@/lib/village-officer";
 import {
   digitsPhone,
   farmerFieldErrorList,
@@ -62,8 +63,12 @@ function titleCaseApproval(value: string | null | undefined): "Approved" | "Pend
 function farmerConditions(filter?: {
   q?: string;
   approval?: FieldFarmerApproval | "all";
+  officerId?: number;
 }) {
   const conditions = [eq(customers.type, "farmer")];
+  if (filter?.officerId) {
+    conditions.push(eq(customers.assignedOfficerId, filter.officerId));
+  }
   if (filter?.approval && filter.approval !== "all") {
     conditions.push(eq(customers.approval, filter.approval));
   }
@@ -110,6 +115,7 @@ function farmerConditions(filter?: {
 export async function countFieldFarmers(filter?: {
   q?: string;
   approval?: FieldFarmerApproval | "all";
+  officerId?: number;
 }) {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -121,6 +127,7 @@ export async function countFieldFarmers(filter?: {
 export async function listFieldFarmers(filter?: {
   q?: string;
   approval?: FieldFarmerApproval | "all";
+  officerId?: number;
   limit?: number;
   offset?: number;
 }) {
@@ -132,6 +139,7 @@ export async function listFieldFarmers(filter?: {
     .select({
       farmer: customers,
       officerName: users.name,
+      officerPhone: users.phone,
     })
     .from(customers)
     .leftJoin(users, eq(users.id, customers.assignedOfficerId))
@@ -153,30 +161,95 @@ export async function listFieldFarmers(filter?: {
     farmsByCustomer.set(farm.customerId, list);
   }
 
-  return rows.map((row) => serializeFarmer(row.farmer, farmRowsBy(farmsByCustomer, row.farmer.id), row.officerName));
+  return rows.map((row) =>
+    serializeFarmer(row.farmer, farmRowsBy(farmsByCustomer, row.farmer.id), row.officerName, row.officerPhone)
+  );
 }
 
 function farmRowsBy(map: Map<number, typeof farms.$inferSelect[]>, id: number) {
   return map.get(id) ?? [];
 }
 
-export async function getFieldFarmer(id: number) {
+export async function getFieldFarmer(id: number, officerId?: number) {
   const [row] = await db
     .select({
       farmer: customers,
       officerName: users.name,
+      officerPhone: users.phone,
     })
     .from(customers)
     .leftJoin(users, eq(users.id, customers.assignedOfficerId))
     .where(and(eq(customers.id, id), eq(customers.type, "farmer")))
     .limit(1);
   if (!row) return null;
+  if (officerId && row.farmer.assignedOfficerId !== officerId) return null;
   const farmRows = await db
     .select()
     .from(farms)
     .where(eq(farms.customerId, id))
     .orderBy(asc(farms.id));
-  return serializeFarmer(row.farmer, farmRows, row.officerName);
+  return serializeFarmer(row.farmer, farmRows, row.officerName, row.officerPhone);
+}
+
+/** A real Indian mobile. Sheet placeholders such as sheet-001 are not callable. */
+export function callableOfficerPhone(phone: string | null | undefined) {
+  const raw = phone ?? "";
+  if (/sheet/i.test(raw)) return "";
+  const digits = raw.replace(/\D/g, "");
+  const ten = digits.length >= 10 ? digits.slice(-10) : digits;
+  if (!/^[6-9]\d{9}$/.test(ten)) return "";
+  return ten;
+}
+
+/**
+ * Assign the field officer from the village PIN list when a farmer saves their own PIN.
+ * Leaves an existing officer in place while the PIN stays the same.
+ */
+export async function assignmentForFarmerPin(input: {
+  id?: number;
+  phone?: string;
+  pin?: string;
+  address?: string;
+  village?: string;
+}): Promise<{ assignedOfficerId: number | null; fieldOfficerName: string } | undefined> {
+  const pin = (input.pin || "").replace(/\D/g, "").slice(0, 6);
+  if (!/^\d{6}$/.test(pin)) return undefined;
+
+  const phone = digitsPhone(input.phone);
+  const [existing] = input.id
+    ? await db
+        .select({
+          pinCode: customers.pinCode,
+          assignedOfficerId: customers.assignedOfficerId,
+        })
+        .from(customers)
+        .where(and(eq(customers.id, input.id), eq(customers.type, "farmer")))
+        .limit(1)
+    : phone
+      ? await db
+          .select({
+            pinCode: customers.pinCode,
+            assignedOfficerId: customers.assignedOfficerId,
+          })
+          .from(customers)
+          .where(
+            sql`right(regexp_replace(coalesce(${customers.phone}, ''), '\\D', '', 'g'), 10) = ${phone}`
+          )
+          .limit(1)
+      : [];
+  const storedPin = (existing?.pinCode || "").replace(/\D/g, "").slice(0, 6);
+  if (existing?.assignedOfficerId && storedPin === pin) return undefined;
+
+  const officers = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.role, "sales_officer"));
+  const match = matchVillageOfficer(pin, `${input.address || ""} ${input.village || ""}`, officers);
+  if (!match) return undefined;
+  return {
+    assignedOfficerId: match.userId,
+    fieldOfficerName: match.userName || match.faName,
+  };
 }
 
 export async function upsertFieldFarmer(input: FieldFarmerInput, existingId?: number) {
@@ -421,7 +494,8 @@ export async function countPendingFarmers() {
 export function serializeFarmer(
   farmer: typeof customers.$inferSelect,
   farmRows: (typeof farms.$inferSelect)[],
-  officerName?: string | null
+  officerName?: string | null,
+  officerPhone?: string | null
 ) {
   return {
     id: farmer.id,
@@ -445,6 +519,7 @@ export function serializeFarmer(
     assignedOfficerId: farmer.assignedOfficerId,
     fieldOfficerName: farmer.fieldOfficerName ?? "",
     assignedOfficer: officerName || farmer.fieldOfficerName || "",
+    assignedOfficerPhone: callableOfficerPhone(officerPhone),
     photo: farmer.photoUrl ?? undefined,
     paymentMode: (normalizePaymentMode(farmer.paymentMode) ?? "upi") as FieldPaymentMode,
     farms: farmRows.map((farm) => ({
