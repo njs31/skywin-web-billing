@@ -64,6 +64,7 @@ export function ProductTable({
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [saleRate, setSaleRate] = useState("");
+  const [wholesaleRate, setWholesaleRate] = useState("");
   const [purchaseRate, setPurchaseRate] = useState("");
   const [mrp, setMrp] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
@@ -78,6 +79,9 @@ export function ProductTable({
     setEditingId(product.id);
     setName(product.name);
     setSaleRate(String(toNumber(product.saleRate)));
+    setWholesaleRate(
+      product.wholesaleRate != null ? String(toNumber(product.wholesaleRate)) : ""
+    );
     setPurchaseRate(String(toNumber(product.purchaseRate)));
     setMrp(product.mrp != null ? String(toNumber(product.mrp)) : "");
     setDiscountPercent(String(toNumber(product.discountPercent)));
@@ -120,12 +124,18 @@ export function ProductTable({
           }
         }
         const parsedSale = parseFloat(saleRate);
+        const parsedWholesale =
+          wholesaleRate.trim() === "" ? null : parseFloat(wholesaleRate);
         const parsedMrp = mrp.trim() === "" ? null : parseFloat(mrp);
         const parsedDisc = parseFloat(discountPercent);
         await updateProduct(id, {
           name: name.trim(),
           saleRate: Number.isFinite(parsedSale) ? parsedSale : 0,
           purchaseRate: parsedPurchase,
+          wholesaleRate:
+            parsedWholesale != null && Number.isFinite(parsedWholesale)
+              ? parsedWholesale
+              : null,
           mrp: parsedMrp != null && Number.isFinite(parsedMrp) ? parsedMrp : null,
           discountPercent: Number.isFinite(parsedDisc) ? parsedDisc : 0,
           gstRate: Number.isFinite(parseFloat(gstRate)) ? parseFloat(gstRate) : 0,
@@ -197,6 +207,9 @@ export function ProductTable({
           <TableHead className="py-2.5 px-2 text-right">Stock</TableHead>
           <TableHead className="py-2.5 px-2 text-right">Pur. Rate</TableHead>
           <TableHead className="py-2.5 px-2 text-right">Sale Rate</TableHead>
+          <TableHead className="py-2.5 px-2 text-right" title="Wholesale Rate">
+            W. Rate
+          </TableHead>
           <TableHead className="py-2.5 px-2 text-right">MRP</TableHead>
           <TableHead className="py-2.5 px-2 text-right">Disc %</TableHead>
           <TableHead className="py-2.5 px-2 text-right">GST %</TableHead>
@@ -327,6 +340,24 @@ export function ProductTable({
                 {editingId === product.id ? (
                   <Input
                     type="number"
+                    min="0"
+                    step="0.01"
+                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
+                    value={wholesaleRate}
+                    onChange={(e) => setWholesaleRate(e.target.value)}
+                    placeholder="W. Rate"
+                    aria-label={`Wholesale rate for ${product.name}`}
+                  />
+                ) : product.wholesaleRate != null ? (
+                  formatCurrency(product.wholesaleRate)
+                ) : (
+                  "-"
+                )}
+              </TableCell>
+              <TableCell className="text-right py-2 px-2 whitespace-nowrap">
+                {editingId === product.id ? (
+                  <Input
+                    type="number"
                     className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
                     value={mrp}
                     onChange={(e) => setMrp(e.target.value)}
@@ -448,7 +479,7 @@ export function ProductTable({
             </TableRow>
             {expandedId === product.id && (
               <TableRow key={`batches-${product.id}`} className="bg-slate-50/70">
-                <TableCell colSpan={12} className="p-0">
+                <TableCell colSpan={13} className="p-0">
                   <BatchEditor productId={product.id} />
                   <ProductChangeLog productId={product.id} />
                 </TableCell>

@@ -487,7 +487,7 @@ export async function updateProduct(
   data: {
     saleRate: number;
     purchaseRate?: number;
-    wholesaleRate?: number;
+    wholesaleRate?: number | null;
     gstRate: number;
     stockQty?: number;
     reorderLevel?: number;
@@ -538,7 +538,10 @@ export async function updateProduct(
         ? { purchaseRate: data.purchaseRate.toFixed(2) }
         : {}),
       ...(data.wholesaleRate !== undefined
-        ? { wholesaleRate: data.wholesaleRate.toFixed(2) }
+        ? {
+            wholesaleRate:
+              data.wholesaleRate === null ? null : data.wholesaleRate.toFixed(2),
+          }
         : {}),
       ...(data.reorderLevel !== undefined
         ? { reorderLevel: data.reorderLevel.toFixed(2) }
@@ -588,7 +591,8 @@ export async function updateProduct(
       name: data.name ?? before.name,
       saleRate: data.saleRate,
       purchaseRate: data.purchaseRate ?? before.purchaseRate,
-      wholesaleRate: data.wholesaleRate ?? before.wholesaleRate,
+      wholesaleRate:
+        data.wholesaleRate === undefined ? before.wholesaleRate : data.wholesaleRate,
       gstRate: data.gstRate,
       stockQty: data.stockQty ?? before.stockQty,
       reorderLevel: data.reorderLevel ?? before.reorderLevel,
