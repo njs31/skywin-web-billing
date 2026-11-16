@@ -74,7 +74,7 @@ describe("validateRoleChange", () => {
   });
 
   it("labels roles for logs and the users table", () => {
-    assert.equal(roleLabel("sales_officer"), "Sales Officer");
+    assert.equal(roleLabel("sales_officer"), "Field officer");
     assert.equal(roleLabel("admin"), "Admin");
     assert.equal(roleLabel("cashier"), "Cashier");
     assert.equal(roleLabel("store_manager"), "Store Manager");

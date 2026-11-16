@@ -306,6 +306,11 @@ export async function requireUser() {
   if (!user) {
     throw new Error("Unauthorized");
   }
+  // sales_manager is a web-only role confined to /field/team. The proxy does
+  // not wrap server actions, so refuse the role in the shared guard.
+  if (user.role === "sales_manager") {
+    throw new Error("Unauthorized");
+  }
   return user;
 }
 
