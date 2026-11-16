@@ -1,12 +1,11 @@
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
-import { updateProduct, setProductActive } from "@/lib/actions/products";
+import { Fragment, useEffect, useState, useTransition } from "react";
+import { setProductActive } from "@/lib/actions/products";
 import { useRouter } from "next/navigation";
 import { formatCurrency, toNumber } from "@/lib/utils";
 import type { Product } from "@/db/schema";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -16,12 +15,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { Pencil, Trash2, Check, X, Layers } from "lucide-react";
+import { Pencil, Trash2, Layers } from "lucide-react";
 import { BatchEditor } from "@/components/products/batch-editor";
 import { ProductChangeLog } from "@/components/products/product-change-log";
 import { PrintLabelButton } from "@/components/products/print-label-button";
-import { UNIT_OPTIONS } from "@/lib/units";
 import { isInventoryPinRequired, verifyInventoryAdminPin } from "@/lib/actions/billing";
+import {
+  ProductEditDialog,
+  type ProductCategoryOption,
+} from "@/components/products/product-edit-dialog";
 
 function formatExpiry(value: string | null | undefined) {
   if (!value) return null;
@@ -54,103 +56,24 @@ function isExpired(value: string | null | undefined) {
 export function ProductTable({
   products,
   presentDots,
+  categories = [],
 }: {
   products: Product[];
   /** Tear-off feed from Settings, passed down to the print button. */
   presentDots?: number;
+  categories?: ProductCategoryOption[];
 }) {
   const router = useRouter();
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [name, setName] = useState("");
-  const [saleRate, setSaleRate] = useState("");
-  const [wholesaleRate, setWholesaleRate] = useState("");
-  const [purchaseRate, setPurchaseRate] = useState("");
-  const [mrp, setMrp] = useState("");
-  const [discountPercent, setDiscountPercent] = useState("");
-  const [gstRate, setGstRate] = useState("");
-  const [hsnCode, setHsnCode] = useState("");
-  const [expiryDate, setExpiryDate] = useState("");
-  const [stockQty, setStockQty] = useState("");
-  const [unit, setUnit] = useState("Pcs");
+  const [toast, setToast] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  const startEdit = (product: Product) => {
-    setEditingId(product.id);
-    setName(product.name);
-    setSaleRate(String(toNumber(product.saleRate)));
-    setWholesaleRate(
-      product.wholesaleRate != null ? String(toNumber(product.wholesaleRate)) : ""
-    );
-    setPurchaseRate(String(toNumber(product.purchaseRate)));
-    setMrp(product.mrp != null ? String(toNumber(product.mrp)) : "");
-    setDiscountPercent(String(toNumber(product.discountPercent)));
-    setGstRate(String(toNumber(product.gstRate)));
-    setHsnCode(product.hsnCode ?? "");
-    setExpiryDate(product.expiryDate ?? "");
-    setStockQty(String(toNumber(product.stockQty)));
-    setUnit(product.unit || "Pcs");
-  };
-
-  const save = (id: number) => {
-    if (!name.trim()) {
-      alert("Product name is required.");
-      return;
-    }
-    if (!hsnCode.trim()) {
-      alert("HSN code is mandatory.");
-      return;
-    }
-    const parsedStock = parseFloat(stockQty);
-    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
-      alert("Stock must be a number greater than or equal to 0.");
-      return;
-    }
-    const parsedPurchase = parseFloat(purchaseRate);
-    if (!Number.isFinite(parsedPurchase) || parsedPurchase < 0) {
-      alert("Purchase rate must be a number greater than or equal to 0.");
-      return;
-    }
-    startTransition(async () => {
-      try {
-        const pinRequired = await isInventoryPinRequired();
-        if (pinRequired) {
-          const pin = window.prompt("Enter Supervisor/Admin PIN to edit product settings:");
-          if (pin === null) return;
-          const valid = await verifyInventoryAdminPin(pin);
-          if (!valid) {
-            alert("Incorrect PIN. Access denied.");
-            return;
-          }
-        }
-        const parsedSale = parseFloat(saleRate);
-        const parsedWholesale =
-          wholesaleRate.trim() === "" ? null : parseFloat(wholesaleRate);
-        const parsedMrp = mrp.trim() === "" ? null : parseFloat(mrp);
-        const parsedDisc = parseFloat(discountPercent);
-        await updateProduct(id, {
-          name: name.trim(),
-          saleRate: Number.isFinite(parsedSale) ? parsedSale : 0,
-          purchaseRate: parsedPurchase,
-          wholesaleRate:
-            parsedWholesale != null && Number.isFinite(parsedWholesale)
-              ? parsedWholesale
-              : null,
-          mrp: parsedMrp != null && Number.isFinite(parsedMrp) ? parsedMrp : null,
-          discountPercent: Number.isFinite(parsedDisc) ? parsedDisc : 0,
-          gstRate: Number.isFinite(parseFloat(gstRate)) ? parseFloat(gstRate) : 0,
-          hsnCode: hsnCode.trim(),
-          expiryDate: expiryDate.trim() || null,
-          stockQty: parsedStock,
-          unit,
-        });
-        setEditingId(null);
-        router.refresh();
-      } catch (err) {
-        alert(err instanceof Error ? err.message : "Failed to update product");
-      }
-    });
-  };
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const handleSetActive = (product: Product, active: boolean) => {
     startTransition(async () => {
@@ -196,6 +119,7 @@ export function ProductTable({
   };
 
   return (
+    <>
     <Table className="text-xs">
       <TableHeader>
         <TableRow className="bg-slate-50/80">
@@ -228,57 +152,19 @@ export function ProductTable({
               }
             >
               <TableCell className="max-w-[200px] font-medium py-2 px-3">
-                {editingId === product.id ? (
-                  <Input
-                    className="h-7 w-full min-w-[10rem] text-xs px-1.5"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                ) : (
-                  <span className="truncate block">{product.name}</span>
-                )}
+                <span className="truncate block">{product.name}</span>
               </TableCell>
               <TableCell className="text-slate-500 py-2 px-2 whitespace-nowrap">
                 {product.sku ?? "-"}
               </TableCell>
               <TableCell className="text-slate-700 font-mono text-xs py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <Input
-                    className="w-20 h-7 text-xs px-1.5"
-                    value={hsnCode}
-                    onChange={(e) => setHsnCode(e.target.value)}
-                    placeholder="HSN..."
-                  />
-                ) : (
-                  product.hsnCode || <span className="text-red-500 font-semibold">Missing!</span>
-                )}
+                {product.hsnCode || <span className="text-red-500 font-semibold">Missing!</span>}
               </TableCell>
               <TableCell className="py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <select
-                    className="h-7 rounded border border-slate-200 bg-white px-1 text-xs"
-                    value={unit}
-                    onChange={(e) => setUnit(e.target.value)}
-                  >
-                    {UNIT_OPTIONS.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="text-slate-600">{product.unit || "Pcs"}</span>
-                )}
+                <span className="text-slate-600">{product.unit || "Pcs"}</span>
               </TableCell>
               <TableCell className="py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <Input
-                    type="date"
-                    className="h-7 w-32 text-xs px-1.5"
-                    value={expiryDate}
-                    onChange={(e) => setExpiryDate(e.target.value)}
-                  />
-                ) : product.expiryDate ? (
+                {product.expiryDate ? (
                   <span
                     className={
                       expired
@@ -296,185 +182,92 @@ export function ProductTable({
                 )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap font-medium">
-                {editingId === product.id ? (
-                  <Input
-                    type="number"
-                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
-                    value={stockQty}
-                    onChange={(e) => setStockQty(e.target.value)}
-                    min="0"
-                    step="0.01"
-                  />
-                ) : (
-                  toNumber(product.stockQty)
-                )}
+                {toNumber(product.stockQty)}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap text-slate-600">
-                {editingId === product.id ? (
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
-                    value={purchaseRate}
-                    onChange={(e) => setPurchaseRate(e.target.value)}
-                    aria-label={`Purchase rate for ${product.name}`}
-                  />
-                ) : (
-                  formatCurrency(product.purchaseRate)
-                )}
+                {formatCurrency(product.purchaseRate)}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <Input
-                    type="number"
-                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
-                    value={saleRate}
-                    onChange={(e) => setSaleRate(e.target.value)}
-                  />
-                ) : (
-                  formatCurrency(product.saleRate)
-                )}
+                {formatCurrency(product.saleRate)}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
-                    value={wholesaleRate}
-                    onChange={(e) => setWholesaleRate(e.target.value)}
-                    placeholder="W. Rate"
-                    aria-label={`Wholesale rate for ${product.name}`}
-                  />
-                ) : product.wholesaleRate != null ? (
+                {product.wholesaleRate != null ? (
                   formatCurrency(product.wholesaleRate)
                 ) : (
                   "-"
                 )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <Input
-                    type="number"
-                    className="ml-auto w-20 h-7 text-xs px-1.5 text-right"
-                    value={mrp}
-                    onChange={(e) => setMrp(e.target.value)}
-                    placeholder="MRP"
-                  />
-                ) : product.mrp != null ? (
+                {product.mrp != null ? (
                   formatCurrency(product.mrp)
                 ) : (
                   "-"
                 )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <Input
-                    type="number"
-                    className="ml-auto w-14 h-7 text-xs px-1.5 text-right"
-                    value={discountPercent}
-                    onChange={(e) => setDiscountPercent(e.target.value)}
-                    min="0"
-                    max="100"
-                    step="0.01"
-                  />
-                ) : (
-                  `${toNumber(product.discountPercent)}%`
-                )}
+                {`${toNumber(product.discountPercent)}%`}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <Input
-                    type="number"
-                    className="ml-auto w-14 h-7 text-xs px-1.5 text-right"
-                    value={gstRate}
-                    onChange={(e) => setGstRate(e.target.value)}
-                  />
-                ) : toNumber(product.gstRate) === 0 ? (
+                {toNumber(product.gstRate) === 0 ? (
                   "Exempt"
                 ) : (
                   `${toNumber(product.gstRate)}%`
                 )}
               </TableCell>
               <TableCell className="text-right py-2 px-2 whitespace-nowrap">
-                {editingId === product.id ? (
-                  <div className="flex justify-end gap-1">
+                <div className="flex justify-end gap-1">
+                  <PrintLabelButton
+                    product={product}
+                    presentDots={presentDots}
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className={`h-7 w-7 hover:bg-slate-100 ${
+                      expandedId === product.id
+                        ? "text-emerald-700"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                    onClick={() =>
+                      setExpandedId(
+                        expandedId === product.id ? null : product.id
+                      )
+                    }
+                    title="Edit batches"
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    onClick={() => setEditingProduct(product)}
+                    title="Edit product"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  {product.isActive ? (
                     <Button
                       size="icon"
-                      className="h-7 w-7 bg-emerald-600 hover:bg-emerald-700 text-white"
+                      variant="ghost"
+                      className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
                       disabled={isPending}
-                      onClick={() => save(product.id)}
-                      title="Save changes"
+                      onClick={() => handleSetActive(product, false)}
+                      title="Deactivate product"
                     >
-                      <Check className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
+                  ) : (
                     <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-slate-500 hover:bg-slate-100"
-                      onClick={() => setEditingId(null)}
-                      title="Cancel"
+                      size="sm"
+                      className="h-7 bg-emerald-600 px-2 text-white hover:bg-emerald-700"
+                      disabled={isPending}
+                      onClick={() => handleSetActive(product, true)}
                     >
-                      <X className="h-3.5 w-3.5" />
+                      Activate
                     </Button>
-                  </div>
-                ) : (
-                  <div className="flex justify-end gap-1">
-                    <PrintLabelButton
-                      product={product}
-                      presentDots={presentDots}
-                    />
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className={`h-7 w-7 hover:bg-slate-100 ${
-                        expandedId === product.id
-                          ? "text-emerald-700"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                      onClick={() =>
-                        setExpandedId(
-                          expandedId === product.id ? null : product.id
-                        )
-                      }
-                      title="Edit batches"
-                    >
-                      <Layers className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                      onClick={() => startEdit(product)}
-                      title="Edit product"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    {product.isActive ? (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
-                        disabled={isPending}
-                        onClick={() => handleSetActive(product, false)}
-                        title="Deactivate product"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        className="h-7 bg-emerald-600 px-2 text-white hover:bg-emerald-700"
-                        disabled={isPending}
-                        onClick={() => handleSetActive(product, true)}
-                      >
-                        Activate
-                      </Button>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
               </TableCell>
             </TableRow>
             {expandedId === product.id && (
@@ -490,5 +283,22 @@ export function ProductTable({
         })}
       </TableBody>
     </Table>
+    <ProductEditDialog
+      product={editingProduct}
+      categories={categories}
+      open={editingProduct != null}
+      onClose={() => setEditingProduct(null)}
+      onSaved={() => {
+        setEditingProduct(null);
+        setToast("Product saved");
+        router.refresh();
+      }}
+    />
+    {toast ? (
+      <div className="fixed bottom-4 right-4 z-[70] rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white shadow-lg">
+        {toast}
+      </div>
+    ) : null}
+    </>
   );
 }

@@ -19,4 +19,13 @@ describe("product changelog diff", () => {
     assert.deepEqual(summary["Sale rate"], { from: "100.00", to: "110" });
     assert.deepEqual(summary.Name, { from: "DAP", to: "DAP 50KG" });
   });
+
+  it("records status as Active/Inactive and category by name", () => {
+    const summary = diffProductFields(
+      { isActive: true, category: "BAYER" },
+      { isActive: false, category: "TATA" }
+    );
+    assert.deepEqual(summary.Status, { from: "Active", to: "Inactive" });
+    assert.deepEqual(summary.Category, { from: "BAYER", to: "TATA" });
+  });
 });

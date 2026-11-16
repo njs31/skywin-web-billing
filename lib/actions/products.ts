@@ -81,12 +81,16 @@ export async function updateProduct(
     wholesaleRate?: number | null;
     gstRate: number;
     stockQty?: number;
+    reorderLevel?: number;
     hsnCode?: string;
+    barcode?: string | null;
     expiryDate?: string | null;
     mrp?: number | null;
     discountPercent?: number;
     name?: string;
     unit?: string;
+    categoryId?: number | null;
+    isActive?: boolean;
   }
 ) {
   await requireNonDealer();

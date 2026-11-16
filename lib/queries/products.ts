@@ -494,10 +494,12 @@ export async function updateProduct(
     mrp?: number | null;
     discountPercent?: number;
     hsnCode?: string;
-    barcode?: string;
+    barcode?: string | null;
     expiryDate?: string | null;
     name?: string;
     unit?: string;
+    categoryId?: number | null;
+    isActive?: boolean;
   },
   actor?: { userId?: number | null; userName: string }
 ) {
@@ -553,12 +555,16 @@ export async function updateProduct(
         ? { discountPercent: data.discountPercent.toFixed(2) }
         : {}),
       ...(data.hsnCode !== undefined ? { hsnCode: data.hsnCode } : {}),
-      ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
+      ...(data.barcode !== undefined
+        ? { barcode: data.barcode?.trim() ? data.barcode.trim() : null }
+        : {}),
       ...(data.unit !== undefined ? { unit: data.unit } : {}),
       ...(data.name !== undefined ? { name: data.name.trim() } : {}),
       ...(data.expiryDate !== undefined
         ? { expiryDate: data.expiryDate }
         : {}),
+      ...(data.categoryId !== undefined ? { categoryId: data.categoryId } : {}),
+      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
     })
     .where(eq(products.id, id));
 
@@ -587,6 +593,23 @@ export async function updateProduct(
   }
 
   if (actor?.userName) {
+    const beforeCategoryId = before.categoryId;
+    const afterCategoryId =
+      data.categoryId === undefined ? beforeCategoryId : data.categoryId;
+    const categoryIds = [beforeCategoryId, afterCategoryId].filter(
+      (id): id is number => id != null
+    );
+    const categoryRows =
+      categoryIds.length > 0
+        ? await db
+            .select({ id: categories.id, name: categories.name })
+            .from(categories)
+            .where(inArray(categories.id, categoryIds))
+        : [];
+    const categoryNameById = new Map(categoryRows.map((row) => [row.id, row.name]));
+    const categoryLabel = (id: number | null) =>
+      id == null ? "" : categoryNameById.get(id) ?? `#${id}`;
+
     const after = {
       name: data.name ?? before.name,
       saleRate: data.saleRate,
@@ -599,11 +622,16 @@ export async function updateProduct(
       mrp: data.mrp === undefined ? before.mrp : data.mrp,
       discountPercent: data.discountPercent ?? before.discountPercent,
       hsnCode: data.hsnCode ?? before.hsnCode,
-      barcode: data.barcode ?? before.barcode,
+      barcode: data.barcode === undefined ? before.barcode : data.barcode,
       expiryDate: data.expiryDate === undefined ? before.expiryDate : data.expiryDate,
       unit: data.unit ?? before.unit,
+      category: categoryLabel(afterCategoryId),
+      isActive: data.isActive === undefined ? before.isActive : data.isActive,
     };
-    const summary = diffProductFields(before as Record<string, unknown>, after);
+    const summary = diffProductFields(
+      { ...(before as Record<string, unknown>), category: categoryLabel(beforeCategoryId) },
+      after
+    );
     if (hasProductChanges(summary)) {
       await db.insert(productChangeLogs).values({
         productId: id,
@@ -618,7 +646,7 @@ export async function updateProduct(
       const productName = String(after.name ?? before.name ?? `#${id}`);
       const stockChange = summary["Stock"];
       const otherChanges = Object.entries(summary)
-        .filter(([label]) => label !== "Stock")
+        .filter(([label]) => label !== "Stock" && label !== "Status")
         .map(([label, ch]) => `${label} ${ch.from || "—"} → ${ch.to || "—"}`);
       if (stockChange) {
         await recordActivity({
@@ -646,7 +674,27 @@ export async function updateProduct(
             : null,
         });
       }
+      if (
+        data.isActive !== undefined &&
+        data.isActive !== before.isActive
+      ) {
+        const verb = data.isActive ? "activated" : "deactivated";
+        await recordActivity({
+          action: data.isActive ? "product.activate" : "product.deactivate",
+          message: `${actor.userName} ${verb} product ${productName}`,
+          entityType: "product",
+          entityId: id,
+          actor: actor.userId
+            ? { id: actor.userId, name: actor.userName }
+            : null,
+        });
+      }
     }
+  }
+
+  if (data.isActive !== undefined && data.isActive !== before.isActive) {
+    const { scheduleQwicksStockPush } = await import("@/lib/queries/qwicks");
+    scheduleQwicksStockPush([id]);
   }
 
   revalidateTag("products", "max");

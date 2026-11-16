@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   getProducts,
   getProductCount,
+  getCategories,
   DEFAULT_SORT_DIR,
   PRODUCT_SORTS,
   type ProductSort,
@@ -48,11 +49,12 @@ export default async function ProductsPage({
   const dir: SortDir =
     dirParam === "asc" || dirParam === "desc" ? dirParam : DEFAULT_SORT_DIR[sort];
 
-  const [products, totalCount, activeCount, inactiveCount] = await Promise.all([
+  const [products, totalCount, activeCount, inactiveCount, categories] = await Promise.all([
     getProducts(q, page, PAGE_SIZE, sort, dir, status),
     q ? Promise.resolve(0) : getProductCount(status),
     getProductCount("active"),
     getProductCount("inactive"),
+    getCategories(),
   ]);
   const todayLabelCount = await getTodayLabelCount();
 
@@ -160,7 +162,7 @@ export default async function ProductsPage({
                 : "No products found."}
             </p>
           ) : (
-            <ProductTable products={products} presentDots={presentDots} />
+            <ProductTable products={products} presentDots={presentDots} categories={categories} />
           )}
         </CardContent>
       </Card>
