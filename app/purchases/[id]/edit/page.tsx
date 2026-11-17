@@ -26,7 +26,7 @@ export default async function EditPurchasePage({
         id: purchase.id,
         supplierId: purchase.supplierId,
         invoiceNo: purchase.invoiceNo,
-        date: purchase.date,
+        date: purchase.date.toISOString(),
         paymentType: purchase.paymentType as "credit" | "cash",
         handlingCharges: purchase.handlingCharges ?? "0",
         handlingChargeType:
