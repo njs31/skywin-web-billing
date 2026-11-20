@@ -30,7 +30,7 @@ export function CustomerForm({
   defaultPhone = "",
 }: CustomerFormProps) {
   const router = useRouter();
-  const [type, setType] = useState<"retail" | "wholesale" | "farmer">("retail");
+  const [type, setType] = useState<"retail" | "wholesale" | "farmer">("farmer");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [showMore, setShowMore] = useState(!compact);
@@ -58,7 +58,7 @@ export function CustomerForm({
           creditLimit: parseFloat((fd.get("creditLimit") as string) || "0"),
         });
         form.reset();
-        setType("retail");
+        setType("farmer");
         if (onSuccess) {
           onSuccess(customer);
         } else {

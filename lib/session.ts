@@ -3,7 +3,14 @@
  * gating, but that value is signed and cannot be forged. Authorization
  * always reloads the user from the database.
  */
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Sessions last until the user clicks Logout. 400 days is the longest cookie
+ * lifetime browsers keep; the proxy re-issues the cookie (at most once a day)
+ * whenever the user opens a page, so an active user is never signed out.
+ */
+const SESSION_TTL_MS = 400 * 24 * 60 * 60 * 1000;
+/** Re-issue the cookie once the token is more than a day old. */
+const SESSION_REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export type SessionPayload = {
   userId: number;
@@ -92,3 +99,19 @@ export async function verifySessionToken(
 
 export const SESSION_COOKIE = "skywin_session";
 export const SESSION_MAX_AGE_SEC = SESSION_TTL_MS / 1000;
+
+/** True when a valid token is old enough that the proxy should hand out a fresh one. */
+export function sessionNeedsRefresh(exp: number, now: number = Date.now()): boolean {
+  return exp - now < SESSION_TTL_MS - SESSION_REFRESH_AFTER_MS;
+}
+
+/** Attributes for the session cookie: HttpOnly, Secure in production, SameSite=Lax, host-only. */
+export function sessionCookieOptions(maxAge: number = SESSION_MAX_AGE_SEC) {
+  return {
+    path: "/",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    maxAge,
+  };
+}

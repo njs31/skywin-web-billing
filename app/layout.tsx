@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "@/components/layout/app-shell";
 import { BUSINESS } from "@/lib/business";
+import { isFieldHost, isShippingHost } from "@/lib/site-hosts";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,7 +29,14 @@ const ICONS: Metadata["icons"] = {
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
   const host = (h.get("x-forwarded-host") || h.get("host") || "").split(",")[0].trim().split(":")[0];
-  if (host === "skywin-field.qwicksapp.com") {
+  if (isShippingHost(host)) {
+    return {
+      title: "SkyWin Shipping & Logistics",
+      description: "Shipping rate configuration and live order checkpoints tracking portal.",
+      icons: ICONS,
+    };
+  }
+  if (isFieldHost(host)) {
     return {
       title: "SkyWin Field",
       description: "Field officer workspace for farmers, catalog, officers, and field orders.",

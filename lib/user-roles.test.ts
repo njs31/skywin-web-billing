@@ -8,6 +8,7 @@ import {
   navItemVisible,
   seesWholeStore,
   roleLabel,
+  salesManagerMayOpen,
   validateRoleChange,
 } from "./user-roles";
 
@@ -75,7 +76,10 @@ describe("validateRoleChange", () => {
   });
 
   it("labels roles for logs and the users table", () => {
-    assert.equal(roleLabel("sales_officer"), "Sales Officer");
+    assert.equal(roleLabel("sales_officer"), "Field officer");
+    assert.equal(roleLabel("sales_manager"), "Sales officer");
+    assert.equal(salesManagerMayOpen("/field/team"), true);
+    assert.equal(salesManagerMayOpen("/field/orders"), false);
     assert.equal(roleLabel("admin"), "Admin");
     assert.equal(roleLabel("cashier"), "Cashier");
     assert.equal(roleLabel("store_manager"), "Store Manager");

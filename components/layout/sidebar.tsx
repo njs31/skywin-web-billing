@@ -27,7 +27,8 @@ import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import type { User } from "@/db/schema";
 import { navItemVisible } from "@/lib/user-roles";
-import { useState, useEffect } from "react";
+import { FIELD_ORIGIN, isShippingHost } from "@/lib/site-hosts";
+import { useState, useEffect, useSyncExternalStore } from "react";
 
 type NavItem = {
   href: string;
@@ -48,7 +49,7 @@ const navGroups: NavGroup[] = [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/pos", label: "POS Billing", icon: ShoppingCart },
       {
-        href: "https://skywin-field.qwicksapp.com",
+        href: FIELD_ORIGIN,
         label: "SkyWin Field",
         icon: Leaf,
         external: true,
@@ -60,6 +61,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/invoices", label: "Invoices", icon: Receipt },
       { href: "/field-orders", label: "Orders", icon: ClipboardList },
+      { href: "/shipping", label: "Shipping & Dispatch", icon: Truck },
       { href: "/quotations", label: "Quotations", icon: FileText },
       { href: "/returns", label: "Sales Return", icon: RotateCcw },
       { href: "/customers", label: "Customers", icon: Users },
@@ -111,6 +113,28 @@ const navGroups: NavGroup[] = [
 
 const allNavHrefs = navGroups.flatMap((g) => g.items.map((i) => i.href));
 
+/**
+ * Links hidden on the billing site (skywin.qwicksapp.com). The pages still exist;
+ * only the sidebar entries are removed. The shipping site (ship.qwicksapp.com, old shipping.qwicksapp.com)
+ * shares this sidebar and keeps them.
+ */
+const BILLING_HIDDEN_HREFS = new Set([
+  FIELD_ORIGIN,
+  "/field-orders",
+  "/shipping",
+]);
+
+const noopSubscribe = () => () => {};
+
+/** True on the shipping site. False during server render and hydration, so billing never flashes the hidden links. */
+function useIsShippingSite() {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => isShippingHost(window.location.hostname),
+    () => false
+  );
+}
+
 function isNavActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
   if (pathname === href) return true;
@@ -146,9 +170,12 @@ export function Sidebar({
     });
   }, []);
 
+  const shippingSite = useIsShippingSite();
+
   const filteredNavGroups = navGroups
     .map((group) => {
       const items = group.items.filter((item) => {
+        if (!shippingSite && BILLING_HIDDEN_HREFS.has(item.href)) return false;
         const role = currentUser?.role || "admin";
         return navItemVisible(role, item.href, item.external);
       });
@@ -271,12 +298,21 @@ export function Sidebar({
         </nav>
         <div className="border-t border-slate-800 px-3 py-2.5 space-y-2">
           {currentUser && (
-            <div className="flex flex-col gap-0.5 text-xs">
-              <span className="font-semibold text-slate-200 truncate">{currentUser.name}</span>
-              <span className="text-[10px] text-emerald-400 font-medium capitalize tracking-wide">
-                Role: {currentUser.role.replace("_", " ")}
-              </span>
-              <span className="text-[10px] text-slate-400">{currentUser.phone}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#B8D94A] text-sm font-bold text-[#1E3317]">
+                {(currentUser.name?.trim()?.[0] || "J").toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-semibold text-slate-200">
+                  {currentUser.name}
+                </span>
+                <span className="block text-[10px] font-medium capitalize tracking-wide text-emerald-400">
+                  Role: {currentUser.role.replace("_", " ")}
+                </span>
+                {currentUser.phone ? (
+                  <span className="block text-[10px] text-slate-400">{currentUser.phone}</span>
+                ) : null}
+              </div>
             </div>
           )}
           <div className="flex items-center justify-between gap-2 border-t border-slate-800/60 pt-2">

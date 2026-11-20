@@ -200,6 +200,7 @@ export async function listFieldOrders(scope?: { officerId?: number }) {
       status: sales.status,
       notes: sales.notes,
       deliveryNote: sales.deliveryNote,
+      transporterName: sales.transporterName,
       destination: sales.destination,
     })
     .from(sales)

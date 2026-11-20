@@ -30,11 +30,51 @@ export default function LoginPage() {
   const [useDirectLogin, setUseDirectLogin] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [fieldSite, setFieldSite] = useState(false);
+  const [shippingSite, setShippingSite] = useState(false);
 
   useEffect(() => {
-    setFieldSite(document.querySelector("[data-field-site]")?.getAttribute("data-field-site") === "1");
+    const isField =
+      document.querySelector("[data-field-site]")?.getAttribute("data-field-site") === "1" ||
+      (typeof window !== "undefined" && window.location.hostname.toLowerCase().includes("field"));
+    const isShipping =
+      document.querySelector("[data-shipping-site]")?.getAttribute("data-shipping-site") === "1" ||
+      (typeof window !== "undefined" && window.location.hostname.toLowerCase().includes("shipping"));
+    setFieldSite(Boolean(isField));
+    setShippingSite(Boolean(isShipping));
+    if (new URLSearchParams(window.location.search).get("denied") === "shipping") {
+      setError("This number is not allowed to sign in to SkyWin Shipping. Sign in with an allowed number.");
+    }
     setMounted(true);
   }, []);
+
+  const redirectToDestination = (role?: string) => {
+    let dest = "/";
+    try {
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const returnTo = params.get("returnTo") || params.get("redirect") || params.get("from");
+        if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") && !returnTo.startsWith("/login")) {
+          dest = returnTo;
+        } else {
+          const host = (window.location.hostname || "").toLowerCase();
+          if (host.includes("shipping") || shippingSite) {
+            dest = "/shipping";
+          } else if (host.includes("field") || fieldSite) {
+            dest = role === "sales_manager" ? "/field/team" : "/field";
+          } else {
+            dest = "/";
+          }
+        }
+      }
+    } catch {
+      dest = shippingSite ? "/shipping" : fieldSite ? (role === "sales_manager" ? "/field/team" : "/field") : "/";
+    }
+
+    // Full navigation ensures browser carries the newly set session cookie reliably
+    setTimeout(() => {
+      window.location.href = dest;
+    }, 200);
+  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -67,10 +107,7 @@ export default function LoginPage() {
           const res = await loginWithPhone(phone);
           if (res.success) {
             setSuccess("Signed in. Opening workspace…");
-            setTimeout(() => {
-              router.push(fieldSite ? (res.role === "sales_manager" ? "/field/team" : "/field") : "/");
-              router.refresh();
-            }, 500);
+            redirectToDestination(res.role);
           } else {
             setError(res.error || "Login failed");
           }
@@ -110,10 +147,7 @@ export default function LoginPage() {
             : await loginWithAdminPassword(phone, password);
         if (res.success) {
           setSuccess("Signed in. Opening workspace…");
-          setTimeout(() => {
-            router.push(fieldSite ? (res.role === "sales_manager" ? "/field/team" : "/field") : "/");
-            router.refresh();
-          }, 500);
+          redirectToDestination(res.role);
         } else {
           setError(res.error || "Invalid password");
         }
@@ -138,10 +172,7 @@ export default function LoginPage() {
         const res = await verifyOtpAndLogin(phone, otp);
         if (res.success) {
           setSuccess("Verified. Opening workspace…");
-          setTimeout(() => {
-            router.push(fieldSite ? (res.role === "sales_manager" ? "/field/team" : "/field") : "/");
-            router.refresh();
-          }, 500);
+          redirectToDestination(res.role);
         } else {
           setError(res.error || "Verification failed");
         }

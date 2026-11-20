@@ -1,16 +1,17 @@
 "use server";
 
 import { timingSafeEqual, createHash } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { db } from "@/db";
 import { users, reportingLines, dealerMappings } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { sendWhatsAppOtp } from "@/lib/services/interakt";
 import { isReviewerPhone, REVIEWER_PHONE } from "@/lib/reviewer";
+import { SHIPPING_DENIED_MESSAGE, isShippingAllowedPhone, isShippingHost } from "@/lib/shipping-access";
 import {
   SESSION_COOKIE,
-  SESSION_MAX_AGE_SEC,
   createSessionToken,
+  sessionCookieOptions,
   verifySessionToken,
 } from "@/lib/session";
 
@@ -61,21 +62,25 @@ function tooManyAttempts(key: string) {
   return row.count > 8;
 }
 
+/** On the shipping site (ship.qwicksapp.com or the old shipping.qwicksapp.com) only the allowlisted numbers may sign in. */
+async function shippingLoginRefused(phone: string) {
+  const h = await headers();
+  if (!isShippingHost(h.get("x-forwarded-host") || h.get("host"))) return false;
+  return !isShippingAllowedPhone(phone);
+}
+
 async function setSession(user: { id: number; role: string }) {
   const cookieStore = await cookies();
   const token = await createSessionToken(user.id, user.role);
-  cookieStore.set(SESSION_COOKIE, token, {
-    path: "/",
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: SESSION_MAX_AGE_SEC,
-  });
+  cookieStore.set(SESSION_COOKIE, token, sessionCookieOptions());
 }
 
 /** Admin (9999999999) signs in with ADMIN_PASSWORD from env — no WhatsApp OTP. */
 export async function loginWithAdminPassword(phone: string, password: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
+  }
   if (cleanPhone !== ADMIN_PHONE) {
     return { success: false as const, error: "Password login is only for the admin account." };
   }
@@ -104,6 +109,9 @@ export async function loginWithAdminPassword(phone: string, password: string) {
 /** Reviewer signs in with REVIEWER_PASSWORD. The account must be a dealer. */
 export async function loginWithReviewerPassword(phone: string, password: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "").slice(-10);
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
+  }
   if (!isReviewerPhone(cleanPhone)) {
     return { success: false as const, error: "Password login is only for the admin account." };
   }
@@ -141,6 +149,10 @@ export async function sendOtp(phone: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
   if (!cleanPhone || cleanPhone.length < 10) {
     return { success: false as const, error: "Please enter a valid 10-digit phone number" };
+  }
+
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
   }
 
   if (tooManyAttempts(`otp:${cleanPhone}`)) {
@@ -203,6 +215,10 @@ export async function verifyOtpAndLogin(phone: string, otpInput: string) {
     return { success: false as const, error: "Please enter the 6-digit OTP" };
   }
 
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
+  }
+
   if (tooManyAttempts(`otp-verify:${cleanPhone}`)) {
     return { success: false as const, error: "Too many attempts. Try again later." };
   }
@@ -261,6 +277,9 @@ export async function loginWithPhone(phone: string) {
   if (!cleanPhone) {
     return { success: false as const, error: "Phone number is required" };
   }
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
+  }
 
   if (cleanPhone === ADMIN_PHONE) {
     await ensureAdminUser();
@@ -295,7 +314,9 @@ export async function getCurrentUser() {
       .from(users)
       .where(eq(users.id, parsed.userId))
       .limit(1);
-    return user ?? null;
+    // A role change (or a deleted user) ends the session: sign in again to get the new role.
+    if (!user || user.role !== parsed.role) return null;
+    return user;
   } catch {
     return null;
   }
@@ -430,6 +451,7 @@ export async function getVisibleCustomerIds(user: {
 
 export async function logout() {
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
+  // Expire the cookie with the same attributes it was set with so every browser drops it.
+  cookieStore.set(SESSION_COOKIE, "", sessionCookieOptions(0));
   return { success: true };
 }

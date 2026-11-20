@@ -15,13 +15,14 @@ import {
   calculateGstBreakdown,
   calculateLineAmount,
 } from "@/lib/gst";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   getIndianFinancialYearBounds,
   formatSaleReturnNo,
 } from "@/lib/financial-year";
 import { gstinRequiresUniqueness, isValidGstin } from "@/lib/gst";
+import { isSaleReturnStockMovement } from "@/lib/return-stock";
 
 type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -213,19 +214,55 @@ async function insertReturnItemsAndStock(
   }
 }
 
-/** Undo stock added by a prior sales return (before re-applying edited lines). */
-async function reverseReturnStock(tx: DbOrTx, returnId: number) {
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function creditNoteStockError(err: unknown) {
+  const detail = err instanceof Error ? err.message : "";
+  if (/Insufficient/i.test(detail)) {
+    return new Error(
+      `Can't update this credit note because that returned stock has already been sold. ${detail}`
+    );
+  }
+  return err instanceof Error
+    ? err
+    : new Error("Can't update this credit note.");
+}
+
+/**
+ * Undo stock added by this credit note before the edited lines are applied.
+ * Only this note's own rows are touched — see lib/return-stock.ts.
+ */
+async function reverseReturnStock(
+  tx: DbOrTx,
+  returnId: number,
+  items: Array<{ productId: number | null; qty: string }>
+) {
   const { deductFromBatch, deductStockFefo } = await import("@/lib/batches");
   const movements = await tx
     .select()
     .from(stockMovements)
     .where(
-      sql`${stockMovements.referenceId} = ${returnId} AND ${stockMovements.type} = 'return'`
+      and(
+        eq(stockMovements.referenceId, returnId),
+        eq(stockMovements.type, "return")
+      )
     );
 
-  for (const mov of movements) {
-    const qty = Math.abs(parseFloat(mov.qtyDelta));
-    if (qty <= 0 || !mov.productId) continue;
+  const ours = movements.filter((mov) =>
+    isSaleReturnStockMovement({ notes: mov.notes, qtyDelta: mov.qtyDelta })
+  );
+
+  const reversed = new Map<number, number>();
+  const toDelete: number[] = [];
+
+  for (const mov of ours) {
+    const qty = round2(Math.abs(parseFloat(mov.qtyDelta)));
+    if (!mov.productId || qty <= 0) {
+      toDelete.push(mov.id);
+      continue;
+    }
 
     try {
       if (mov.batchId) {
@@ -233,9 +270,13 @@ async function reverseReturnStock(tx: DbOrTx, returnId: number) {
       } else {
         await deductStockFefo(tx, mov.productId, qty);
       }
-    } catch {
-      // Batch may have been consumed; fall back to FEFO across the product.
-      await deductStockFefo(tx, mov.productId, qty);
+    } catch (err) {
+      if (!mov.batchId) throw creditNoteStockError(err);
+      try {
+        await deductStockFefo(tx, mov.productId, qty);
+      } catch (fallback) {
+        throw creditNoteStockError(fallback);
+      }
     }
 
     await tx.insert(stockMovements).values({
@@ -247,13 +288,39 @@ async function reverseReturnStock(tx: DbOrTx, returnId: number) {
       referenceId: returnId,
       notes: "Reverse sales return (edit)",
     });
+
+    reversed.set(mov.productId, round2((reversed.get(mov.productId) ?? 0) + qty));
+    toDelete.push(mov.id);
   }
 
-  await tx
-    .delete(stockMovements)
-    .where(
-      sql`${stockMovements.referenceId} = ${returnId} AND ${stockMovements.type} = 'return'`
-    );
+  const needed = new Map<number, number>();
+  for (const item of items) {
+    if (!item.productId) continue;
+    const qty = round2(parseFloat(item.qty));
+    if (!(qty > 0)) continue;
+    needed.set(item.productId, round2((needed.get(item.productId) ?? 0) + qty));
+  }
+
+  for (const [productId, need] of needed) {
+    const rest = round2(need - (reversed.get(productId) ?? 0));
+    if (rest <= 0) continue;
+    try {
+      await deductStockFefo(tx, productId, rest);
+    } catch (err) {
+      throw creditNoteStockError(err);
+    }
+    await tx.insert(stockMovements).values({
+      productId,
+      type: "adjustment",
+      qtyDelta: (-rest).toFixed(2),
+      referenceId: returnId,
+      notes: "Reverse sales return (edit)",
+    });
+  }
+
+  if (toDelete.length > 0) {
+    await tx.delete(stockMovements).where(inArray(stockMovements.id, toDelete));
+  }
 }
 
 export async function createSaleReturn(input: z.infer<typeof createReturnSchema>) {
@@ -353,7 +420,7 @@ export async function updateSaleReturn(
   const newProductIds = data.items.map((i) => i.productId);
 
   await db.transaction(async (tx) => {
-    await reverseReturnStock(tx, id);
+    await reverseReturnStock(tx, id, existing.items);
     await maybeUpdateCustomerGstin(tx, data.customerId, customerGstin);
 
     await tx

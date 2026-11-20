@@ -926,11 +926,14 @@ export const fieldProductDetails = pgTable("field_product_details", {
 
 export type FieldProductDetail = typeof fieldProductDetails.$inferSelect;
 
-/** Crop recommendations written by an admin on the field site or a field officer in the app. */
+/** Recommendations a field officer writes for one of his farmers (on the field site or in the app). */
 export const fieldRecommendations = pgTable(
   "field_recommendations",
   {
     id: serial("id").primaryKey(),
+    farmerId: integer("farmer_id")
+      .references(() => customers.id, { onDelete: "cascade" })
+      .notNull(),
     crop: text("crop").notNull(),
     stage: text("stage").default("").notNull(),
     problem: text("problem").notNull(),
@@ -944,6 +947,7 @@ export const fieldRecommendations = pgTable(
   },
   (table) => ({
     cropIdx: index("field_recommendations_crop_idx").on(table.crop),
+    farmerIdx: index("field_recommendations_farmer_idx").on(table.farmerId),
   })
 );
 
@@ -972,6 +976,93 @@ export const fieldMedia = pgTable("field_media", {
   data: bytea("data").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/** Shipping method switch configuration (manual vs delhivery) */
+export const shippingSettings = pgTable("shipping_settings", {
+  id: serial("id").primaryKey(),
+  provider: text("provider").default("manual").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedBy: text("updated_by"),
+});
+
+/** Configurable shipping rates by weight slab + destination (PINs/districts/states) */
+export const shippingRates = pgTable("shipping_rates", {
+  id: serial("id").primaryKey(),
+  slab: text("slab").notNull(),
+  minWeightGrams: integer("min_weight_grams").default(0).notNull(),
+  maxWeightGrams: integer("max_weight_grams").default(1000).notNull(),
+  zoneName: text("zone_name").notNull(),
+  regions: text("regions").notNull(),
+  transitDays: text("transit_days").default("3 - 5 Days").notNull(),
+  shippingFee: numeric("shipping_fee", { precision: 10, scale: 2 }).default("0").notNull(),
+  pincodes: text("pincodes"),
+  districts: text("districts"),
+  states: text("states"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/** Order tracking checkpoints (Order Received, Dispatched, In transit, Delivered, etc.) */
+export const orderCheckpoints = pgTable(
+  "order_checkpoints",
+  {
+    id: serial("id").primaryKey(),
+    orderId: text("order_id").notNull(),
+    saleId: integer("sale_id").references(() => sales.id, { onDelete: "set null" }),
+    checkpoint: text("checkpoint").notNull(),
+    note: text("note"),
+    location: text("location"),
+    updatedBy: text("updated_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    orderIdIdx: index("order_checkpoints_order_id_idx").on(table.orderId),
+    createdAtIdx: index("order_checkpoints_created_at_idx").on(table.createdAt),
+  })
+);
+
+/** Registered Expo push tokens for devices */
+export const pushTokens = pgTable(
+  "push_tokens",
+  {
+    id: serial("id").primaryKey(),
+    phone: text("phone").notNull(),
+    token: text("token").notNull().unique(),
+    platform: text("platform").default("android"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    phoneIdx: index("push_tokens_phone_idx").on(table.phone),
+  })
+);
+
+/** Order push notifications history for mobile app */
+export const orderNotifications = pgTable(
+  "order_notifications",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id").notNull(),
+    phone: text("phone"),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    checkpoint: text("checkpoint"),
+    read: boolean("read").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    orderIdIdx: index("order_notifications_order_id_idx").on(table.orderId),
+    phoneIdx: index("order_notifications_phone_idx").on(table.phone),
+  })
+);
+
+export type ShippingSetting = typeof shippingSettings.$inferSelect;
+export type ShippingRate = typeof shippingRates.$inferSelect;
+export type OrderCheckpoint = typeof orderCheckpoints.$inferSelect;
+export type PushToken = typeof pushTokens.$inferSelect;
+export type OrderNotification = typeof orderNotifications.$inferSelect;
+
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type FieldCategory = typeof fieldCategories.$inferSelect;
 export type FieldSubcategory = typeof fieldSubcategories.$inferSelect;
