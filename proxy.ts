@@ -37,7 +37,8 @@ export async function proxy(request: NextRequest) {
       request.headers.get("rsc") === "1" ||
       request.headers.has("next-router-prefetch") ||
       request.nextUrl.searchParams.has("_rsc");
-    if (session && (pathname === "/login" || (pathname === "/" && !clientNav))) {
+    const deniedNotice = pathname === "/login" && request.nextUrl.searchParams.get("denied") === "shipping";
+    if (session && !deniedNotice && (pathname === "/login" || (pathname === "/" && !clientNav))) {
       return NextResponse.redirect(new URL("/shipping", request.url));
     }
     if (pathname === "/login" || pathname === "/privacy" || pathname === "/delete-account") return NextResponse.next();
