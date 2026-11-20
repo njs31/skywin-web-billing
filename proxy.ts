@@ -4,7 +4,9 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 import { canManageField, isSalesManager, matrixCanAccessPath, salesManagerMayOpen } from "@/lib/user-roles";
 
 const FIELD_HOST = "skywin-field.qwicksapp.com";
+const SHIPPING_HOST = "shipping.qwicksapp.com";
 const FIELD_ORIGIN = "https://skywin-field.qwicksapp.com";
+const SHIPPING_ORIGIN = "https://shipping.qwicksapp.com";
 const BILLING_ORIGIN = "https://skywin.qwicksapp.com";
 
 function requestHost(request: NextRequest) {
@@ -25,11 +27,44 @@ export async function proxy(request: NextRequest) {
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = await verifySessionToken(token);
-  const fieldSite = requestHost(request) === FIELD_HOST;
+  const host = requestHost(request);
+  const fieldSite = host === FIELD_HOST;
+  const shippingSite = host === SHIPPING_HOST;
+
+  if (shippingSite) {
+    // In-app navigations (sidebar links) fetch with an RSC header; a plain page load does not.
+    const clientNav =
+      request.headers.get("rsc") === "1" ||
+      request.headers.has("next-router-prefetch") ||
+      request.nextUrl.searchParams.has("_rsc");
+    if (session && (pathname === "/login" || (pathname === "/" && !clientNav))) {
+      return NextResponse.redirect(new URL("/shipping", request.url));
+    }
+    if (pathname === "/login" || pathname === "/privacy" || pathname === "/delete-account") return NextResponse.next();
+    if (!session) {
+      const returnTo = pathname !== "/shipping" ? `?returnTo=${encodeURIComponent(pathname)}` : "";
+      return NextResponse.redirect(new URL(`/login${returnTo}`, request.url));
+    }
+    if (pathname !== "/shipping" && !pathname.startsWith("/shipping/")) {
+      // Billing sections (sidebar Orders, Invoices, ...) open on the billing site. Sending them back
+      // to /shipping left the page on the same URL with the navigation spinner showing.
+      const dest = new URL(`${pathname}${request.nextUrl.search}`, BILLING_ORIGIN);
+      dest.searchParams.delete("_rsc");
+      return NextResponse.redirect(dest);
+    }
+    return NextResponse.next();
+  }
 
   if (fieldSite) {
+    if (session && pathname === "/login") {
+      const dest = isSalesManager(session.role) ? "/field/team" : "/field";
+      return NextResponse.redirect(new URL(dest, request.url));
+    }
     if (pathname === "/login" || pathname === "/privacy" || pathname === "/delete-account") return NextResponse.next();
-    if (!session) return NextResponse.redirect(new URL("/login", request.url));
+    if (!session) {
+      const returnTo = pathname !== "/field" ? `?returnTo=${encodeURIComponent(pathname)}` : "";
+      return NextResponse.redirect(new URL(`/login${returnTo}`, request.url));
+    }
     if (isSalesManager(session.role)) {
       if (!salesManagerMayOpen(pathname)) {
         return NextResponse.redirect(new URL("/field/team", request.url));
@@ -45,6 +80,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (session && pathname === "/login") {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
   if (
     pathname === "/login" ||
     pathname === "/privacy" ||
@@ -56,7 +95,8 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!session) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const returnTo = pathname !== "/" ? `?returnTo=${encodeURIComponent(pathname)}` : "";
+    return NextResponse.redirect(new URL(`/login${returnTo}`, request.url));
   }
 
   const role = session.role;
@@ -66,6 +106,10 @@ export async function proxy(request: NextRequest) {
   }
 
   if (role !== "admin") {
+    if (pathname === "/shipping" || pathname.startsWith("/shipping/")) {
+      return NextResponse.next();
+    }
+
     if (
       pathname.startsWith("/users") ||
       pathname.startsWith("/settings") ||
