@@ -1,12 +1,13 @@
 "use server";
 
 import { timingSafeEqual, createHash } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { db } from "@/db";
 import { users, reportingLines, dealerMappings } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { sendWhatsAppOtp } from "@/lib/services/interakt";
 import { isReviewerPhone, REVIEWER_PHONE } from "@/lib/reviewer";
+import { SHIPPING_DENIED_MESSAGE, isShippingAllowedPhone, isShippingHost } from "@/lib/shipping-access";
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE_SEC,
@@ -61,6 +62,13 @@ function tooManyAttempts(key: string) {
   return row.count > 8;
 }
 
+/** On shipping.qwicksapp.com only the allowlisted numbers may sign in. Other sites are unchanged. */
+async function shippingLoginRefused(phone: string) {
+  const h = await headers();
+  if (!isShippingHost(h.get("x-forwarded-host") || h.get("host"))) return false;
+  return !isShippingAllowedPhone(phone);
+}
+
 async function setSession(user: { id: number; role: string }) {
   const cookieStore = await cookies();
   const token = await createSessionToken(user.id, user.role);
@@ -76,6 +84,9 @@ async function setSession(user: { id: number; role: string }) {
 /** Admin (9999999999) signs in with ADMIN_PASSWORD from env — no WhatsApp OTP. */
 export async function loginWithAdminPassword(phone: string, password: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
+  }
   if (cleanPhone !== ADMIN_PHONE) {
     return { success: false as const, error: "Password login is only for the admin account." };
   }
@@ -104,6 +115,9 @@ export async function loginWithAdminPassword(phone: string, password: string) {
 /** Reviewer signs in with REVIEWER_PASSWORD. The account must be a dealer. */
 export async function loginWithReviewerPassword(phone: string, password: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "").slice(-10);
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
+  }
   if (!isReviewerPhone(cleanPhone)) {
     return { success: false as const, error: "Password login is only for the admin account." };
   }
@@ -141,6 +155,10 @@ export async function sendOtp(phone: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
   if (!cleanPhone || cleanPhone.length < 10) {
     return { success: false as const, error: "Please enter a valid 10-digit phone number" };
+  }
+
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
   }
 
   if (tooManyAttempts(`otp:${cleanPhone}`)) {
@@ -203,6 +221,10 @@ export async function verifyOtpAndLogin(phone: string, otpInput: string) {
     return { success: false as const, error: "Please enter the 6-digit OTP" };
   }
 
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
+  }
+
   if (tooManyAttempts(`otp-verify:${cleanPhone}`)) {
     return { success: false as const, error: "Too many attempts. Try again later." };
   }
@@ -260,6 +282,9 @@ export async function loginWithPhone(phone: string) {
   const cleanPhone = phone.trim().replace(/\D/g, "");
   if (!cleanPhone) {
     return { success: false as const, error: "Phone number is required" };
+  }
+  if (await shippingLoginRefused(cleanPhone)) {
+    return { success: false as const, error: SHIPPING_DENIED_MESSAGE };
   }
 
   if (cleanPhone === ADMIN_PHONE) {
