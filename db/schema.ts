@@ -278,6 +278,9 @@ export const sales = pgTable(
     deliveryNote: text("delivery_note"),
     paymentTerms: text("payment_terms"),
     transporterName: text("transporter_name"),
+    /** Sales officer name, required on wholesale bills (Raja, 20 Nov 2026).
+     *  Printed as "SO Name" on wholesale invoices and in Tally sales column Z. */
+    soName: text("so_name"),
     notes: text("notes"),
     /** External order id for idempotent ingestion (QwicksApp etc.). */
     externalOrderId: text("external_order_id"),

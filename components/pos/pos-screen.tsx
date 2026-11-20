@@ -146,6 +146,8 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
   const [dispatchedThrough, setDispatchedThrough] = useState("");
   const [destination, setDestination] = useState("");
   const [deliveryNote, setDeliveryNote] = useState("");
+  // Wholesale only: the sales officer's name, printed as "SO Name".
+  const [soName, setSoName] = useState("");
   const [paymentTerms, setPaymentTerms] = useState("");
   const [transporterName, setTransporterName] = useState("");
   const [transporterGstin, setTransporterGstin] = useState("");
@@ -551,6 +553,10 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
       setError("Customer registration required for credit transactions.");
       return;
     }
+    if (billType === "wholesale" && !soName.trim()) {
+      setError("SO Name is required for wholesale bills.");
+      return;
+    }
 
     let cashAmount = 0;
     let upiAmount = 0;
@@ -629,6 +635,7 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
           dispatchedThrough: dispatchedThrough.trim() || undefined,
           destination: needsEway ? destination.trim() || undefined : undefined,
           deliveryNote: deliveryNote.trim() || undefined,
+          soName: billType === "wholesale" ? soName.trim() : undefined,
           paymentTerms: paymentTerms.trim() || undefined,
           transporterName: transporterName.trim() || undefined,
           transporterGstin: needsEway
@@ -663,6 +670,7 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
         setTransporterName("");
         setVehicleNo("");
         setDispatchedThrough("");
+        setSoName("");
         if (mode === "credit") setPaymentMode("cash");
         router.push(`/invoices/${sale.id}?print=1`);
       } catch (e) {
@@ -1271,6 +1279,21 @@ export function PosScreen({ customers: initialCustomers, operatorName }: PosScre
                     className="mt-1 h-9"
                   />
                 </div>
+                {billType === "wholesale" && (
+                  <div className="mt-2">
+                    <Label className="text-xs">
+                      SO Name <span className="text-red-600">*</span>
+                    </Label>
+                    <Input
+                      value={soName}
+                      onChange={(e) => setSoName(e.target.value)}
+                      placeholder="Required for wholesale bills"
+                      required
+                      aria-required="true"
+                      className="mt-1 h-9"
+                    />
+                  </div>
+                )}
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <div>
                     <Label className="text-xs">Payment Terms</Label>

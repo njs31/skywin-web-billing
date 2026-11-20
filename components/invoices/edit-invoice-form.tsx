@@ -70,6 +70,8 @@ export function EditInvoiceForm({
   initialTransporterName,
   initialTransporterGstin,
   initialDistanceKm,
+  billType = "retail",
+  initialSoName = null,
   customers,
   businessStateCode,
 }: {
@@ -88,6 +90,8 @@ export function EditInvoiceForm({
   initialTransporterName: string | null;
   initialTransporterGstin: string | null;
   initialDistanceKm: string | null;
+  billType?: string | null;
+  initialSoName?: string | null;
   customers: EditableCustomer[];
   businessStateCode: string;
 }) {
@@ -116,6 +120,8 @@ export function EditInvoiceForm({
     initialTransporterGstin ?? ""
   );
   const [distanceKm, setDistanceKm] = useState(initialDistanceKm ?? "");
+  const isWholesale = billType === "wholesale";
+  const [soName, setSoName] = useState(initialSoName ?? "");
 
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<ProductBatchSearchResult[]>([]);
@@ -224,6 +230,10 @@ export function EditInvoiceForm({
       setError("The invoice needs at least one line.");
       return;
     }
+    if (isWholesale && !soName.trim()) {
+      setError("SO Name is required for wholesale bills.");
+      return;
+    }
     startTransition(async () => {
       try {
         await updateSale({
@@ -242,6 +252,7 @@ export function EditInvoiceForm({
           cashAmount: toNumber(cashAmount),
           upiAmount: toNumber(upiAmount),
           notes: notes.trim() || undefined,
+          soName: isWholesale ? soName.trim() : undefined,
           vehicleNo: vehicleNo.trim() || undefined,
           transporterName: transporterName.trim() || undefined,
           transporterGstin: transporterGstin.trim() || undefined,
@@ -540,6 +551,20 @@ export function EditInvoiceForm({
                 />
               </div>
             </div>
+            {isWholesale && (
+              <div>
+                <Label>
+                  SO Name <span className="text-red-600">*</span>
+                </Label>
+                <Input
+                  value={soName}
+                  onChange={(e) => setSoName(e.target.value)}
+                  placeholder="Required for wholesale bills"
+                  required
+                  aria-required="true"
+                />
+              </div>
+            )}
             <div>
               <Label>Notes</Label>
               <Input

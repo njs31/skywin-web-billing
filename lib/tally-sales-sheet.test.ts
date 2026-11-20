@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as XLSX from "xlsx";
-import { buildSalesTallyRow, isTallyCreditSale } from "./tally-sales-sheet";
+import { buildSalesTallyRow, isTallyCreditSale, withSoNameColumn } from "./tally-sales-sheet";
 
 function columnIndex(letter: string) {
   let n = 0;
@@ -63,4 +63,19 @@ test("credit sheet takes credit bills and GSTIN bills; the rest go to Cash Sales
   assert.equal(isTallyCreditSale("cash", null), false);
   assert.equal(isTallyCreditSale("upi", ""), false);
   assert.equal(isTallyCreditSale("card", "URP"), false);
+});
+
+test("sales sheet: SO Name in column Z and Gst type shifted to AA", () => {
+  const row = withSoNameColumn(sample, "KANNAN");
+  const sheet = XLSX.utils.json_to_sheet([row]);
+  assert.equal(sheet.Y1.v, "GST NO.");
+  assert.equal(sheet.Z1.v, "SO");
+  assert.equal(sheet.Z2.v, "KANNAN");
+  assert.equal(sheet.AA1.v, "Gst type");
+  assert.equal(sheet.AB1.v, "STATE");
+  assert.equal(sheet.AE1.v, "SHIPPED TO ADDRESS");
+  // Columns before Z are unchanged.
+  assert.equal(sheet.U1.v, "taxable amount");
+  // The plain row (Cash Sales sheet) keeps Gst type in Z.
+  assert.equal(Object.keys(sample)[columnIndex("Z")], "Gst type");
 });

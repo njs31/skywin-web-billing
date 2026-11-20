@@ -25,7 +25,11 @@ import { getSettings } from "@/lib/settings";
 import { isPlaceholderGstin } from "@/lib/gst";
 import { stateNameFromGstin } from "@/lib/gst-states";
 import { unitWithoutQuantity } from "@/lib/units";
-import { buildSalesTallyRow, isTallyCreditSale } from "@/lib/tally-sales-sheet";
+import {
+  buildSalesTallyRow,
+  isTallyCreditSale,
+  withSoNameColumn,
+} from "@/lib/tally-sales-sheet";
 import { tallyReceiptIncluded } from "@/lib/tally-receipt-filter";
 
 function taxabilityType(rate: number) {
@@ -85,6 +89,8 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       gstRate: saleItems.gstRate,
       amount: saleItems.amount,
       poNumber: sales.poNumber,
+      billType: sales.billType,
+      soName: sales.soName,
     })
     .from(saleItems)
     .innerJoin(sales, eq(saleItems.saleId, sales.id))
@@ -95,7 +101,7 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       and(gte(sales.date, start), lte(sales.date, end), ne(sales.status, "cancelled"))
     );
 
-  const creditSalesRows: ReturnType<typeof buildSalesTallyRow>[] = [];
+  const creditSalesRows: ReturnType<typeof withSoNameColumn>[] = [];
   const cashSalesRows: ReturnType<typeof buildSalesTallyRow>[] = [];
   dbSales.forEach((s) => {
     const qty = parseFloat(s.qty);
@@ -140,8 +146,12 @@ export async function getTallyExportData(startDateStr: string, endDateStr: strin
       state: stateNameFromGstin(s.customerGstin, businessState),
       billedTo,
     });
-    if (isTallyCreditSale(s.paymentMode, s.customerGstin)) creditSalesRows.push(row);
-    else cashSalesRows.push(row);
+    if (isTallyCreditSale(s.paymentMode, s.customerGstin)) {
+      // Column Z "SO": the wholesale bill's SO Name; blank for other bills.
+      creditSalesRows.push(
+        withSoNameColumn(row, s.billType === "wholesale" ? (s.soName ?? "") : "")
+      );
+    } else cashSalesRows.push(row);
   });
 
   const dbPurchases = await db

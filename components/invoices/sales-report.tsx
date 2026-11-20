@@ -68,6 +68,10 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
+/** Excel "Invoices" sheet columns M and N (Raja, 20 Nov 2026). */
+const SALES_RETURN_HEADER = "Sales Return Value";
+const NET_GRAND_TOTAL_HEADER = "Grand Total (Amount - Sales Return Value)";
+
 function lineItemTotals(data: SalesReportData) {
   return data.lineItems.reduce(
     (acc, item) => {
@@ -93,7 +97,8 @@ function invoiceSheetRows(data: SalesReportData) {
     CGST: inv.cgst,
     SGST: inv.sgst,
     IGST: inv.igst,
-    "Grand Total": inv.grandTotal,
+    [SALES_RETURN_HEADER]: inv.saleReturnValue,
+    [NET_GRAND_TOTAL_HEADER]: round2(inv.grandTotal - inv.saleReturnValue),
     Paid: inv.paidAmount,
   }));
   const s = data.summary;
@@ -110,7 +115,8 @@ function invoiceSheetRows(data: SalesReportData) {
     CGST: s.cgst,
     SGST: s.sgst,
     IGST: s.igst,
-    "Grand Total": s.grandTotal,
+    [SALES_RETURN_HEADER]: s.saleReturnValue,
+    [NET_GRAND_TOTAL_HEADER]: round2(s.grandTotal - s.saleReturnValue),
     Paid: s.paidAmount,
   });
   return rows;

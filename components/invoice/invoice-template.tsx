@@ -66,6 +66,8 @@ type InvoiceSale = {
   deliveryNote?: string | null;
   paymentTerms?: string | null;
   transporterName?: string | null;
+  /** Sales officer name — wholesale bills only. */
+  soName?: string | null;
   eInvoiceRequested?: boolean | null;
   /** A real government IRN, once pushed — when present, the QR shown is
    *  the IRP-signed one (via einvoiceQrUrl), not the self-drawn preview. */
@@ -347,6 +349,9 @@ function WholesaleInvoiceLayout({
   // Wholesale bills get a rupee discount column next to the percent one.
   // "others" bills keep a single Disc. % column, as before.
   const showDiscAmount = (sale.billType ?? "retail") === "wholesale";
+  // Wholesale bills (Raja, 20 Nov 2026): "Other References" becomes "SO Name"
+  // and the per-line Amount values are left out. "others" bills are unchanged.
+  const isWholesale = (sale.billType ?? "retail") === "wholesale";
   // Columns between Description and Amount: HSN, Basic, Qty, per, GST,
   // Disc %, [Disc ₹], Taxable.
   const midSpan = showDiscAmount ? 8 : 7;
@@ -396,10 +401,14 @@ function WholesaleInvoiceLayout({
               value={paymentLabel(sale)}
             />
             <MetaCell label="Delivery Note" value={sale.deliveryNote} />
-            <MetaCell
-              label="Other References"
-              value={sale.operatorName}
-            />
+            {isWholesale ? (
+              <MetaCell label="SO Name" value={sale.soName} />
+            ) : (
+              <MetaCell
+                label="Other References"
+                value={sale.operatorName}
+              />
+            )}
             <MetaCell label="Buyer's Order No." value={sale.poNumber} />
             <MetaCell label="Dated" value={sale.poNumber ? invoiceDate : ""} />
             <MetaCell
@@ -505,7 +514,7 @@ function WholesaleInvoiceLayout({
                     {formatNumber(item.amount, 2)}
                   </td>
                   <td className="px-1 py-1 text-right font-semibold">
-                    {formatNumber(lineFinalAmount(item), 2)}
+                    {isWholesale ? "" : formatNumber(lineFinalAmount(item), 2)}
                   </td>
                 </tr>
               );

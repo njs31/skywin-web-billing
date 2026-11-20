@@ -69,8 +69,13 @@ export function navItemVisible(
   return false;
 }
 
+/**
+ * Who may open and manage the SkyWin Field dashboard (field site).
+ * Managers were added on 20 Nov 2026 (Raja) so they can upload product details.
+ * Admin-only parts (refunds, cancelling, all-farmer recommendations) stay admin-only.
+ */
 export function canManageField(role: string | undefined | null) {
-  return role === "admin" || role === "regional_manager";
+  return role === "admin" || role === "regional_manager" || role === "manager";
 }
 
 /** Web login for the sales officer who manages field officers. Not a phone-app role. */

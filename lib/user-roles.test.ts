@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   SEED_ADMIN_PHONE,
   canEditInvoices,
+  canManageField,
   matrixCanAccessPath,
   navItemVisible,
   seesWholeStore,
@@ -194,5 +195,16 @@ describe("Manager menu and data scope", () => {
     assert.equal(seesWholeStore("admin"), true);
     assert.equal(seesWholeStore("sales_officer"), false);
     assert.equal(seesWholeStore("dealer"), false);
+  });
+});
+
+describe("SkyWin Field dashboard access", () => {
+  it("lets admin, regional manager and manager in, and nobody else", () => {
+    assert.equal(canManageField("admin"), true);
+    assert.equal(canManageField("regional_manager"), true);
+    assert.equal(canManageField("manager"), true);
+    for (const role of ["store_manager", "cashier", "dealer", "sales_officer", "sales_manager", "", null, undefined]) {
+      assert.equal(canManageField(role as string | null | undefined), false, String(role));
+    }
   });
 });

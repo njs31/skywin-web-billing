@@ -74,6 +74,8 @@ export const createSaleSchema = z.object({
   transporterName: z.string().optional(),
   transporterGstin: z.string().optional(),
   distanceKm: z.number().nonnegative().optional(),
+  /** Sales officer name — mandatory on wholesale bills, ignored on others. */
+  soName: z.string().optional(),
   eInvoiceRequested: z.boolean().optional(),
   externalOrderId: z.string().optional(),
   items: z.array(saleItemSchema).min(1),
@@ -134,6 +136,7 @@ function mapSaleRow(row: Record<string, unknown>): typeof sales.$inferSelect {
     paymentTerms: (row.payment_terms as string | null) ?? null,
     notes: (row.notes as string | null) ?? null,
     transporterName: (row.transporter_name as string | null) ?? null,
+    soName: (row.so_name as string | null) ?? null,
     externalOrderId: (row.external_order_id as string | null) ?? null,
     eInvoiceRequested: Boolean(row.e_invoice_requested),
     status: (row.status as string | null) ?? "active",
@@ -978,6 +981,12 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
   const dispatchedThrough = data.dispatchedThrough?.trim() || null;
   const destination = data.destination?.trim() || null;
   const deliveryNote = data.deliveryNote?.trim() || null;
+  // SO Name is mandatory on wholesale bills only (Raja, 20 Nov 2026).
+  // Retail and "others" bills never store one.
+  const soName = isWholesale ? data.soName?.trim() || null : null;
+  if (isWholesale && !soName) {
+    throw new Error("SO Name is required for wholesale bills.");
+  }
   const paymentTerms = data.paymentTerms?.trim() || null;
   const transporterName = data.transporterName?.trim() || null;
   const transporterGstin = data.transporterGstin?.trim().toUpperCase() || null;
@@ -1084,7 +1093,7 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             po_number, purchase_order_id, quotation_number, eway_bill_no, vehicle_no,
             dispatched_through, destination, delivery_note, payment_terms,
             transporter_name, transporter_gstin, distance_km,
-            e_invoice_requested, external_order_id, notes
+            e_invoice_requested, external_order_id, notes, so_name
           )
           select
             ${invoiceNoSelect},
@@ -1117,7 +1126,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
             ${distanceKm}::numeric,
             ${eInvoiceRequested}::boolean,
             ${externalOrderId}::text,
-            ${data.notes ?? null}::text
+            ${data.notes ?? null}::text,
+            ${soName}::text
           from sales s
           where ${invoiceNoWhere}
           returning *
@@ -1488,6 +1498,7 @@ export async function getSaleById(id: number) {
       transporterName: sales.transporterName,
       transporterGstin: sales.transporterGstin,
       distanceKm: sales.distanceKm,
+      soName: sales.soName,
       eInvoiceRequested: sales.eInvoiceRequested,
       status: sales.status,
       cancelledAt: sales.cancelledAt,
@@ -1681,6 +1692,9 @@ export type SalesReportInvoice = {
   sgst: number;
   igst: number;
   grandTotal: number;
+  /** Sales returns (credit notes) against this invoice, dated up to the
+   *  report's To date (Raja, 20 Nov 2026). */
+  saleReturnValue: number;
   paidAmount: number;
   cashAmount: number;
   upiAmount: number;
@@ -1728,6 +1742,7 @@ export type SalesReportData = {
     sgst: number;
     igst: number;
     grandTotal: number;
+    saleReturnValue: number;
     paidAmount: number;
     byPaymentMode: Record<string, { count: number; amount: number }>;
     receivedByMode: Record<string, number>;
@@ -1776,6 +1791,7 @@ export async function getSalesReport(
           sgst: 0,
           igst: 0,
           grandTotal: 0,
+          saleReturnValue: 0,
           paidAmount: 0,
           byPaymentMode: {},
           receivedByMode: {},
@@ -1826,6 +1842,7 @@ export async function getSalesReport(
     sgst: toNum(row.sgst),
     igst: toNum(row.igst),
     grandTotal: toNum(row.grandTotal),
+    saleReturnValue: 0,
     paidAmount: toNum(row.paidAmount),
     cashAmount: toNum(row.cashAmount),
     upiAmount: toNum(row.upiAmount),
@@ -1833,6 +1850,25 @@ export async function getSalesReport(
 
   const saleIds = invoices.map((inv) => inv.id);
   let lineItems: SalesReportLineItem[] = [];
+
+  if (saleIds.length > 0) {
+    // Sales returns linked to these invoices, up to the report's To date.
+    const returnRows = await db
+      .select({
+        saleId: saleReturns.saleId,
+        total: sql<string>`coalesce(sum(${saleReturns.grandTotal}), 0)`,
+      })
+      .from(saleReturns)
+      .where(and(inArray(saleReturns.saleId, saleIds), lte(saleReturns.date, to)))
+      .groupBy(saleReturns.saleId);
+    const returnBySale = new Map<number, number>();
+    for (const r of returnRows) {
+      if (r.saleId != null) returnBySale.set(r.saleId, toNum(r.total));
+    }
+    for (const inv of invoices) {
+      inv.saleReturnValue = Math.round((returnBySale.get(inv.id) ?? 0) * 100) / 100;
+    }
+  }
 
   if (saleIds.length > 0) {
     const itemRows = await db
@@ -1929,6 +1965,7 @@ export async function getSalesReport(
   let sgst = 0;
   let igst = 0;
   let grandTotal = 0;
+  let saleReturnValue = 0;
   let paidAmount = 0;
 
   for (const inv of invoices) {
@@ -1940,6 +1977,7 @@ export async function getSalesReport(
     sgst += inv.sgst;
     igst += inv.igst;
     grandTotal += inv.grandTotal;
+    saleReturnValue += inv.saleReturnValue;
     paidAmount += inv.paidAmount;
     const mode = inv.paymentMode || "cash";
     if (!byPaymentMode[mode]) byPaymentMode[mode] = { count: 0, amount: 0 };
@@ -1975,6 +2013,7 @@ export async function getSalesReport(
       sgst: round2(sgst),
       igst: round2(igst),
       grandTotal: round2(grandTotal),
+      saleReturnValue: round2(saleReturnValue),
       paidAmount: round2(paidAmount),
       byPaymentMode,
       receivedByMode: Object.fromEntries(
@@ -2242,6 +2281,15 @@ export async function updateSale(input: UpdateSaleInput) {
     }
 
     const billType = sale.billType as "retail" | "wholesale" | "others";
+    // Wholesale bills must keep an SO Name; other bill types keep whatever
+    // they had (nothing). Omitted input keeps the stored name.
+    const soName =
+      billType === "wholesale"
+        ? (data.soName !== undefined ? data.soName.trim() : sale.soName?.trim() ?? "") || null
+        : sale.soName;
+    if (billType === "wholesale" && !soName) {
+      throw new Error("SO Name is required for wholesale bills.");
+    }
     const { gst, roundOff, cashAmount, upiAmount, paidAmount } =
       computeSaleSettlement(
         {
@@ -2327,6 +2375,7 @@ export async function updateSale(input: UpdateSaleInput) {
         transporterGstin: data.transporterGstin?.trim().toUpperCase() || null,
         distanceKm:
           data.distanceKm != null ? data.distanceKm.toFixed(1) : null,
+        soName,
         eInvoiceRequested,
         // New totals need a fresh push — a past failure is retryable again.
         einvoiceStatus:

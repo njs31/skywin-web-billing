@@ -89,6 +89,8 @@ export default async function EditInvoicePage({
           initialTransporterName={sale.transporterName}
           initialTransporterGstin={sale.transporterGstin}
           initialDistanceKm={sale.distanceKm}
+          billType={sale.billType}
+          initialSoName={sale.soName}
           customers={customers.map((c) => ({
             id: c.id,
             name: c.name,

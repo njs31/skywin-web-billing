@@ -76,3 +76,23 @@ export function buildSalesTallyRow(input: {
     "SHIPPED TO ADDRESS": input.billedTo,
   };
 }
+
+/** Header of the "sales" sheet column Z, as in Raja's highlighted template (20 Nov 2026). */
+export const TALLY_SO_HEADER = "SO";
+
+/**
+ * "sales" sheet row with the wholesale SO Name in column Z, right after
+ * "GST NO." — "Gst type" and everything after it move one column right
+ * (Gst type lands in AA). The "Cash Sales" sheet keeps the plain row.
+ */
+export function withSoNameColumn(
+  row: ReturnType<typeof buildSalesTallyRow>,
+  soName: string
+) {
+  const out: Record<string, string | number> = {};
+  for (const [key, value] of Object.entries(row)) {
+    out[key] = value;
+    if (key === "GST NO.") out[TALLY_SO_HEADER] = soName;
+  }
+  return out as ReturnType<typeof buildSalesTallyRow> & { [TALLY_SO_HEADER]: string };
+}

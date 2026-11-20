@@ -322,7 +322,7 @@ export async function requireFieldAdmin() {
   const user = await requireUser();
   if (!canManageField(user.role)) {
     throw new Error(
-      "Unauthorized. Only administrators and regional managers can manage SkyWin Field."
+      "Unauthorized. Only administrators, regional managers and managers can manage SkyWin Field."
     );
   }
   return user;

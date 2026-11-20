@@ -53,6 +53,8 @@ export type SalesInvoiceFilterRow = {
   sgst: number;
   igst: number;
   grandTotal: number;
+  /** Sales returns against the invoice (Sales Report Excel column M). */
+  saleReturnValue?: number;
   paidAmount: number;
   cashAmount: number;
   upiAmount: number;
@@ -77,6 +79,7 @@ export type SalesReportSummary = {
   sgst: number;
   igst: number;
   grandTotal: number;
+  saleReturnValue: number;
   paidAmount: number;
   byPaymentMode: Record<string, { count: number; amount: number }>;
   receivedByMode: Record<string, number>;
@@ -184,6 +187,7 @@ export function summarizeSalesInvoices(invoices: SalesInvoiceFilterRow[]): Sales
   let sgst = 0;
   let igst = 0;
   let grandTotal = 0;
+  let saleReturnValue = 0;
   let paidAmount = 0;
 
   for (const inv of invoices) {
@@ -195,6 +199,7 @@ export function summarizeSalesInvoices(invoices: SalesInvoiceFilterRow[]): Sales
     sgst += inv.sgst;
     igst += inv.igst;
     grandTotal += inv.grandTotal;
+    saleReturnValue += inv.saleReturnValue ?? 0;
     paidAmount += inv.paidAmount;
     const mode = inv.paymentMode || "cash";
     if (!byPaymentMode[mode]) byPaymentMode[mode] = { count: 0, amount: 0 };
@@ -221,6 +226,7 @@ export function summarizeSalesInvoices(invoices: SalesInvoiceFilterRow[]): Sales
     sgst: round2(sgst),
     igst: round2(igst),
     grandTotal: round2(grandTotal),
+    saleReturnValue: round2(saleReturnValue),
     paidAmount: round2(paidAmount),
     byPaymentMode,
     receivedByMode: Object.fromEntries(
