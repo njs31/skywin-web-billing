@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, users } from "@/db/schema";
-import { requireAdmin, requireFieldAdmin } from "@/lib/actions/auth";
+import { getCurrentUser, requireAdmin, requireFieldAdmin } from "@/lib/actions/auth";
 import { refundAmountPaise } from "@/lib/field-order-refund-rules";
 import { refundFieldPayment } from "@/lib/field-order-refunds";
 import { FIELD_OFFICER_ROLES, roleLabel } from "@/lib/user-roles";
@@ -36,6 +36,14 @@ import {
 } from "@/lib/queries/field-farmers";
 import { listFieldOrders } from "@/lib/queries/field-orders";
 import {
+  deleteFieldRecommendation,
+  listRecommendationsForUser,
+  saveFieldRecommendation,
+  searchRecommendationFarmers,
+  searchRecommendationProducts,
+} from "@/lib/queries/field-recommendations";
+import { RecommendationError, canUseFieldRecommendations } from "@/lib/field-recommendation-access";
+import {
   getFieldProductDetail,
   fieldProductCategories,
   fieldProductStats,
@@ -51,6 +59,7 @@ function touchField(paths: string[] = []) {
   revalidatePath("/field/farmers");
   revalidatePath("/field/officers");
   revalidatePath("/field/orders");
+  revalidatePath("/field/recommendations");
   for (const path of paths) revalidatePath(path);
 }
 
@@ -461,6 +470,92 @@ export async function refundFieldOrder(saleId: number, amount: string, reason: s
   });
   touchField(["/field-orders", `/invoices/${saleId}`]);
   return result;
+}
+
+/** Signed-in field officer (or admin). Everyone else is refused on the server. */
+async function requireRecommendationUser() {
+  const user = await getCurrentUser();
+  if (!user || !canUseFieldRecommendations(user.role)) {
+    throw new RecommendationError("Only field officers can use recommendations.", 403);
+  }
+  return { id: user.id, name: user.name || user.phone || "Field officer", role: user.role, phone: user.phone };
+}
+
+function recommendationMessage(err: unknown, fallback: string) {
+  if (err instanceof RecommendationError) return err.message;
+  console.error("[field recommendations]", err);
+  return fallback;
+}
+
+export async function fieldRecommendationsPage() {
+  const user = await requireRecommendationUser();
+  const recommendations = await listRecommendationsForUser(user);
+  return { recommendations, canEdit: true, isAdmin: user.role === "admin" };
+}
+
+export async function searchFieldRecommendationProducts(query: string) {
+  try {
+    await requireRecommendationUser();
+    const products = await searchRecommendationProducts(query);
+    return { ok: true as const, products };
+  } catch (err) {
+    return { ok: false as const, error: recommendationMessage(err, "Search failed"), products: [] };
+  }
+}
+
+export async function searchFieldRecommendationFarmers(query: string) {
+  try {
+    const user = await requireRecommendationUser();
+    const farmers = await searchRecommendationFarmers(user, query);
+    return { ok: true as const, farmers };
+  } catch (err) {
+    return { ok: false as const, error: recommendationMessage(err, "Search failed"), farmers: [] };
+  }
+}
+
+export async function saveFieldRecommendationAction(input: {
+  id?: number;
+  farmerId: number;
+  crop: string;
+  stage: string;
+  problem: string;
+  note: string;
+  productIds: number[];
+}) {
+  try {
+    const user = await requireRecommendationUser();
+    const saved = await saveFieldRecommendation(input, user);
+    const verb = input.id ? "updated" : "added";
+    await recordActivity({
+      action: "field.recommendation",
+      message: `${user.name} ${verb} the ${saved.crop} recommendation “${saved.problem}” for ${saved.farmerName || `farmer ${saved.farmerId}`}`,
+      entityType: "field_recommendation",
+      entityId: saved.id,
+      actor: { id: user.id, name: user.name },
+    });
+    touchField();
+    return { ok: true as const, id: saved.id };
+  } catch (err) {
+    return { ok: false as const, error: recommendationMessage(err, "Could not save recommendation.") };
+  }
+}
+
+export async function deleteFieldRecommendationAction(id: number) {
+  try {
+    const user = await requireRecommendationUser();
+    await deleteFieldRecommendation(id, user);
+    await recordActivity({
+      action: "field.recommendation",
+      message: `${user.name} removed recommendation ${id}`,
+      entityType: "field_recommendation",
+      entityId: id,
+      actor: { id: user.id, name: user.name },
+    });
+    touchField();
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: recommendationMessage(err, "Could not remove recommendation.") };
+  }
 }
 
 function splitList(value: string) {

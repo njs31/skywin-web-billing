@@ -57,7 +57,11 @@ export async function proxy(request: NextRequest) {
 
   if (fieldSite) {
     if (session && pathname === "/login") {
-      const dest = isSalesManager(session.role) ? "/field/team" : "/field";
+      const dest = isSalesManager(session.role)
+        ? "/field/team"
+        : session.role === "sales_officer"
+          ? "/field/recommendations"
+          : "/field";
       return NextResponse.redirect(new URL(dest, request.url));
     }
     if (pathname === "/login" || pathname === "/privacy" || pathname === "/delete-account") return NextResponse.next();
@@ -70,6 +74,13 @@ export async function proxy(request: NextRequest) {
         return NextResponse.redirect(new URL("/field/team", request.url));
       }
       return NextResponse.next();
+    }
+    if (session.role === "sales_officer") {
+      // Field officers may use only Recommendations on the field site.
+      if (pathname === "/field/recommendations" || pathname.startsWith("/field/recommendations/")) {
+        return NextResponse.next();
+      }
+      return NextResponse.redirect(new URL("/field/recommendations", request.url));
     }
     if (!canManageField(session.role)) {
       return NextResponse.redirect(BILLING_ORIGIN);
@@ -119,7 +130,10 @@ export async function proxy(request: NextRequest) {
     }
 
     if (pathname === "/field" || pathname.startsWith("/field/")) {
-      if (role !== "regional_manager") {
+      const officerRecommendations =
+        role === "sales_officer" &&
+        (pathname === "/field/recommendations" || pathname.startsWith("/field/recommendations/"));
+      if (role !== "regional_manager" && !officerRecommendations) {
         return NextResponse.redirect(new URL("/", request.url));
       }
     }
