@@ -19,6 +19,14 @@ export default async function FieldLayout({ children }: { children: React.ReactN
       </FieldShell>
     );
   }
+  if (user.role === "sales_officer") {
+    // Field officers use only Recommendations on the field site (the proxy keeps them there).
+    return (
+      <FieldShell recommendationsOnly userName={user.name} billingHref={fieldSite ? BILLING_ORIGIN : "/"}>
+        {children}
+      </FieldShell>
+    );
+  }
   if (!canManageField(user.role)) redirect(fieldSite ? BILLING_ORIGIN : "/");
 
   return (

@@ -31,6 +31,7 @@ const NAV = [
 ];
 
 const TEAM_NAV = [{ href: "/field/team", label: "My team", icon: Users }];
+const OFFICER_NAV = [{ href: "/field/recommendations", label: "Recommendations", icon: Sparkles }];
 
 function active(pathname: string, href: string) {
   if (href === "/field") return pathname === "/field";
@@ -41,18 +42,21 @@ export function FieldShell({
   children,
   billingHref = "/",
   teamOnly = false,
+  recommendationsOnly = false,
   userName = "",
 }: {
   children: React.ReactNode;
   billingHref?: string;
   teamOnly?: boolean;
+  recommendationsOnly?: boolean;
   userName?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
-  const nav = teamOnly ? TEAM_NAV : NAV;
+  const nav = teamOnly ? TEAM_NAV : recommendationsOnly ? OFFICER_NAV : NAV;
+  const signOutOnly = teamOnly || recommendationsOnly;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#F4F3EE] text-[#29332C]">
@@ -99,7 +103,7 @@ export function FieldShell({
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#C6E26A]">
                 SkyWin Field
               </p>
-              <p className="truncate text-sm text-white/80">{teamOnly ? userName || "Sales officer" : "Admin"}</p>
+              <p className="truncate text-sm text-white/80">{teamOnly ? userName || "Sales officer" : recommendationsOnly ? userName || "Field officer" : "Admin"}</p>
             </div>
           </div>
           <nav className="flex-1 space-y-0.5 p-2" aria-label="Field admin">
@@ -144,7 +148,7 @@ export function FieldShell({
             })}
           </nav>
           <div className="border-t border-white/10 p-2">
-            {teamOnly ? (
+            {signOutOnly ? (
               <button
                 type="button"
                 onClick={() => {
