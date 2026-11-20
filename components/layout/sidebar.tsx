@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { BUSINESS } from "@/lib/business";
 import type { User } from "@/db/schema";
 import { navItemVisible } from "@/lib/user-roles";
+import { FIELD_ORIGIN, isShippingHost } from "@/lib/site-hosts";
 import { useState, useEffect, useSyncExternalStore } from "react";
 
 type NavItem = {
@@ -48,7 +49,7 @@ const navGroups: NavGroup[] = [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/pos", label: "POS Billing", icon: ShoppingCart },
       {
-        href: "https://skywin-field.qwicksapp.com",
+        href: FIELD_ORIGIN,
         label: "SkyWin Field",
         icon: Leaf,
         external: true,
@@ -114,11 +115,11 @@ const allNavHrefs = navGroups.flatMap((g) => g.items.map((i) => i.href));
 
 /**
  * Links hidden on the billing site (skywin.qwicksapp.com). The pages still exist;
- * only the sidebar entries are removed. The shipping site (shipping.qwicksapp.com)
+ * only the sidebar entries are removed. The shipping site (ship.qwicksapp.com, old shipping.qwicksapp.com)
  * shares this sidebar and keeps them.
  */
 const BILLING_HIDDEN_HREFS = new Set([
-  "https://skywin-field.qwicksapp.com",
+  FIELD_ORIGIN,
   "/field-orders",
   "/shipping",
 ]);
@@ -129,7 +130,7 @@ const noopSubscribe = () => () => {};
 function useIsShippingSite() {
   return useSyncExternalStore(
     noopSubscribe,
-    () => window.location.hostname.toLowerCase() === "shipping.qwicksapp.com",
+    () => isShippingHost(window.location.hostname),
     () => false
   );
 }

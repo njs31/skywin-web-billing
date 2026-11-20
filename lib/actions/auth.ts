@@ -62,7 +62,7 @@ function tooManyAttempts(key: string) {
   return row.count > 8;
 }
 
-/** On shipping.qwicksapp.com only the allowlisted numbers may sign in. Other sites are unchanged. */
+/** On the shipping site (ship.qwicksapp.com or the old shipping.qwicksapp.com) only the allowlisted numbers may sign in. */
 async function shippingLoginRefused(phone: string) {
   const h = await headers();
   if (!isShippingHost(h.get("x-forwarded-host") || h.get("host"))) return false;
