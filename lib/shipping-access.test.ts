@@ -27,5 +27,8 @@ test("shipping host is detected from forwarded host values", () => {
   assert.equal(isShippingHost("shipping.qwicksapp.com, 10.0.0.1"), true);
   assert.equal(isShippingHost("skywin.qwicksapp.com"), false);
   assert.equal(isShippingHost("skywin-field.qwicksapp.com"), false);
+  assert.equal(isShippingHost("ship.qwicksapp.com"), true);
+  assert.equal(isShippingHost("Ship.QwicksApp.com:443"), true);
+  assert.equal(isShippingHost("field.qwicksapp.com"), false);
   assert.equal(isShippingHost(""), false);
 });

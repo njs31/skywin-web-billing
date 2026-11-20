@@ -10,12 +10,7 @@ import {
 } from "@/lib/session";
 import { liveSessionRole } from "@/lib/session-user";
 import { canManageField, isSalesManager, matrixCanAccessPath, salesManagerMayOpen } from "@/lib/user-roles";
-
-const FIELD_HOST = "skywin-field.qwicksapp.com";
-const SHIPPING_HOST = "shipping.qwicksapp.com";
-const FIELD_ORIGIN = "https://skywin-field.qwicksapp.com";
-const SHIPPING_ORIGIN = "https://shipping.qwicksapp.com";
-const BILLING_ORIGIN = "https://skywin.qwicksapp.com";
+import { BILLING_ORIGIN, FIELD_ORIGIN, isFieldHost, isShippingHost } from "@/lib/site-hosts";
 
 function requestHost(request: NextRequest) {
   const raw = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
@@ -72,8 +67,8 @@ export async function proxy(request: NextRequest) {
 async function route(request: NextRequest, session: SessionPayload | null) {
   const { pathname } = request.nextUrl;
   const host = requestHost(request);
-  const fieldSite = host === FIELD_HOST;
-  const shippingSite = host === SHIPPING_HOST;
+  const fieldSite = isFieldHost(host);
+  const shippingSite = isShippingHost(host);
 
   if (shippingSite) {
     // In-app navigations (sidebar links) fetch with an RSC header; a plain page load does not.
