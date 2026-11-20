@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import {
+  SESSION_COOKIE,
+  createSessionToken,
+  sessionCookieOptions,
+  sessionNeedsRefresh,
+  verifySessionToken,
+  type SessionPayload,
+} from "@/lib/session";
+import { liveSessionRole } from "@/lib/session-user";
 import { canManageField, isSalesManager, matrixCanAccessPath, salesManagerMayOpen } from "@/lib/user-roles";
 
 const FIELD_HOST = "skywin-field.qwicksapp.com";
@@ -26,7 +34,43 @@ export async function proxy(request: NextRequest) {
   }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
-  const session = await verifySessionToken(token);
+  let session = await verifySessionToken(token);
+  let endSession = false;
+  if (session) {
+    // Long-lived sessions are re-checked against the database on every page:
+    // a deleted user or a changed role signs that browser out.
+    const liveRole = await liveSessionRole(session.userId);
+    if (liveRole === null || (liveRole !== undefined && liveRole !== session.role)) {
+      session = null;
+      endSession = true;
+    }
+  } else if (token) {
+    endSession = true;
+  }
+
+  const response = await route(request, session);
+
+  if (endSession) {
+    response.cookies.set(SESSION_COOKIE, "", sessionCookieOptions(0));
+  } else if (
+    session &&
+    request.method === "GET" &&
+    !request.headers.has("next-action") &&
+    sessionNeedsRefresh(session.exp)
+  ) {
+    // Rolling refresh: the user stays signed in until they press Logout.
+    response.cookies.set(
+      SESSION_COOKIE,
+      await createSessionToken(session.userId, session.role),
+      sessionCookieOptions()
+    );
+  }
+
+  return response;
+}
+
+async function route(request: NextRequest, session: SessionPayload | null) {
+  const { pathname } = request.nextUrl;
   const host = requestHost(request);
   const fieldSite = host === FIELD_HOST;
   const shippingSite = host === SHIPPING_HOST;
