@@ -10,8 +10,8 @@ import { isReviewerPhone, REVIEWER_PHONE } from "@/lib/reviewer";
 import { SHIPPING_DENIED_MESSAGE, isShippingAllowedPhone, isShippingHost } from "@/lib/shipping-access";
 import {
   SESSION_COOKIE,
-  SESSION_MAX_AGE_SEC,
   createSessionToken,
+  sessionCookieOptions,
   verifySessionToken,
 } from "@/lib/session";
 
@@ -72,13 +72,7 @@ async function shippingLoginRefused(phone: string) {
 async function setSession(user: { id: number; role: string }) {
   const cookieStore = await cookies();
   const token = await createSessionToken(user.id, user.role);
-  cookieStore.set(SESSION_COOKIE, token, {
-    path: "/",
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: SESSION_MAX_AGE_SEC,
-  });
+  cookieStore.set(SESSION_COOKIE, token, sessionCookieOptions());
 }
 
 /** Admin (9999999999) signs in with ADMIN_PASSWORD from env — no WhatsApp OTP. */
@@ -320,7 +314,9 @@ export async function getCurrentUser() {
       .from(users)
       .where(eq(users.id, parsed.userId))
       .limit(1);
-    return user ?? null;
+    // A role change (or a deleted user) ends the session: sign in again to get the new role.
+    if (!user || user.role !== parsed.role) return null;
+    return user;
   } catch {
     return null;
   }
@@ -455,6 +451,7 @@ export async function getVisibleCustomerIds(user: {
 
 export async function logout() {
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
+  // Expire the cookie with the same attributes it was set with so every browser drops it.
+  cookieStore.set(SESSION_COOKIE, "", sessionCookieOptions(0));
   return { success: true };
 }
