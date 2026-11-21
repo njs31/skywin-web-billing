@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { placeFieldOrder } from "@/lib/queries/field-orders";
 import { priceFieldLines, unpackCart } from "@/lib/field-order-pricing";
 import { captureVerifiedPayment } from "@/lib/payments/razorpay";
+import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,6 +90,12 @@ export async function POST(req: NextRequest) {
     });
     if (!result.duplicate) {
       console.warn("[field/pay/webhook] created sale the app did not save", { orderId, saleId: result.saleId });
+      const amount = (Number(payment.amount) || 0) / 100;
+      const who = await peopleForSale({ saleId: result.saleId });
+      if (who) {
+        notifyLater([who.farmerPhone], pushCopy.orderPlacedForFarmer(who.ref, amount));
+        if (who.officerPhone) notifyLater([who.officerPhone], pushCopy.orderPlacedForOfficer(who.ref, who.farmerName || "Farmer", amount));
+      }
     }
     return NextResponse.json({ ok: true, saleId: result.saleId, duplicate: result.duplicate });
   } catch (err) {

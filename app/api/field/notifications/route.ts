@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
+import { fieldIdentity } from "@/lib/field-auth";
 import { db } from "@/db";
 import { orderNotifications } from "@/db/schema";
 import { desc, eq, or, sql } from "drizzle-orm";
@@ -15,9 +16,10 @@ export function OPTIONS() {
 export async function GET(req: NextRequest) {
   if (!(await verifyFieldApiKey(req))) return fieldJson({ error: "Unauthorized" }, 401);
   try {
-    const rawPhone = req.nextUrl.searchParams.get("phone") || "";
+    const who = fieldIdentity(req);
+    const rawPhone = who ? who.phone : req.nextUrl.searchParams.get("phone") || "";
     const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
-    const orderId = req.nextUrl.searchParams.get("orderId") || "";
+    const orderId = who ? "" : req.nextUrl.searchParams.get("orderId") || "";
 
     let query = db.select().from(orderNotifications).$dynamic();
 

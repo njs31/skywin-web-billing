@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { fieldIdentity } from "@/lib/field-auth";
+import { notifyLater, officerPhoneForCustomer, pushCopy } from "@/lib/field-push";
 import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
 import {
   assignmentForFarmerPin,
@@ -164,6 +165,11 @@ export async function POST(req: NextRequest) {
       },
       body.id
     );
+    // A farmer who signs up in the app is introduced to the officer for their PIN area.
+    if (who?.role === "farmer" && !body.id && pinOfficerName && farmer?.id) {
+      const officerPhone = await officerPhoneForCustomer(Number(farmer.id));
+      if (officerPhone) notifyLater([officerPhone], pushCopy.newFarmerForOfficer(farmer.name, farmer.village || "", Number(farmer.id)));
+    }
     return fieldJson({ farmer });
   } catch (err) {
     return fieldJson({ error: err instanceof Error ? err.message : "Could not save farmer" }, 500);

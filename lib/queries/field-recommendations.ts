@@ -4,6 +4,7 @@ import { customers, fieldRecommendations, products, users } from "@/db/schema";
 import { listedProductIds } from "@/lib/field-listed";
 import { cleanRecommendation, type RecommendationDraft } from "@/lib/field-recommendation-rules";
 import { canSignInAsFieldOfficer } from "@/lib/user-roles";
+import { notifyLater, pushCopy } from "@/lib/field-push";
 import {
   RecommendationError,
   canUseFieldRecommendations,
@@ -355,6 +356,8 @@ export async function saveFieldRecommendation(
       })
       .returning({ id: fieldRecommendations.id });
     savedId = created.id;
+    const [farmer] = await db.select({ phone: customers.phone }).from(customers).where(eq(customers.id, farmerId)).limit(1);
+    if (farmer?.phone) notifyLater([farmer.phone], pushCopy.newAdviceForFarmer(draft.crop, draft.problem));
   }
   const rows = await db.select().from(fieldRecommendations).where(eq(fieldRecommendations.id, savedId)).limit(1);
   const [saved] = await presentRows(rows, actor.id);

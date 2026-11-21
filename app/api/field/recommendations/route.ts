@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
+import { fieldIdentity } from "@/lib/field-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { RecommendationError } from "@/lib/field-recommendation-access";
 import {
@@ -36,14 +37,16 @@ function failure(err: unknown, fallback: string) {
 export async function GET(req: NextRequest) {
   if (!(await verifyFieldApiKey(req))) return fieldJson({ error: "Unauthorized" }, 401);
   try {
-    const phone = req.nextUrl.searchParams.get("phone") || "";
+    const who = fieldIdentity(req);
+    const phone = who ? who.phone : req.nextUrl.searchParams.get("phone") || "";
     const rawFarmer = req.nextUrl.searchParams.get("farmerId");
     const farmerId = rawFarmer ? Number(rawFarmer) : null;
     if (farmerId !== null && (!Number.isInteger(farmerId) || farmerId <= 0)) {
       return fieldJson({ recommendations: [] });
     }
 
-    const officer = await fieldOfficerByPhone(phone);
+    // A signed-in farmer is never treated as an officer, even if the number is also staff.
+    const officer = who?.role === "farmer" ? null : await fieldOfficerByPhone(phone);
     if (officer) {
       if (farmerId === null) return fieldJson({ recommendations: await listRecommendationsForAppOfficer(officer) });
       if (!(await appOfficerMayRead(officer, farmerId))) return fieldJson({ recommendations: [] });
@@ -75,7 +78,8 @@ export async function POST(req: NextRequest) {
       note?: string;
       productIds?: number[];
     };
-    const officer = await fieldOfficerByPhone(body.phone || "");
+    const who = fieldIdentity(req);
+    const officer = await fieldOfficerByPhone(who ? who.phone : body.phone || "");
     if (!officer) {
       return fieldJson({ error: "Only a field officer can save a recommendation." }, 403);
     }

@@ -6,6 +6,19 @@ import { listFieldOrders, placeFieldOrder } from "@/lib/queries/field-orders";
 import { fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-auth";
 import { priceFieldLines, rewardPointsFor } from "@/lib/field-order-pricing";
 import { getRazorpayPayment } from "@/lib/payments/razorpay";
+import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
+
+/** The farmer hears about an order someone placed for them; their officer hears about every new order. */
+async function notifyNewOrder(saleId: number, amount: number, placedBy: string | undefined) {
+  const who = await peopleForSale({ saleId });
+  if (!who) return;
+  if (who.farmerPhone && who.farmerPhone !== placedBy) {
+    notifyLater([who.farmerPhone], pushCopy.orderPlacedForFarmer(who.ref, amount));
+  }
+  if (who.officerPhone && who.officerPhone !== placedBy) {
+    notifyLater([who.officerPhone], pushCopy.orderPlacedForOfficer(who.ref, who.farmerName || "Farmer", amount));
+  }
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -120,6 +133,9 @@ export async function POST(req: NextRequest) {
       razorpayOrderId: body.razorpayOrderId ? String(body.razorpayOrderId) : undefined,
       items: priced.lines,
     });
+    if (!result.duplicate) {
+      void notifyNewOrder(result.saleId, paidAmount, who?.phone);
+    }
     return fieldJson(result);
   } catch (err) {
     const msg = fieldOrderErrorMessage(err);

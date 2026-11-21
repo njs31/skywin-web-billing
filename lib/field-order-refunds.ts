@@ -4,6 +4,7 @@ import { sales } from "@/db/schema";
 import { remainingRefundPaise } from "@/lib/field-order-refund-rules";
 import { getRazorpayPayment, refundRazorpayPayment } from "@/lib/payments/razorpay";
 import { razorpayPaymentIdFromNotes } from "@/lib/queries/field-orders";
+import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
 
 export { refundAmountPaise, remainingRefundPaise } from "@/lib/field-order-refund-rules";
 
@@ -13,6 +14,25 @@ export { refundAmountPaise, remainingRefundPaise } from "@/lib/field-order-refun
  * Orders with no Razorpay payment are left unchanged so a cash invoice can still be cancelled.
  */
 export async function refundFieldPayment(input: {
+  saleId: number;
+  amountPaise: number | null;
+  reason: string;
+  actorName: string;
+}) {
+  const result = await refundInTransaction(input);
+  if (!result.skipped && result.amountRupees > 0) {
+    void peopleForSale({ saleId: input.saleId }).then((who) => {
+      if (!who) return;
+      notifyLater([who.farmerPhone], pushCopy.refundForFarmer(who.ref, result.amountRupees));
+      if (who.officerPhone && who.officerPhone !== who.farmerPhone) {
+        notifyLater([who.officerPhone], pushCopy.orderUpdateForOfficer(who.ref, who.farmerName || "Farmer", "Refunded"));
+      }
+    });
+  }
+  return result;
+}
+
+async function refundInTransaction(input: {
   saleId: number;
   amountPaise: number | null;
   reason: string;

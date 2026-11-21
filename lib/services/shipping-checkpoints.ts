@@ -3,6 +3,7 @@ import { orderCheckpoints, orderNotifications, pushTokens, sales, customers } fr
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { SHIPPING_CHECKPOINTS, type ShippingCheckpoint } from "@/lib/delivery/manual-rates";
+import { checkpointCopy, notifyLater, officerPhoneForCustomer, pushCopy } from "@/lib/field-push";
 
 /**
  * Dispatch an Expo push notification to a device token.
@@ -246,24 +247,13 @@ export async function recordOrderCheckpoint(input: {
     createdAt: new Date(),
   });
 
-  // Find all push tokens for this customer phone (or recent tokens)
-  if (targetPhone) {
-    const tokens = await db
-      .select({ token: pushTokens.token })
-      .from(pushTokens)
-      .where(eq(pushTokens.phone, targetPhone));
-
-    for (const t of tokens) {
-      void sendExpoPushNotification({
-        token: t.token,
-        title: notifCopy.title,
-        body: notifCopy.body,
-        data: {
-          orderId,
-          checkpoint,
-          notificationId: notifId,
-        },
-      });
+  // Push to the farmer (in their language), and to their field officer for the outcomes
+  // an officer acts on. The feed row above already records it for the farmer.
+  if (targetPhone) notifyLater([targetPhone], checkpointCopy(orderId, checkpoint));
+  if (checkpoint === "Delivered" || checkpoint === "Order Cancelled" || checkpoint === "Refunded") {
+    const officerPhone = await officerPhoneForCustomer(sale?.customerId);
+    if (officerPhone && officerPhone !== targetPhone) {
+      notifyLater([officerPhone], pushCopy.orderUpdateForOfficer(orderId, sale?.customerName || "Farmer", checkpoint));
     }
   }
 

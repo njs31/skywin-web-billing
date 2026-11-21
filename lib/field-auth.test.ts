@@ -130,3 +130,32 @@ describe("field order pricing", () => {
     assert.deepEqual(unpackCart(packed), lines);
   });
 });
+
+describe("field push payloads", async () => {
+  const { expoPayloads, checkpointCopy, pushCopy } = await import("./field-push");
+
+  it("only sends to Expo tokens and sets the Android channel and tap route", () => {
+    const out = expoPayloads(["ExponentPushToken[abc]", "not-a-token"], {
+      title: "t",
+      body: "b",
+      url: "/order/SW-1",
+      orderId: "SW-1",
+      channel: "advice",
+    });
+    assert.equal(out.length, 1);
+    assert.equal(out[0]!.channelId, "advice");
+    assert.equal(out[0]!.data.url, "/order/SW-1");
+    assert.equal(out[0]!.priority, "high");
+  });
+
+  it("has Tamil and English shipping messages that open the order", () => {
+    const copy = checkpointCopy("SW-9", "Out for delivery");
+    assert.match(copy.en.title, /Out for delivery today · SW-9/);
+    assert.ok(copy.ta && copy.ta.title.includes("SW-9"));
+    assert.equal(copy.en.url, "/order/SW-9");
+  });
+
+  it("formats order amounts in rupees", () => {
+    assert.match(pushCopy.orderPlacedForFarmer("SW-2", 1234.4).en.body, /₹1,234 paid/);
+  });
+});
