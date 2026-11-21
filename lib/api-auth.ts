@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest } from "next/server";
 import { DEFAULT_SETTINGS, getSettings } from "@/lib/settings";
+import { fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-auth";
 
 function keysMatch(provided: string, expected: string) {
   const a = createHash("sha256").update(provided).digest();
@@ -49,8 +50,14 @@ export async function verifyLabelApiKey(req: NextRequest) {
   return verifyConfiguredApiKey(req, [settings.labelApiKey]);
 }
 
-/** Field Officer app — dedicated key, Qwicks key accepted as fallback. */
+/**
+ * Field app access: a signed login token (after a server-checked WhatsApp OTP), or, while
+ * FIELD_LEGACY_KEY is not "off", the shared app key that older app builds still send.
+ * Routes that act for a person use `fieldIdentity(req)` to get who is signed in.
+ */
 export async function verifyFieldApiKey(req: NextRequest) {
+  if (fieldIdentity(req)) return true;
+  if (!legacyFieldKeyAllowed()) return false;
   const settings = await getSettings();
   return verifyConfiguredApiKey(req, [
     settings.fieldApiKey || DEFAULT_SETTINGS.fieldApiKey,

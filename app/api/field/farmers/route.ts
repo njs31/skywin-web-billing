@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
+import { fieldIdentity } from "@/lib/field-auth";
 import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
 import {
   assignmentForFarmerPin,
@@ -34,21 +35,27 @@ export async function GET(req: NextRequest) {
   }
   const url = new URL(req.url);
   const id = Number(url.searchParams.get("id") || "");
-  const phone = url.searchParams.get("phone") || undefined;
-  const q = url.searchParams.get("q") || undefined;
-  const viewerPhone = url.searchParams.get("viewer") || "";
+  const who = fieldIdentity(req);
+  // A signed-in farmer only ever sees their own record.
+  const phone = who?.role === "farmer" ? who.phone : url.searchParams.get("phone") || undefined;
+  const q = who?.role === "farmer" ? undefined : url.searchParams.get("q") || undefined;
+  const viewerPhone = who && who.role !== "farmer" ? who.phone : url.searchParams.get("viewer") || "";
+  const ownPhone = (value: string | null | undefined) =>
+    String(value || "").replace(/\D/g, "").slice(-10) === who?.phone;
   try {
     const scope = await salesOfficerScope(viewerPhone);
     if (scope.blocked) return fieldJson({ farmers: [] });
     if (Number.isFinite(id) && id > 0) {
       const farmer = await getFieldFarmer(id, scope.officerId);
+      if (who?.role === "farmer" && farmer && !ownPhone(farmer.phone)) return fieldJson({ farmer: null });
       return fieldJson({ farmer });
     }
-    const farmers = await listFieldFarmers({
+    const listed = await listFieldFarmers({
       q: q || phone,
       approval: "all",
       officerId: scope.officerId,
     });
+    const farmers = who?.role === "farmer" ? listed.filter((f) => ownPhone(f.phone)) : listed;
     return fieldJson({ farmers });
   } catch (err) {
     return fieldJson({ error: err instanceof Error ? err.message : "Farmers failed" }, 500);
@@ -90,7 +97,18 @@ export async function POST(req: NextRequest) {
     if (!body.name?.trim()) {
       return fieldJson({ error: "name is required" }, 400);
     }
-    const scope = await salesOfficerScope(String(body.viewerPhone || ""));
+    const who = fieldIdentity(req);
+    if (who?.role === "farmer") {
+      // Farmers edit only their own profile.
+      body.phone = who.phone;
+      if (body.id) {
+        const existing = await getFieldFarmer(body.id, undefined);
+        if (existing && String(existing.phone || "").replace(/\D/g, "").slice(-10) !== who.phone) {
+          return fieldJson({ error: "Farmer not found" }, 404);
+        }
+      }
+    }
+    const scope = await salesOfficerScope(who && who.role !== "farmer" ? who.phone : String(body.viewerPhone || ""));
     if (scope.blocked) return fieldJson({ error: "Farmer not found" }, 404);
     let pinOfficerName: string | undefined;
     if (scope.officerId) {

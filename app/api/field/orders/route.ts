@@ -3,6 +3,9 @@ import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
 import { listFieldOrders, placeFieldOrder } from "@/lib/queries/field-orders";
+import { fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-auth";
+import { priceFieldLines, rewardPointsFor } from "@/lib/field-order-pricing";
+import { getRazorpayPayment } from "@/lib/payments/razorpay";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +39,10 @@ export async function GET(req: NextRequest) {
   if (!(await verifyFieldApiKey(req))) {
     return fieldJson({ error: "Unauthorized" }, 401);
   }
-  const viewerPhone = req.nextUrl.searchParams.get("viewer") || "";
+  const who = fieldIdentity(req);
+  // A signed-in farmer has no order list here; signed-in staff are scoped by their own phone.
+  if (who?.role === "farmer") return fieldJson({ orders: [], todayCount: 0, todayTotal: 0, monthCount: 0, monthTotal: 0 });
+  const viewerPhone = who ? who.phone : req.nextUrl.searchParams.get("viewer") || "";
   try {
     let officerId: number | undefined;
     if (viewerPhone.trim()) {
@@ -59,28 +65,60 @@ export async function POST(req: NextRequest) {
     return fieldJson({ error: "Unauthorized" }, 401);
   }
 
+  const who = fieldIdentity(req);
   try {
     const body = await req.json();
     const items = Array.isArray(body.items) ? body.items : [];
-    const result = await placeFieldOrder({
-      orderId: String(body.orderId || body.id || ""),
-      farmerName: String(body.farmerName || body.farmer || ""),
-      farmerPhone: String(body.farmerPhone || body.phone || ""),
-      officerName: String(body.officerName || body.officer || ""),
-      officerPhone: body.officerPhone ? String(body.officerPhone) : undefined,
-      deliveryDate: body.deliveryDate ? String(body.deliveryDate) : undefined,
-      note: body.note ? String(body.note) : undefined,
-      placedGps: body.placedGps ? String(body.placedGps) : undefined,
-      paidAmount: Number(body.paidAmount ?? body.total) || 0,
-      razorpayPaymentId: body.razorpayPaymentId ? String(body.razorpayPaymentId) : undefined,
-      razorpayOrderId: body.razorpayOrderId ? String(body.razorpayOrderId) : undefined,
-      items: items.map((item: Record<string, unknown>) => ({
+    // Identity comes from the login token when there is one, never from the request body.
+    const farmerPhone = who?.role === "farmer" ? who.phone : String(body.farmerPhone || body.phone || "");
+    const officerPhone = who
+      ? who.role === "farmer" ? undefined : who.phone
+      : body.officerPhone ? String(body.officerPhone) : undefined;
+
+    // Prices come from the server. A client rate below the legitimate price is replaced.
+    const priced = await priceFieldLines(
+      items.map((item: Record<string, unknown>) => ({
         productId: Number(item.productId),
         batchId: item.batchId == null || item.batchId === "" ? null : Number(item.batchId),
         qty: Number(item.qty) || 1,
         rate: item.rate != null ? Number(item.rate) : undefined,
-        gstRate: item.gstRate != null ? Number(item.gstRate) : undefined,
-      })),
+      }))
+    );
+
+    // The Razorpay payment must exist, belong to this order and cover the goods.
+    const paymentId = body.razorpayPaymentId ? String(body.razorpayPaymentId) : "";
+    let paidAmount = Number(body.paidAmount ?? body.total) || 0;
+    if (paymentId) {
+      const payment = (await getRazorpayPayment(paymentId)) as { amount?: number; status?: string; order_id?: string };
+      if (body.razorpayOrderId && payment.order_id && payment.order_id !== String(body.razorpayOrderId)) {
+        return fieldJson({ success: false, error: "Payment does not match this order." }, 400);
+      }
+      if (payment.status !== "captured" && payment.status !== "authorized") {
+        return fieldJson({ success: false, error: "Payment is not complete." }, 402);
+      }
+      paidAmount = (Number(payment.amount) || 0) / 100;
+      const rewards = Math.min(await rewardPointsFor(farmerPhone.replace(/\D/g, "").slice(-10)), priced.minimumTotal);
+      if (paidAmount + 1 < priced.minimumTotal - rewards) {
+        console.error("[field/orders] underpaid", { orderId: body.orderId, paymentId, paidAmount, minimum: priced.minimumTotal - rewards });
+        return fieldJson({ success: false, error: "The payment is less than the order total. SkyWin will refund it." }, 402);
+      }
+    } else if (who || !legacyFieldKeyAllowed()) {
+      return fieldJson({ success: false, error: "Payment is required." }, 402);
+    }
+
+    const result = await placeFieldOrder({
+      orderId: String(body.orderId || body.id || ""),
+      farmerName: String(body.farmerName || body.farmer || ""),
+      farmerPhone,
+      officerName: String(body.officerName || body.officer || ""),
+      officerPhone,
+      deliveryDate: body.deliveryDate ? String(body.deliveryDate) : undefined,
+      note: body.note ? String(body.note) : undefined,
+      placedGps: body.placedGps ? String(body.placedGps) : undefined,
+      paidAmount,
+      razorpayPaymentId: paymentId || undefined,
+      razorpayOrderId: body.razorpayOrderId ? String(body.razorpayOrderId) : undefined,
+      items: priced.lines,
     });
     return fieldJson(result);
   } catch (err) {
