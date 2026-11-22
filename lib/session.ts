@@ -55,13 +55,18 @@ async function sign(payload: string): Promise<string> {
   return toBase64Url(mac);
 }
 
-function safeEqual(a: string, b: string): boolean {
+export function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let out = 0;
   for (let i = 0; i < a.length; i++) {
     out |= a.charCodeAt(i)! ^ b.charCodeAt(i)!;
   }
   return out === 0;
+}
+
+/** HMAC of any value with the session secret (callers add their own prefix, e.g. "sso:"). */
+export async function signValue(value: string): Promise<string> {
+  return sign(value);
 }
 
 export async function createSessionToken(

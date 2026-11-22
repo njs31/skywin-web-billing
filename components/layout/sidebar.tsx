@@ -321,9 +321,8 @@ export function Sidebar({
             </span>
             <button
               onClick={async () => {
-                const { logout } = await import("@/lib/actions/auth");
-                await logout();
-                window.location.href = "/login";
+                const { signOutEverywhere } = await import("@/lib/sso-client");
+                await signOutEverywhere();
               }}
               className="text-[10px] font-semibold text-rose-400 hover:text-rose-300 transition-colors uppercase tracking-wider cursor-pointer"
             >

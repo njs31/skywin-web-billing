@@ -11,6 +11,27 @@ import {
 import { liveSessionRole } from "@/lib/session-user";
 import { canManageField, isSalesManager, matrixCanAccessPath, salesManagerMayOpen } from "@/lib/user-roles";
 import { BILLING_ORIGIN, FIELD_ORIGIN, isFieldHost, isShippingHost } from "@/lib/site-hosts";
+import { ssoStartUrl } from "@/lib/sso";
+
+/**
+ * Field and shipping sites: a signed-out visit first asks the billing site whether this
+ * browser is signed in there (single sign-on). `?sso=0` marks the way back when it isn't,
+ * so the login form shows instead of looping.
+ */
+function ssoBounce(request: NextRequest, host: string, nextPath: string) {
+  if (request.nextUrl.searchParams.get("sso") === "0") return null;
+  if (request.method !== "GET" || request.headers.has("next-action") || request.headers.get("rsc") === "1") return null;
+  return NextResponse.redirect(ssoStartUrl(`https://${host}${nextPath}`));
+}
+
+function deniedNoticeFor(request: NextRequest) {
+  return request.nextUrl.searchParams.has("denied");
+}
+
+function loginReturnTo(request: NextRequest) {
+  const raw = request.nextUrl.searchParams.get("returnTo") || "/";
+  return raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+}
 
 function requestHost(request: NextRequest) {
   const raw = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
@@ -80,8 +101,14 @@ async function route(request: NextRequest, session: SessionPayload | null) {
     if (session && !deniedNotice && (pathname === "/login" || (pathname === "/" && !clientNav))) {
       return NextResponse.redirect(new URL("/shipping", request.url));
     }
+    if (pathname === "/login" && !session && !deniedNoticeFor(request)) {
+      const bounce = ssoBounce(request, host, loginReturnTo(request));
+      if (bounce) return bounce;
+    }
     if (pathname === "/login" || pathname === "/privacy" || pathname === "/delete-account") return NextResponse.next();
     if (!session) {
+      const bounce = ssoBounce(request, host, `${pathname}${request.nextUrl.search}`);
+      if (bounce) return bounce;
       const returnTo = pathname !== "/shipping" ? `?returnTo=${encodeURIComponent(pathname)}` : "";
       return NextResponse.redirect(new URL(`/login${returnTo}`, request.url));
     }
@@ -104,8 +131,14 @@ async function route(request: NextRequest, session: SessionPayload | null) {
           : "/field";
       return NextResponse.redirect(new URL(dest, request.url));
     }
+    if (pathname === "/login" && !session && !deniedNoticeFor(request)) {
+      const bounce = ssoBounce(request, host, loginReturnTo(request));
+      if (bounce) return bounce;
+    }
     if (pathname === "/login" || pathname === "/privacy" || pathname === "/delete-account") return NextResponse.next();
     if (!session) {
+      const bounce = ssoBounce(request, host, `${pathname}${request.nextUrl.search}`);
+      if (bounce) return bounce;
       const returnTo = pathname !== "/field" ? `?returnTo=${encodeURIComponent(pathname)}` : "";
       return NextResponse.redirect(new URL(`/login${returnTo}`, request.url));
     }

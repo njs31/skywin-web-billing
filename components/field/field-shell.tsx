@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
-import { logout } from "@/lib/actions/auth";
+import { usePathname } from "next/navigation";
+import { signOutEverywhere } from "@/lib/sso-client";
 import {
   ArrowLeft,
   ClipboardList,
@@ -54,7 +54,6 @@ export function FieldShell({
   userName?: string;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   const nav = teamOnly ? TEAM_NAV : recommendationsOnly ? OFFICER_NAV : NAV;
@@ -155,10 +154,7 @@ export function FieldShell({
                 type="button"
                 onClick={() => {
                   close();
-                  void logout().then(() => {
-                    router.push("/login");
-                    router.refresh();
-                  });
+                  void signOutEverywhere();
                 }}
                 className="flex h-10 w-full items-center gap-2.5 rounded-md px-3 text-sm text-white/75 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C6E26A]"
               >
