@@ -10,7 +10,7 @@ import {
 } from "@/lib/session";
 import { liveSessionRole } from "@/lib/session-user";
 import { canManageField, isSalesManager, matrixCanAccessPath, salesManagerMayOpen } from "@/lib/user-roles";
-import { BILLING_ORIGIN, FIELD_ORIGIN, isFieldHost, isShippingHost } from "@/lib/site-hosts";
+import { BILLING_HOST, BILLING_ORIGIN, FIELD_ORIGIN, SHIPPING_ORIGIN, isFieldHost, isShippingHost } from "@/lib/site-hosts";
 import { ssoStartUrl } from "@/lib/sso";
 
 /**
@@ -22,6 +22,11 @@ function ssoBounce(request: NextRequest, host: string, nextPath: string) {
   if (request.nextUrl.searchParams.get("sso") === "0") return null;
   if (request.method !== "GET" || request.headers.has("next-action") || request.headers.get("rsc") === "1") return null;
   return NextResponse.redirect(ssoStartUrl(`https://${host}${nextPath}`));
+}
+
+/** The shipping module's pages: Orders and Shipping & Dispatch. */
+function isShippingModulePath(pathname: string) {
+  return ["/field-orders", "/shipping"].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 function deniedNoticeFor(request: NextRequest) {
@@ -112,8 +117,15 @@ async function route(request: NextRequest, session: SessionPayload | null) {
       const returnTo = pathname !== "/shipping" ? `?returnTo=${encodeURIComponent(pathname)}` : "";
       return NextResponse.redirect(new URL(`/login${returnTo}`, request.url));
     }
+    // Orders (admins only, as on billing) is part of the shipping module and stays on this site.
+    if (isShippingModulePath(pathname) && (pathname === "/shipping" || pathname.startsWith("/shipping/") || session.role === "admin")) {
+      return NextResponse.next();
+    }
+    if (pathname === "/field-orders" || pathname.startsWith("/field-orders/")) {
+      return NextResponse.redirect(new URL("/shipping", request.url));
+    }
     if (pathname !== "/shipping" && !pathname.startsWith("/shipping/")) {
-      // Billing sections (sidebar Orders, Invoices, ...) open on the billing site. Sending them back
+      // Billing sections (Invoices, ...) open on the billing site. Sending them back
       // to /shipping left the page on the same URL with the navigation spinner showing.
       const dest = new URL(`${pathname}${request.nextUrl.search}`, BILLING_ORIGIN);
       dest.searchParams.delete("_rsc");
@@ -162,6 +174,19 @@ async function route(request: NextRequest, session: SessionPayload | null) {
       return NextResponse.redirect(new URL("/field", request.url));
     }
     return NextResponse.next();
+  }
+
+  // Orders and Shipping & Dispatch live on the shipping site; the billing addresses forward there
+  // (single sign-on carries the session). Only page loads: server actions stay where they are.
+  if (
+    host === BILLING_HOST &&
+    isShippingModulePath(pathname) &&
+    request.method === "GET" &&
+    !request.headers.has("next-action")
+  ) {
+    const dest = new URL(`${pathname}${request.nextUrl.search}`, SHIPPING_ORIGIN);
+    dest.searchParams.delete("_rsc");
+    return NextResponse.redirect(dest);
   }
 
   if (session && pathname === "/login") {
