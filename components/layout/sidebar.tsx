@@ -118,11 +118,10 @@ const allNavHrefs = navGroups.flatMap((g) => g.items.map((i) => i.href));
  * only the sidebar entries are removed. The shipping site (ship.qwicksapp.com, old shipping.qwicksapp.com)
  * shares this sidebar and keeps them.
  */
-const BILLING_HIDDEN_HREFS = new Set([
-  FIELD_ORIGIN,
-  "/field-orders",
-  "/shipping",
-]);
+const BILLING_HIDDEN_HREFS = new Set(["/field-orders", "/shipping"]);
+
+/** The shipping site (ship.qwicksapp.com) shows only its own two pages, no billing links. */
+const SHIPPING_ONLY_HREFS = new Set(["/field-orders", "/shipping"]);
 
 const noopSubscribe = () => () => {};
 
@@ -175,6 +174,7 @@ export function Sidebar({
   const filteredNavGroups = navGroups
     .map((group) => {
       const items = group.items.filter((item) => {
+        if (shippingSite && !SHIPPING_ONLY_HREFS.has(item.href)) return false;
         if (!shippingSite && BILLING_HIDDEN_HREFS.has(item.href)) return false;
         const role = currentUser?.role || "admin";
         return navItemVisible(role, item.href, item.external);
