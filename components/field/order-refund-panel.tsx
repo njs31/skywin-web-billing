@@ -33,9 +33,9 @@ export function OrderRefundPanel({
 
   if (cancelled) {
     return (
-      <p className="text-sm text-[#8E3B34]">
-        Cancelled
-        {refunded > 0 ? ` · refunded ${formatCurrency(refunded)} through Razorpay` : ""}
+      <p className="text-sm font-medium text-[#8E3B34]">
+        Order cancelled
+        {refunded > 0 ? ` · ${formatCurrency(refunded)} refunded through Razorpay` : ""}
       </p>
     );
   }
@@ -56,88 +56,98 @@ export function OrderRefundPanel({
     });
   }
 
+  const field =
+    "mt-1 h-10 w-full rounded-lg border border-[#1E3317]/15 bg-white px-3 text-sm text-[#1E3317] outline-none focus:border-[#3E5E2F]/40 focus:ring-2 focus:ring-[#B8D94A]/40";
+
   return (
-    <div className="space-y-2">
-      <p className="text-sm text-[#29332C]">
-        {refunded > 0 ? `Refunded ${formatCurrency(refunded)} · ` : ""}
-        {left > 0 ? `${formatCurrency(left)} left to refund` : "Nothing left to refund"}
-      </p>
-      {paymentId ? null : (
-        <p className="text-xs text-[#5E6B62]">No Razorpay payment is stored, so this order cannot be refunded.</p>
-      )}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm">
+          <span className="font-semibold text-[#1E3317]">
+            {left > 0 ? `${formatCurrency(left)} refundable` : "Fully refunded"}
+          </span>
+          {refunded > 0 ? <span className="text-[#5E6B62]"> · {formatCurrency(refunded)} refunded so far</span> : null}
+          {paymentId ? null : (
+            <span className="block text-xs text-[#5E6B62]">No Razorpay payment stored, so this order can&apos;t be refunded online.</span>
+          )}
+        </div>
+        {mode === "idle" ? (
+          <div className="flex flex-wrap gap-2">
+            {paymentId && left >= 1 ? (
+              <button
+                type="button"
+                className="inline-flex h-9 items-center rounded-lg border border-[#1E3317]/15 bg-white px-4 text-sm font-semibold text-[#1E3317] hover:border-[#1E3317]/30 hover:bg-[#F4F8EF]"
+                onClick={() => {
+                  setError("");
+                  setAmount("");
+                  setMode("refund");
+                }}
+              >
+                Partial refund
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="inline-flex h-9 items-center rounded-lg border border-[#8E3B34]/25 bg-white px-4 text-sm font-semibold text-[#8E3B34] hover:bg-[#FBEAE8]"
+              onClick={() => {
+                setError("");
+                setMode("cancel");
+              }}
+            >
+              Cancel order
+            </button>
+          </div>
+        ) : null}
+      </div>
       {error ? (
-        <p role="alert" className="text-xs text-[#8E3B34]">
+        <p role="alert" className="rounded-lg bg-[#FBEAE8] px-3 py-2 text-sm text-[#8E3B34]">
           {error}
         </p>
       ) : null}
-      {mode === "idle" ? (
-        <div className="flex flex-wrap gap-2">
-          {paymentId && left >= 1 ? (
-            <button
-              type="button"
-              className="h-8 rounded-md border border-[#1E3317]/15 bg-white px-3 text-xs font-medium text-[#1E3317]"
-              onClick={() => {
-                setError("");
-                setMode("refund");
-              }}
-            >
-              Partial refund
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="h-8 rounded-md border border-[#8E3B34]/30 bg-white px-3 text-xs font-medium text-[#8E3B34]"
-            onClick={() => {
-              setError("");
-              setMode("cancel");
-            }}
-          >
-            Cancel order
-          </button>
-        </div>
-      ) : null}
       {mode === "refund" ? (
         <form
-          className="space-y-2 rounded-md border border-[#1E3317]/10 bg-[#F7F6F1] p-3"
+          className="grid gap-3 rounded-xl border border-[#1E3317]/10 bg-white p-4 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-end"
           onSubmit={(event) => {
             event.preventDefault();
             run(() => refundFieldOrder(saleId, amount, reason));
           }}
         >
-          <p className="text-xs text-[#5E6B62]">
-            Razorpay refunds this amount to the original payment. {invoiceNo} stays active.
+          <p className="text-xs text-[#5E6B62] sm:col-span-3">
+            Razorpay sends this amount back to the customer&apos;s original payment. {invoiceNo} stays active.
           </p>
-          <label className="block text-xs text-[#5E6B62]" htmlFor={`refund-amount-${saleId}`}>
-            Amount (₹)
+          <label className="block text-xs font-semibold text-[#5E6B62]" htmlFor={`refund-amount-${saleId}`}>
+            Amount (₹, up to {formatCurrency(left)})
             <input
               id={`refund-amount-${saleId}`}
               inputMode="decimal"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
-              className="mt-1 h-8 w-full rounded-md border border-[#1E3317]/15 bg-white px-2 text-sm text-[#1E3317]"
+              placeholder="0.00"
+              className={field}
             />
           </label>
-          <label className="block text-xs text-[#5E6B62]" htmlFor={`refund-reason-${saleId}`}>
+          <label className="block text-xs font-semibold text-[#5E6B62]" htmlFor={`refund-reason-${saleId}`}>
             Reason
             <input
               id={`refund-reason-${saleId}`}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              className="mt-1 h-8 w-full rounded-md border border-[#1E3317]/15 bg-white px-2 text-sm text-[#1E3317]"
+              placeholder="e.g. one item damaged"
+              className={field}
             />
           </label>
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={pending || reason.trim().length < 3 || !amount.trim()}
-              className="h-8 rounded-md bg-[#1E3317] px-3 text-xs font-medium text-white disabled:opacity-40"
+              className="h-10 rounded-lg bg-[#1E3317] px-4 text-sm font-semibold text-white hover:bg-[#2E4A22] disabled:opacity-40"
             >
-              {pending ? "Refunding…" : "Refund through Razorpay"}
+              {pending ? "Refunding…" : "Refund"}
             </button>
             <button
               type="button"
               disabled={pending}
-              className="h-8 rounded-md px-3 text-xs font-medium text-[#5E6B62]"
+              className="h-10 rounded-lg px-3 text-sm font-semibold text-[#5E6B62] hover:bg-[#F4F8EF]"
               onClick={() => setMode("idle")}
             >
               Back
@@ -147,38 +157,39 @@ export function OrderRefundPanel({
       ) : null}
       {mode === "cancel" ? (
         <form
-          className="space-y-2 rounded-md border border-[#8E3B34]/20 bg-white p-3"
+          className="grid gap-3 rounded-xl border border-[#8E3B34]/20 bg-white p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
           onSubmit={(event) => {
             event.preventDefault();
             run(() => cancelSale(saleId, cancelReason));
           }}
         >
-          <p className="text-xs text-[#5E6B62]">
+          <p className="text-xs text-[#5E6B62] sm:col-span-2">
             {paymentId && left > 0
               ? `Razorpay refunds the remaining ${formatCurrency(left)}, then ${invoiceNo} is cancelled and the stock goes back.`
               : `${invoiceNo} is cancelled and the stock goes back.`}
           </p>
-          <label className="block text-xs text-[#5E6B62]" htmlFor={`cancel-reason-${saleId}`}>
+          <label className="block text-xs font-semibold text-[#5E6B62]" htmlFor={`cancel-reason-${saleId}`}>
             Reason
             <input
               id={`cancel-reason-${saleId}`}
               value={cancelReason}
               onChange={(event) => setCancelReason(event.target.value)}
-              className="mt-1 h-8 w-full rounded-md border border-[#1E3317]/15 bg-white px-2 text-sm text-[#1E3317]"
+              placeholder="e.g. customer asked to cancel"
+              className={field}
             />
           </label>
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={pending || cancelReason.trim().length < 3}
-              className="h-8 rounded-md bg-[#8E3B34] px-3 text-xs font-medium text-white disabled:opacity-40"
+              className="h-10 rounded-lg bg-[#8E3B34] px-4 text-sm font-semibold text-white hover:bg-[#7A322C] disabled:opacity-40"
             >
               {pending ? "Cancelling…" : "Cancel and refund"}
             </button>
             <button
               type="button"
               disabled={pending}
-              className="h-8 rounded-md px-3 text-xs font-medium text-[#5E6B62]"
+              className="h-10 rounded-lg px-3 text-sm font-semibold text-[#5E6B62] hover:bg-[#F4F8EF]"
               onClick={() => setMode("idle")}
             >
               Back

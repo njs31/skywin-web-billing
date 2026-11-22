@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, like, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { customers, productBatches, products, saleItems, sales } from "@/db/schema";
+import { customers, orderCheckpoints, productBatches, products, saleItems, sales } from "@/db/schema";
 import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
 import { activeSale, createSale, istDayRange } from "@/lib/queries/sales";
 import { getBatchBillingRate } from "@/lib/gst";
@@ -257,6 +257,18 @@ export async function listFieldOrders(scope?: { officerId?: number }) {
           .leftJoin(productBatches, eq(productBatches.id, saleItems.batchId))
           .where(inArray(saleItems.saleId, ids));
 
+  // Latest delivery stage per order (Order Received, Dispatched, Delivered, ...).
+  const orderIds = rows.map((r) => r.externalOrderId).filter((id): id is string => !!id);
+  const stages = orderIds.length
+    ? await db
+        .select({ orderId: orderCheckpoints.orderId, checkpoint: orderCheckpoints.checkpoint, at: orderCheckpoints.createdAt })
+        .from(orderCheckpoints)
+        .where(inArray(orderCheckpoints.orderId, orderIds))
+        .orderBy(desc(orderCheckpoints.createdAt))
+    : [];
+  const latestStage = new Map<string, { checkpoint: string; at: Date }>();
+  for (const s of stages) if (!latestStage.has(s.orderId)) latestStage.set(s.orderId, { checkpoint: s.checkpoint, at: s.at });
+
   const bySale = new Map<number, typeof items>();
   for (const it of items) {
     const list = bySale.get(it.saleId) ?? [];
@@ -303,6 +315,7 @@ export async function listFieldOrders(scope?: { officerId?: number }) {
         razorpayPaymentId: razorpayPaymentIdFromNotes(r.notes),
         waybill: waybillFromNotes(r.notes),
         placedGps: placedGpsFromSale(r.destination, r.notes),
+        stage: r.externalOrderId ? latestStage.get(r.externalOrderId)?.checkpoint ?? null : null,
         lines: (bySale.get(r.id) ?? []).map((it) => ({
           name: it.customName || it.name || "Item",
           productId: it.productId,
