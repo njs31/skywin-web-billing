@@ -33,7 +33,10 @@ export default function DeleteAccountPage() {
           <li>Say whether the account is a field officer or a farmer.</li>
           <li>We will reply to confirm, then delete the account.</li>
         </ol>
-        <p>There is no delete button inside the app. Email is the way to make this request.</p>
+        <p>
+          Farmers can also ask from inside the app: open Profile, tap “Delete my account” and confirm.
+          SkyWin reviews every request and deletes the account within 7 days.
+        </p>
       </section>
 
       <section className="mt-8 space-y-3 text-[15px] leading-7">

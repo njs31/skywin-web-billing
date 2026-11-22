@@ -1039,6 +1039,27 @@ export const pushTokens = pgTable(
 );
 
 /** Order push notifications history for mobile app */
+/** Account deletions farmers ask for in the Field app; an admin approves before anything is erased. */
+export const fieldDeletionRequests = pgTable(
+  "field_deletion_requests",
+  {
+    id: serial("id").primaryKey(),
+    phone: text("phone").notNull(),
+    /** Snapshot at request time, so the admin list still reads after the record is anonymised. */
+    name: text("name"),
+    village: text("village"),
+    customerIds: integer("customer_ids").array().notNull().default(sql`'{}'::integer[]`),
+    status: text("status").notNull().default("pending"), // pending | deleted | rejected
+    requestedAt: timestamp("requested_at").defaultNow().notNull(),
+    decidedAt: timestamp("decided_at"),
+    decidedBy: text("decided_by"),
+  },
+  (table) => ({
+    statusIdx: index("field_deletion_requests_status_idx").on(table.status),
+    phoneIdx: index("field_deletion_requests_phone_idx").on(table.phone),
+  })
+);
+
 export const orderNotifications = pgTable(
   "order_notifications",
   {

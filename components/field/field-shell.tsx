@@ -15,6 +15,7 @@ import {
   Menu,
   Package,
   Sparkles,
+  UserX,
   Users,
   X,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const NAV = [
   { href: "/field/recommendations", label: "Recommendations", icon: Sparkles },
   { href: "/field/officers", label: "Officers", icon: Users },
   { href: "/field/orders", label: "Orders", icon: ClipboardList },
+  { href: "/field/deletions", label: "Account deletions", icon: UserX },
 ];
 
 const TEAM_NAV = [{ href: "/field/team", label: "My team", icon: Users }];
