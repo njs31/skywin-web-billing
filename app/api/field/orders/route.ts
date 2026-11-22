@@ -8,6 +8,7 @@ import { priceFieldLines, rewardPointsFor } from "@/lib/field-order-pricing";
 import { getRazorpayPayment } from "@/lib/payments/razorpay";
 import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
 import { refundUnfillableOrder, STOCK_UNAVAILABLE } from "@/lib/stock-holds";
+import { shippingOnRazorpayOrder } from "@/lib/field-shipping";
 
 /** The farmer hears about an order someone placed for them; their officer hears about every new order. */
 async function notifyNewOrder(saleId: number, amount: number, placedBy: string | undefined) {
@@ -104,6 +105,7 @@ export async function POST(req: NextRequest) {
     // The Razorpay payment must exist, belong to this order and cover the goods.
     const paymentId = body.razorpayPaymentId ? String(body.razorpayPaymentId) : "";
     let paidAmount = Number(body.paidAmount ?? body.total) || 0;
+    let shippingAmount = 0;
     if (paymentId) {
       const payment = (await getRazorpayPayment(paymentId)) as { amount?: number; status?: string; order_id?: string };
       if (body.razorpayOrderId && payment.order_id && payment.order_id !== String(body.razorpayOrderId)) {
@@ -118,8 +120,10 @@ export async function POST(req: NextRequest) {
         paymentId,
         phone: farmerPhone.replace(/\D/g, "").slice(-10),
       };
+      // Delivery the server priced at payment start goes on the invoice.
+      shippingAmount = (await shippingOnRazorpayOrder(payment.order_id))?.amount ?? 0;
       const rewards = Math.min(await rewardPointsFor(farmerPhone.replace(/\D/g, "").slice(-10)), priced.minimumTotal);
-      if (paidAmount + 1 < priced.minimumTotal - rewards) {
+      if (paidAmount + 1 < priced.minimumTotal + shippingAmount - rewards) {
         console.error("[field/orders] underpaid", { orderId: body.orderId, paymentId, paidAmount, minimum: priced.minimumTotal - rewards });
         return fieldJson({ success: false, error: "The payment is less than the order total. SkyWin will refund it." }, 402);
       }
@@ -140,6 +144,7 @@ export async function POST(req: NextRequest) {
       razorpayPaymentId: paymentId || undefined,
       razorpayOrderId: body.razorpayOrderId ? String(body.razorpayOrderId) : undefined,
       items: priced.lines,
+      shippingAmount,
     });
     if (!result.duplicate) {
       void notifyNewOrder(result.saleId, paidAmount, who?.phone);

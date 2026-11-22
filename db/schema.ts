@@ -977,6 +977,15 @@ export const fieldMedia = pgTable("field_media", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/** District and state for a PIN code (from Delhivery), so delivery rates match the right zone. */
+export const pinLocations = pgTable("pin_locations", {
+  pin: text("pin").primaryKey(),
+  district: text("district"),
+  state: text("state"),
+  source: text("source").notNull().default("delhivery"),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 /** Shipping method switch configuration (manual vs delhivery) */
 export const shippingSettings = pgTable("shipping_settings", {
   id: serial("id").primaryKey(),

@@ -91,6 +91,11 @@ export async function getRazorpayPayment(paymentId: string) {
   return razorpayFetch(`/payments/${encodeURIComponent(paymentId)}`);
 }
 
+/** The Razorpay order (its notes carry the cart and delivery charge the server priced). */
+export async function getRazorpayOrder(orderId: string) {
+  return razorpayFetch(`/orders/${encodeURIComponent(orderId)}`);
+}
+
 /** Full or partial refund of a captured payment. Amount is in paise. */
 export async function refundRazorpayPayment(input: {
   paymentId: string;

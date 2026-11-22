@@ -1,6 +1,8 @@
 import { db } from "@/db";
-import { shippingRates, shippingSettings } from "@/db/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { pinLocations, shippingRates, shippingSettings } from "@/db/schema";
+import { checkDelhiveryPincode } from "./delhivery";
+import { pickRate, type Place, type RateRule } from "./rate-engine";
+import { eq, sql } from "drizzle-orm";
 import {
   SHIPPING_CHECKPOINTS,
   type ShippingCheckpoint,
@@ -73,7 +75,7 @@ export async function setShippingProvider(
 /**
  * Quick mapping of Indian PIN 2-3 digit prefixes to states and key districts.
  */
-function resolveLocationFromPin(pin: string): { district: string; state: string } {
+export function resolveLocationFromPin(pin: string): { district: string; state: string } {
   const code = pin.replace(/\D/g, "").slice(0, 6);
   if (code.length !== 6) return { district: "", state: "" };
 
@@ -195,8 +197,32 @@ export type ManualQuoteResult = {
 };
 
 /**
- * Calculates manual shipping rate for a destination PIN and weight in grams,
- * based on the active rate rules in database.
+ * District and state for a PIN: saved lookups first, then Delhivery's PIN service (saved for
+ * next time), then a rough guess from the PIN's first digits if Delhivery can't be reached.
+ */
+export async function resolvePinPlace(pin: string): Promise<Place> {
+  const code = pin.replace(/\D/g, "").slice(0, 6);
+  const [saved] = await db.select().from(pinLocations).where(eq(pinLocations.pin, code)).limit(1).catch(() => []);
+  if (saved?.district || saved?.state) return { pin: code, district: saved.district || "", state: saved.state || "" };
+  try {
+    const found = await checkDelhiveryPincode(code);
+    if (found.district || found.state) {
+      await db
+        .insert(pinLocations)
+        .values({ pin: code, district: found.district, state: found.state, source: "delhivery" })
+        .onConflictDoUpdate({ target: pinLocations.pin, set: { district: found.district, state: found.state, fetchedAt: new Date() } })
+        .catch(() => undefined);
+      return { pin: code, district: found.district, state: found.state };
+    }
+  } catch (err) {
+    console.warn("[shipping] PIN lookup failed, guessing from the PIN", code, err instanceof Error ? err.message : err);
+  }
+  return { pin: code, ...resolveLocationFromPin(code) };
+}
+
+/**
+ * The delivery charge for an order of `weightGrams` to `destPin`, from the rate rules on the
+ * Shipping dashboard (lib/delivery/rate-engine.ts). This is what the customer pays.
  */
 export async function calculateManualShippingRate(
   destPin: string,
@@ -206,97 +232,35 @@ export async function calculateManualShippingRate(
   if (pin.length !== 6) {
     throw new Error("Valid 6-digit delivery PIN is required.");
   }
-
   const grams = Math.max(100, Math.round(weightGrams));
-  const { district, state } = resolveLocationFromPin(pin);
-
-  // Fetch all active shipping rates
-  const allRates = await db
-    .select()
-    .from(shippingRates)
-    .where(eq(shippingRates.isActive, true))
-    .orderBy(shippingRates.minWeightGrams);
-
-  if (allRates.length === 0) {
-    // Fallback if table is not seeded
-    return {
-      pin,
-      amount: 67,
-      weightGrams: grams,
-      transitDays: "3 - 5 Days",
-      zoneName: "Standard Delivery",
-      slab: "Default",
-      provider: "manual",
-      courier: "SkyWin Delivery",
-    };
+  const [rows, place] = await Promise.all([
+    db.select().from(shippingRates).where(eq(shippingRates.isActive, true)),
+    resolvePinPlace(pin),
+  ]);
+  const rules: RateRule[] = rows.map((r) => ({
+    id: r.id,
+    slab: r.slab,
+    minWeightGrams: r.minWeightGrams,
+    maxWeightGrams: r.maxWeightGrams,
+    zoneName: r.zoneName,
+    transitDays: r.transitDays,
+    shippingFee: Number(r.shippingFee) || 0,
+    pincodes: r.pincodes,
+    districts: r.districts,
+    states: r.states,
+    isActive: r.isActive,
+  }));
+  const pick = pickRate(rules, place, grams);
+  if (!pick) {
+    throw new Error(`No delivery rate is set up for PIN ${pin}. Add one on the Shipping dashboard.`);
   }
-
-  // 1. Determine weight slab:
-  // e.g. <= 500g -> "250gm-500gm"
-  // <= 1000g -> "500 to 1kg"
-  // > 1000g -> multiplier on 1kg slab or specific higher slab
-  let targetSlab = "250gm-500gm";
-  let weightMultiplier = 1;
-
-  if (grams <= 500) {
-    targetSlab = "250gm-500gm";
-  } else if (grams <= 1000) {
-    targetSlab = "500 to 1kg";
-  } else {
-    // For weight above 1kg, scale with 1kg slab as base
-    targetSlab = "500 to 1kg";
-    weightMultiplier = Math.ceil(grams / 1000);
-  }
-
-  // Filter rules for this slab
-  let slabRates = allRates.filter((r) => r.slab === targetSlab);
-  if (slabRates.length === 0) {
-    slabRates = allRates;
-  }
-
-  // 2. Match Zone by Destination:
-  // Priority 1: Exact PIN match in `pincodes`
-  let matched = slabRates.find((r) => {
-    if (!r.pincodes) return false;
-    const list = r.pincodes.split(",").map((p) => p.trim());
-    return list.includes(pin);
-  });
-
-  // Priority 2: District match in `districts`
-  if (!matched && district) {
-    matched = slabRates.find((r) => {
-      if (!r.districts) return false;
-      const list = r.districts.split(",").map((d) => d.trim().toLowerCase());
-      return list.includes(district.toLowerCase());
-    });
-  }
-
-  // Priority 3: State match in `states`
-  if (!matched && state) {
-    matched = slabRates.find((r) => {
-      if (!r.states) return false;
-      const list = r.states.split(",").map((s) => s.trim().toLowerCase());
-      return list.includes(state.toLowerCase());
-    });
-  }
-
-  // Priority 4: Default zone ("North, Central & Rest of India" or first available)
-  if (!matched) {
-    matched =
-      slabRates.find((r) => r.zoneName.includes("Rest of India") || r.zoneName.includes("North")) ||
-      slabRates[0];
-  }
-
-  const baseFee = Number(matched.shippingFee) || 67;
-  const totalAmount = Math.ceil(baseFee * weightMultiplier);
-
   return {
     pin,
-    amount: totalAmount,
+    amount: pick.amount,
     weightGrams: grams,
-    transitDays: matched.transitDays || "3 - 5 Days",
-    zoneName: matched.zoneName,
-    slab: matched.slab,
+    transitDays: pick.rule.transitDays || "3 - 5 Days",
+    zoneName: pick.rule.zoneName,
+    slab: pick.rule.slab,
     provider: "manual",
     courier: "SkyWin Delivery",
   };

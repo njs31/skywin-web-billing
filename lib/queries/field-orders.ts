@@ -5,6 +5,7 @@ import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-off
 import { activeSale, createSale, istDayRange } from "@/lib/queries/sales";
 import { getBatchBillingRate } from "@/lib/gst";
 import { toNumber } from "@/lib/utils";
+import { shippingInvoiceLines } from "@/lib/field-shipping";
 
 export const FIELD_ORDER_PREFIXES = ["SW-", "FO-"] as const;
 
@@ -77,6 +78,8 @@ export type FieldOrderIn = {
   razorpayPaymentId?: string;
   razorpayOrderId?: string;
   items: FieldOrderLineIn[];
+  /** GST-inclusive delivery charge the server priced; billed as lines at the goods' GST rates. */
+  shippingAmount?: number;
 };
 
 export async function placeFieldOrder(input: FieldOrderIn) {
@@ -153,7 +156,7 @@ export async function placeFieldOrder(input: FieldOrderIn) {
       deliveryNote: input.deliveryDate || undefined,
       destination: input.placedGps || undefined,
       externalOrderId: orderId,
-      items: input.items.map((item) => {
+      items: [...input.items.map((item) => {
         const p = byId.get(item.productId);
         if (!p) throw new Error(`Product ${item.productId} not found`);
         const rate =
@@ -173,6 +176,15 @@ export async function placeFieldOrder(input: FieldOrderIn) {
           batchId: item.batchId ?? null,
         };
       }),
+      // Delivery charge as invoice lines at the goods' GST rates.
+      ...shippingInvoiceLines(
+        input.shippingAmount ?? 0,
+        input.items.map((item) => ({
+          rate: item.rate ?? toNumber(byId.get(item.productId)?.saleRate),
+          qty: item.qty,
+          gstRate: item.gstRate ?? toNumber(byId.get(item.productId)?.gstRate),
+        }))
+      )],
     });
   } catch (err) {
     // The app's save and the Razorpay webhook can bill the same order at once; the unique

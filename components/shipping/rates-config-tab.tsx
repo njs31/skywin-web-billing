@@ -149,7 +149,9 @@ export function RatesConfigTab({ initialRates }: { initialRates: RateItem[] }) {
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Pre-seeded with official SkyWin rates. Rates update live on checkout without requiring app releases.
+            The app charges these rates for the whole order&apos;s weight. The most specific match wins:
+            PIN code, then district, then state or region (e.g. north-east), then a rule with no
+            destination (rest of India). Changes apply to the next checkout, no app update needed.
           </p>
         </div>
 
@@ -243,6 +245,11 @@ export function RatesConfigTab({ initialRates }: { initialRates: RateItem[] }) {
                           <p className="text-[11px] text-slate-500 mt-1 line-clamp-3 leading-relaxed">
                             {rate.regions}
                           </p>
+                          {!rate.pincodes?.trim() && !rate.districts?.trim() && !rate.states?.trim() && (
+                            <span className="inline-block mt-1 mr-1 text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
+                              Default · everywhere not matched above
+                            </span>
+                          )}
                           {rate.pincodes && (
                             <span className="inline-block mt-1 text-[10px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-mono">
                               {rate.pincodes.split(",").length} specific PINs included
@@ -463,7 +470,7 @@ export function RatesConfigTab({ initialRates }: { initialRates: RateItem[] }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Matched States (comma-separated, lowercase)
+                  States or regions (comma-separated)
                 </label>
                 <input
                   type="text"
@@ -471,9 +478,13 @@ export function RatesConfigTab({ initialRates }: { initialRates: RateItem[] }) {
                   onChange={(e) =>
                     setEditingRate({ ...editingRate, states: e.target.value })
                   }
-                  placeholder="e.g. tamil nadu,kerala,karnataka"
+                  placeholder="e.g. tamil nadu, kerala, north-east"
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-mono text-[11px]"
                 />
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Regions: north-east (7 states), south india, north india. Leave PINs, districts and
+                  states all empty to make this the default for the rest of India.
+                </p>
               </div>
 
               <div>

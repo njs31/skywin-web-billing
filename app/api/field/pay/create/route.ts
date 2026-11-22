@@ -5,6 +5,7 @@ import { cleanMobile, fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-a
 import { packCart, priceFieldLines, rewardPointsFor, type FieldLineIn } from "@/lib/field-order-pricing";
 import { createRazorpayOrder } from "@/lib/payments/razorpay";
 import { placeStockHolds, releaseHolds } from "@/lib/stock-holds";
+import { quoteOrderShipping } from "@/lib/field-shipping";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,8 @@ export async function POST(req: NextRequest) {
       farmerName?: string;
       farmerPhone?: string;
       items?: FieldLineIn[];
+      /** Delivery PIN: the server prices delivery itself and puts it on the invoice. */
+      shipPin?: string;
     };
     const rupees = Number(body.amount);
     if (!Number.isFinite(rupees) || rupees < 1) return fieldJson({ error: "Invalid amount" }, 400);
@@ -42,12 +45,22 @@ export async function POST(req: NextRequest) {
 
     let cart: string | null = null;
     let holdExpiresAt: string | null = null;
+    let shipping: { amount: number; pin: string } | null = null;
     if (items.length) {
       const priced = await priceFieldLines(items);
+      const shipPin = String(body.shipPin || "").replace(/\D/g, "").slice(0, 6);
+      if (shipPin.length === 6) {
+        // Older apps don't send the PIN; they keep paying the delivery they were quoted.
+        const quote = await quoteOrderShipping(shipPin, priced.lines);
+        shipping = { amount: quote.amount, pin: quote.pin };
+      }
       const rewards = Math.min(await rewardPointsFor(farmerPhone), priced.minimumTotal);
-      const minimum = Math.max(1, priced.minimumTotal - rewards);
+      const minimum = Math.max(1, priced.minimumTotal + (shipping?.amount ?? 0) - rewards);
       if (rupees + 1 < minimum) {
-        return fieldJson({ error: "The amount is less than the order total. Refresh the cart and try again." }, 400);
+        return fieldJson(
+          { error: "The order total or delivery charge changed. Go back to the cart, check the total and try again." },
+          400
+        );
       }
       cart = packCart(priced.lines);
       const held = await placeStockHolds({
@@ -81,6 +94,7 @@ export async function POST(req: NextRequest) {
           phone: farmerPhone,
           ...(who && who.role !== "farmer" ? { officerPhone: who.phone } : {}),
           ...(cart ? { cart } : {}),
+          ...(shipping ? { ship: String(shipping.amount), pin: shipping.pin } : {}),
         },
       });
     } catch (err) {

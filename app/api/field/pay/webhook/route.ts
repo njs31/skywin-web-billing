@@ -5,6 +5,7 @@ import { priceFieldLines, unpackCart } from "@/lib/field-order-pricing";
 import { captureVerifiedPayment } from "@/lib/payments/razorpay";
 import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
 import { refundUnfillableOrder, releaseHolds, STOCK_UNAVAILABLE } from "@/lib/stock-holds";
+import { shippingOnRazorpayOrder } from "@/lib/field-shipping";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
       razorpayPaymentId: payment.id,
       razorpayOrderId: payment.order_id,
       items: priced.lines,
+      shippingAmount: (await shippingOnRazorpayOrder(payment.order_id))?.amount ?? 0,
     });
     if (!result.duplicate) {
       console.warn("[field/pay/webhook] created sale the app did not save", { orderId, saleId: result.saleId });
