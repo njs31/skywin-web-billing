@@ -20,6 +20,7 @@ import {
   ScrollText,
   ClipboardList,
   Leaf,
+  ArrowLeft,
   ChevronDown,
   X,
 } from "lucide-react";
@@ -120,8 +121,15 @@ const allNavHrefs = navGroups.flatMap((g) => g.items.map((i) => i.href));
  */
 const BILLING_HIDDEN_HREFS = new Set(["/field-orders", "/shipping"]);
 
-/** The shipping site (ship.qwicksapp.com) shows only its own two pages, no billing links. */
+/**
+ * The shipping module (the shipping site, or the Orders / Shipping & Dispatch pages on any
+ * site) shows only its own two pages, no billing links.
+ */
 const SHIPPING_ONLY_HREFS = new Set(["/field-orders", "/shipping"]);
+
+function isShippingPage(pathname: string) {
+  return [...SHIPPING_ONLY_HREFS].some((href) => pathname === href || pathname.startsWith(`${href}/`));
+}
 
 const noopSubscribe = () => () => {};
 
@@ -170,12 +178,13 @@ export function Sidebar({
   }, []);
 
   const shippingSite = useIsShippingSite();
+  const shippingView = shippingSite || isShippingPage(pathname);
 
   const filteredNavGroups = navGroups
     .map((group) => {
       const items = group.items.filter((item) => {
-        if (shippingSite && !SHIPPING_ONLY_HREFS.has(item.href)) return false;
-        if (!shippingSite && BILLING_HIDDEN_HREFS.has(item.href)) return false;
+        if (shippingView) return SHIPPING_ONLY_HREFS.has(item.href) && navItemVisible(currentUser?.role || "admin", item.href, item.external);
+        if (BILLING_HIDDEN_HREFS.has(item.href)) return false;
         const role = currentUser?.role || "admin";
         return navItemVisible(role, item.href, item.external);
       });
@@ -295,6 +304,16 @@ export function Sidebar({
               </div>
             );
           })}
+          {shippingView && !shippingSite ? (
+            <Link
+              href="/"
+              onClick={onClose}
+              className="mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to billing
+            </Link>
+          ) : null}
         </nav>
         <div className="border-t border-slate-800 px-3 py-2.5 space-y-2">
           {currentUser && (
