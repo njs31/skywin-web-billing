@@ -1,8 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ImagePlus, Star, Trash2 } from "lucide-react";
+import { buttonClass, inputClass } from "@/components/field/kit";
+import { useFieldText } from "@/components/field/lang";
+import { cn } from "@/lib/utils";
 
 const MAX_SIDE = 1600;
 
@@ -25,6 +27,7 @@ async function shrink(file: File): Promise<Blob> {
 }
 
 export function ImagePicker({ images, onChange }: { images: string[]; onChange: (next: string[]) => void }) {
+  const d = useFieldText().detail;
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -42,10 +45,10 @@ export function ImagePicker({ images, onChange }: { images: string[]; onChange: 
         body.append("file", blob, file.name.replace(/\.\w+$/, "") + (blob.type === "image/jpeg" ? ".jpg" : ""));
         const res = await fetch("/api/field/media", { method: "POST", body });
         const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-        if (!res.ok || !data.url) throw new Error(data.error || "Upload failed");
+        if (!res.ok || !data.url) throw new Error(data.error || d.uploadFailed);
         added.push(data.url);
       } catch (err) {
-        setError(`${file.name}: ${err instanceof Error ? err.message : "Upload failed"}`);
+        setError(`${file.name}: ${err instanceof Error ? err.message : d.uploadFailed}`);
       }
     }
     if (added.length) onChange([...images, ...added]);
@@ -64,23 +67,29 @@ export function ImagePicker({ images, onChange }: { images: string[]; onChange: 
     <div className="space-y-3">
       <div className="flex flex-wrap gap-3">
         {images.map((src, i) => (
-          <div key={src + i} className="w-32 overflow-hidden rounded-xl border border-[#1E3317]/15 bg-white">
+          <div key={src + i} className={cn("relative w-36 overflow-hidden rounded-2xl border bg-white", i === 0 ? "border-[#3E5E2F] ring-2 ring-[#C6E26A]/60" : "border-[#1E3317]/15")}>
+            {i === 0 ? (
+              <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-[#1E3317] px-2 py-0.5 text-[10px] font-semibold text-white">
+                <Star className="h-3 w-3 fill-[#C6E26A] text-[#C6E26A]" /> {d.main}
+              </span>
+            ) : null}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={src} alt="" className="h-28 w-full object-contain p-1" />
-            <div className="flex items-center justify-between border-t border-[#1E3317]/10 px-2 py-1 text-xs">
+            <img src={src} alt="" className="h-32 w-full object-contain p-2" />
+            <div className="flex items-center justify-between border-t border-[#1E3317]/10 px-2 py-1.5 text-xs">
               {i === 0 ? (
-                <span className="font-semibold text-[#2E4A22]">Main</span>
+                <span className="text-[#5E6B62]">#1</span>
               ) : (
-                <button type="button" className="font-semibold text-[#2E4A22] hover:underline" onClick={() => move(i, 0)}>
-                  Make main
+                <button type="button" className="font-semibold text-[#245B3E] hover:underline" onClick={() => move(i, 0)}>
+                  {d.makeMain}
                 </button>
               )}
               <button
                 type="button"
-                className="text-rose-600 hover:underline"
+                aria-label={d.removeRow}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-[#8E3B34] hover:bg-[#FBEAE8]"
                 onClick={() => onChange(images.filter((_, j) => j !== i))}
               >
-                Remove
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
@@ -89,10 +98,10 @@ export function ImagePicker({ images, onChange }: { images: string[]; onChange: 
           type="button"
           disabled={busy}
           onClick={() => input.current?.click()}
-          className="flex h-[150px] w-32 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#1E3317]/25 text-sm font-semibold text-[#2E4A22] hover:border-[#B8D94A] hover:bg-[#B8D94A]/10 disabled:opacity-50"
+          className="flex h-[170px] w-36 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#1E3317]/20 text-sm font-semibold text-[#3E5E2F] transition-colors hover:border-[#B8D94A] hover:bg-[#C6E26A]/10 disabled:opacity-50"
         >
-          <span className="text-2xl leading-none">+</span>
-          {busy ? "Uploading…" : "Add image"}
+          <ImagePlus className="h-6 w-6" />
+          {busy ? d.uploading : d.addImage}
         </button>
       </div>
       <input
@@ -103,26 +112,20 @@ export function ImagePicker({ images, onChange }: { images: string[]; onChange: 
         className="hidden"
         onChange={(e) => void upload(e.target.files)}
       />
-      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-      <div className="flex gap-2">
-        <Input
-          value={url}
-          placeholder="…or paste an image link"
-          onChange={(e) => setUrl(e.target.value)}
-          className="max-w-md"
-        />
-        <Button
+      {error ? <p className="text-sm font-medium text-[#8E3B34]">{error}</p> : null}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input value={url} placeholder={d.pasteLink} onChange={(e) => setUrl(e.target.value)} className={cn(inputClass, "sm:max-w-md")} />
+        <button
           type="button"
-          variant="outline"
-          size="sm"
+          className={buttonClass("secondary")}
           disabled={!/^https?:\/\//.test(url.trim())}
           onClick={() => {
             onChange([...images, url.trim()]);
             setUrl("");
           }}
         >
-          Add link
-        </Button>
+          {d.addLink}
+        </button>
       </div>
     </div>
   );

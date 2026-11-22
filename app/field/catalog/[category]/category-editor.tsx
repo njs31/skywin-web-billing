@@ -15,9 +15,10 @@ import {
   unpinProductFromSub,
 } from "@/lib/actions/field";
 import { cn, formatCurrency } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Badge, Notice, PageHeader, buttonClass, inputClass, labelClass, tableClass, tdClass, thClass, theadClass, trClass } from "@/components/field/kit";
+import { useFieldText } from "@/components/field/lang";
+import { fmt, plural } from "@/lib/field-i18n";
 
 type SearchHit = {
   productId: number;
@@ -27,8 +28,12 @@ type SearchHit = {
   saleRate: string;
 };
 
-const fieldClass = "mt-1 h-9 rounded-md border-[#1E3317]/15 text-sm focus-visible:ring-[#1E3317]";
-const primaryButton = "bg-[#1E3317] text-white hover:bg-[#245B3E]";
+const fieldClass = inputClass;
+const Label = ({ htmlFor, children, className }: { htmlFor?: string; children: React.ReactNode; className?: string }) => (
+  <label htmlFor={htmlFor} className={className === "sr-only" ? "sr-only" : labelClass}>
+    {children}
+  </label>
+);
 
 export function CategoryEditor({
   category,
@@ -38,6 +43,8 @@ export function CategoryEditor({
   productSets: Array<{ subcategoryId: number; products: FieldCatalogProduct[] }>;
 }) {
   const router = useRouter();
+  const t = useFieldText();
+  const c = t.catalog;
   const [pending, start] = useTransition();
   const [subId, setSubId] = useState(category.subs[0]?.id ?? 0);
   const [error, setError] = useState("");
@@ -96,14 +103,14 @@ export function CategoryEditor({
         if (saved) setNotice(saved);
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Something went wrong");
+        setError(err instanceof Error ? err.message : t.common.somethingWrong);
       }
     });
   }
 
   function searchProducts() {
     if (!q.trim()) {
-      setError("Enter a product name or SKU to search billing.");
+      setError(c.enterSearch);
       return;
     }
     run(async () => {
@@ -122,51 +129,44 @@ export function CategoryEditor({
 
   function validateSku() {
     const next: { name?: string; rate?: string; hsn?: string; gst?: string } = {};
-    if (!newName.trim()) next.name = "Name is required.";
+    if (!newName.trim()) next.name = c.nameRequired;
     const rate = Number(newRate);
-    if (!newRate.trim() || !Number.isFinite(rate) || rate < 0) next.rate = "Enter a sale rate of zero or more.";
-    if (!newHsn.trim()) next.hsn = "HSN code is mandatory.";
+    if (!newRate.trim() || !Number.isFinite(rate) || rate < 0) next.rate = c.rateInvalid;
+    if (!newHsn.trim()) next.hsn = c.hsnRequired;
     const gst = Number(newGst);
-    if (newGst.trim() && (!Number.isFinite(gst) || gst < 0)) next.gst = "GST must be zero or more.";
+    if (newGst.trim() && (!Number.isFinite(gst) || gst < 0)) next.gst = c.gstInvalid;
     setSkuErrors(next);
     return Object.keys(next).length === 0;
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
-      <div>
-        <Link href="/field/catalog" className="text-xs font-medium text-[#245B3E] hover:underline">
-          Catalog
-        </Link>
-        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-[#1E3317]">{category.title}</h1>
-            <p className="mt-1 text-sm text-[#5E6B62]">
-              {category.subs.length} {category.subs.length === 1 ? "subcategory" : "subcategories"} · {skuTotal}{" "}
-              {skuTotal === 1 ? "SKU" : "SKUs"} · {category.slug}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditingCategory((value) => !value)}>
-              {editingCategory ? "Close category" : "Edit category"}
-            </Button>
-            <Button type="button" variant="destructive" size="sm" disabled={pending} onClick={() => setConfirmDelete(true)}>
-              Delete category
-            </Button>
-          </div>
-        </div>
-      </div>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader
+        back={{ href: "/field/catalog", label: c.backToCatalog }}
+        title={category.title}
+        description={`${plural(category.subs.length, c.subcategory, c.subcategories)} · ${plural(skuTotal, c.product, c.products)} · /${category.slug}`}
+        actions={
+          <>
+            <button type="button" className={buttonClass("secondary")} onClick={() => setEditingCategory((value) => !value)}>
+              <Pencil aria-hidden /> {editingCategory ? c.closeEdit : c.editCategory}
+            </button>
+            <button type="button" className={buttonClass("danger")} disabled={pending} onClick={() => setConfirmDelete(true)}>
+              <Trash2 aria-hidden /> {c.deleteCategory}
+            </button>
+          </>
+        }
+      />
+
+      {error ? <Notice tone="red">{error}</Notice> : null}
+      {notice && !error ? <Notice>{notice}</Notice> : null}
 
       {confirmDelete ? (
-        <div className="rounded-lg border border-[#8E3B34]/30 bg-white px-4 py-3" role="alert">
-          <p className="text-sm text-[#1E3317]">
-            Delete {category.title}? Its subcategories and product pins are removed. Billing products stay in inventory.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <Button
+        <div className="rounded-2xl border border-[#8E3B34]/25 bg-[#FFF8F7] px-5 py-4" role="alert">
+          <p className="text-sm font-medium text-[#1E3317]">{fmt(c.deleteConfirm, { name: category.title })}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
               type="button"
-              variant="destructive"
-              size="sm"
+              className={buttonClass("danger")}
               disabled={pending}
               onClick={() =>
                 run(async () => {
@@ -175,37 +175,37 @@ export function CategoryEditor({
                 })
               }
             >
-              {pending ? "Deleting…" : "Delete category"}
-            </Button>
-            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setConfirmDelete(false)}>
-              Cancel
-            </Button>
+              {pending ? t.common.deleting : c.deleteCategory}
+            </button>
+            <button type="button" className={buttonClass("secondary")} disabled={pending} onClick={() => setConfirmDelete(false)}>
+              {t.common.cancel}
+            </button>
           </div>
         </div>
       ) : null}
 
       {editingCategory ? (
         <form
-          className="rounded-lg border border-[#1E3317]/10 bg-white p-4"
+          className="rounded-2xl border border-[#1E3317]/10 bg-white p-5 shadow-sm"
           onSubmit={(event) => {
             event.preventDefault();
             if (!catTitle.trim()) {
-              setCatTitleError("Title is required.");
+              setCatTitleError(c.titleRequired);
               return;
             }
             setCatTitleError("");
             run(
               () => saveFieldCategory({ id: category.id, title: catTitle, queries: catQueries }),
-              "Category saved"
+              c.savedCategory
             );
           }}
         >
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <Label htmlFor="category-title">
-                Title <span className="text-[#8E3B34]">*</span>
+                {c.fieldTitle} <span className="text-[#8E3B34]">*</span>
               </Label>
-              <Input
+              <input
                 id="category-title"
                 value={catTitle}
                 onChange={(event) => {
@@ -223,8 +223,8 @@ export function CategoryEditor({
               ) : null}
             </div>
             <div className="sm:col-span-2">
-              <Label htmlFor="category-queries">Search queries</Label>
-              <Input
+              <Label htmlFor="category-queries">{c.fieldQueries}</Label>
+              <input
                 id="category-queries"
                 value={catQueries}
                 onChange={(event) => setCatQueries(event.target.value)}
@@ -232,37 +232,30 @@ export function CategoryEditor({
                 className={fieldClass}
               />
               <p id="category-queries-help" className="mt-1 text-xs text-[#5E6B62]">
-                Comma-separated words. The category slug stays {category.slug}.
+                {fmt(c.slugStays, { slug: category.slug })}
               </p>
             </div>
           </div>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={pending}
-            className={cn("mt-3", notice === "Category saved" && !pending ? "bg-[#245B3E] hover:bg-[#245B3E]" : primaryButton)}
-          >
-            {pending ? "Saving…" : notice === "Category saved" ? "Saved" : "Save category"}
-          </Button>
+          <button type="submit" disabled={pending} className={cn("mt-4", buttonClass(notice === c.savedCategory && !pending ? "lime" : "primary"))}>
+            {pending ? t.common.saving : notice === c.savedCategory ? t.common.saved : c.saveCategory}
+          </button>
         </form>
       ) : null}
 
-      <div className="grid items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside className="rounded-lg border border-[#1E3317]/10 bg-white">
-          <div className="flex items-center justify-between gap-2 border-b border-[#1E3317]/10 px-3 py-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-[#5E6B62]">Subcategories</h2>
-            <button
-              type="button"
-              onClick={() => setAddingSub((value) => !value)}
-              className="text-xs font-medium text-[#245B3E] hover:underline"
-            >
-              {addingSub ? "Close" : "Add"}
+      <div className="grid items-start gap-5 lg:grid-cols-[16rem_minmax(0,1fr)]">
+        <aside className="overflow-hidden rounded-2xl border border-[#1E3317]/10 bg-white shadow-sm lg:sticky lg:top-4">
+          <div className="flex items-center justify-between gap-2 border-b border-[#1E3317]/8 px-4 py-3">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-[#5E6B62]">{c.subcats}</h2>
+            <button type="button" onClick={() => setAddingSub((value) => !value)} className={buttonClass("ghost", "sm")}>
+              {addingSub ? t.common.close : (
+                <>
+                  <Plus aria-hidden /> {c.addSub}
+                </>
+              )}
             </button>
           </div>
           {category.subs.length === 0 ? (
-            <p className="px-3 py-4 text-xs leading-5 text-[#5E6B62]">
-              This category has no subcategories yet. Add one to pin billing products.
-            </p>
+            <p className="px-4 py-4 text-xs leading-5 text-[#5E6B62]">{c.noSubs}</p>
           ) : (
             <div className="flex gap-1 overflow-x-auto p-2 lg:flex-col">
               {category.subs.map((sub) => {
@@ -281,14 +274,16 @@ export function CategoryEditor({
                     }}
                     aria-current={on ? "true" : undefined}
                     className={cn(
-                      "flex min-w-36 shrink-0 items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm lg:min-w-0 lg:w-full",
+                      "flex min-w-36 shrink-0 items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors lg:min-w-0 lg:w-full",
                       on
-                        ? "bg-[#F4F3EE] font-medium text-[#1E3317] shadow-[inset_3px_0_0_#C6E26A]"
-                        : "text-[#29332C] hover:bg-[#F7F6F1]"
+                        ? "bg-[#1E3317] font-semibold text-white"
+                        : "text-[#29332C] hover:bg-[#F4F8EF]"
                     )}
                   >
                     <span className="truncate">{sub.title}</span>
-                    <span className="tabular-nums text-xs text-[#5E6B62]">{sub.productIds.length}</span>
+                    <span className={cn("rounded-full px-2 text-xs tabular-nums", on ? "bg-[#C6E26A] text-[#1E3317]" : "bg-[#EDF2E7] text-[#3E5E2F]")}>
+                      {sub.productIds.length}
+                    </span>
                   </button>
                 );
               })}
@@ -296,11 +291,11 @@ export function CategoryEditor({
           )}
           {addingSub ? (
             <form
-              className="space-y-2 border-t border-[#1E3317]/10 p-3"
+              className="space-y-3 border-t border-[#1E3317]/8 bg-[#FAFBF7] p-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!subTitle.trim()) {
-                  setSubTitleError("Title is required.");
+                  setSubTitleError(c.titleRequired);
                   return;
                 }
                 setSubTitleError("");
@@ -315,13 +310,14 @@ export function CategoryEditor({
                   setSubQueries("");
                   setSubMatch("");
                   setAddingSub(false);
-                }, "Subcategory added");
+                }, c.addedSub);
               }}
             >
+              <p className="text-sm font-bold text-[#1E3317]">{c.addSubTitle}</p>
               <Label htmlFor="sub-title">
-                Title <span className="text-[#8E3B34]">*</span>
+                {c.fieldTitle} <span className="text-[#8E3B34]">*</span>
               </Label>
-              <Input
+              <input
                 id="sub-title"
                 value={subTitle}
                 onChange={(event) => {
@@ -338,11 +334,11 @@ export function CategoryEditor({
                 </p>
               ) : (
                 <p id="sub-title-help" className="text-xs text-[#5E6B62]">
-                  Shown as a rail in the Field app.
+                  {c.addHelp.split(".")[0]}.
                 </p>
               )}
-              <Label htmlFor="sub-queries">Search queries</Label>
-              <Input
+              <Label htmlFor="sub-queries">{c.fieldQueries}</Label>
+              <input
                 id="sub-queries"
                 value={subQueries}
                 onChange={(event) => setSubQueries(event.target.value)}
@@ -350,10 +346,10 @@ export function CategoryEditor({
                 className={fieldClass}
               />
               <p id="sub-queries-help" className="text-xs text-[#5E6B62]">
-                Optional. Comma-separated.
+                {c.queriesHelp}
               </p>
-              <Label htmlFor="sub-match">Match terms</Label>
-              <Input
+              <Label htmlFor="sub-match">{c.matchTerms}</Label>
+              <input
                 id="sub-match"
                 value={subMatch}
                 onChange={(event) => setSubMatch(event.target.value)}
@@ -361,37 +357,29 @@ export function CategoryEditor({
                 className={fieldClass}
               />
               <p id="sub-match-help" className="text-xs text-[#5E6B62]">
-                Optional words used to match billing product names.
+                {c.matchHelp}
               </p>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={pending}
-                className={notice === "Subcategory added" && !pending ? "bg-[#245B3E] hover:bg-[#245B3E]" : primaryButton}
-              >
-                {pending ? "Saving…" : notice === "Subcategory added" ? "Saved" : "Add subcategory"}
-              </Button>
+              <button type="submit" disabled={pending} className={cn("w-full", buttonClass(notice === c.addedSub && !pending ? "lime" : "primary"))}>
+                {pending ? t.common.saving : notice === c.addedSub ? t.common.saved : c.addSubButton}
+              </button>
             </form>
           ) : null}
         </aside>
 
-        <section className="min-w-0 rounded-lg border border-[#1E3317]/10 bg-white">
+        <section className="min-w-0 overflow-hidden rounded-2xl border border-[#1E3317]/10 bg-white shadow-sm">
           {active ? (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1E3317]/10 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1E3317]/8 px-5 py-4">
                 <div>
-                  <h2 className="text-sm font-semibold text-[#1E3317]">{active.title}</h2>
-                  <p className="text-xs text-[#5E6B62]">
-                    {products.length} pinned {products.length === 1 ? "product" : "products"}
-                  </p>
+                  <h2 className="text-base font-bold text-[#1E3317]">{active.title}</h2>
+                  <p className="text-xs text-[#5E6B62]">{plural(products.length, c.product, c.products)}</p>
                 </div>
                 {confirmRemoveSub ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-[#5E6B62]">Remove this subcategory?</span>
-                    <Button
+                    <span className="text-xs font-medium text-[#8E3B34]">{c.removeSubConfirm}</span>
+                    <button
                       type="button"
-                      variant="destructive"
-                      size="sm"
+                      className={buttonClass("danger", "sm")}
                       disabled={pending}
                       onClick={() =>
                         run(async () => {
@@ -401,18 +389,17 @@ export function CategoryEditor({
                         })
                       }
                     >
-                      Remove
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setConfirmRemoveSub(false)}>
-                      Cancel
-                    </Button>
+                      {c.removeSub}
+                    </button>
+                    <button type="button" className={buttonClass("secondary", "sm")} onClick={() => setConfirmRemoveSub(false)}>
+                      {t.common.cancel}
+                    </button>
                   </div>
                 ) : (
                   <div className="flex gap-2">
-                    <Button
+                    <button
                       type="button"
-                      variant="outline"
-                      size="sm"
+                      className={buttonClass("secondary", "sm")}
                       onClick={() => {
                         setEditSubTitle(active.title);
                         setEditSubQueries(active.queries.join(", "));
@@ -421,22 +408,22 @@ export function CategoryEditor({
                         setEditingSub((value) => !value);
                       }}
                     >
-                      {editingSub ? "Close" : "Edit subcategory"}
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" disabled={pending} onClick={() => setConfirmRemoveSub(true)}>
-                      Remove
-                    </Button>
+                      <Pencil aria-hidden /> {editingSub ? t.common.close : c.editSub}
+                    </button>
+                    <button type="button" className={buttonClass("danger", "sm")} disabled={pending} onClick={() => setConfirmRemoveSub(true)}>
+                      <Trash2 aria-hidden /> {c.removeSub}
+                    </button>
                   </div>
                 )}
               </div>
 
               {editingSub ? (
                 <form
-                  className="grid gap-3 border-b border-[#1E3317]/10 px-4 py-3 sm:grid-cols-3"
+                  className="grid gap-4 border-b border-[#1E3317]/8 bg-[#FAFBF7] px-5 py-4 sm:grid-cols-3"
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (!editSubTitle.trim()) {
-                      setEditSubError("Title is required.");
+                      setEditSubError(c.titleRequired);
                       return;
                     }
                     setEditSubError("");
@@ -449,15 +436,15 @@ export function CategoryEditor({
                           queries: editSubQueries,
                           matchTerms: editSubMatch,
                         }),
-                      "Subcategory saved"
+                      c.savedSub
                     );
                   }}
                 >
                   <div>
                     <Label htmlFor="edit-sub-title">
-                      Title <span className="text-[#8E3B34]">*</span>
+                      {c.fieldTitle} <span className="text-[#8E3B34]">*</span>
                     </Label>
-                    <Input
+                    <input
                       id="edit-sub-title"
                       value={editSubTitle}
                       onChange={(event) => {
@@ -475,8 +462,8 @@ export function CategoryEditor({
                     ) : null}
                   </div>
                   <div>
-                    <Label htmlFor="edit-sub-queries">Search queries</Label>
-                    <Input
+                    <Label htmlFor="edit-sub-queries">{c.fieldQueries}</Label>
+                    <input
                       id="edit-sub-queries"
                       value={editSubQueries}
                       onChange={(event) => setEditSubQueries(event.target.value)}
@@ -484,12 +471,12 @@ export function CategoryEditor({
                       className={fieldClass}
                     />
                     <p id="edit-sub-queries-help" className="mt-1 text-xs text-[#5E6B62]">
-                      Comma-separated. Slug stays {active.slug}.
+                      {fmt(c.slugStays, { slug: active.slug })}
                     </p>
                   </div>
                   <div>
-                    <Label htmlFor="edit-sub-match">Match terms</Label>
-                    <Input
+                    <Label htmlFor="edit-sub-match">{c.matchTerms}</Label>
+                    <input
                       id="edit-sub-match"
                       value={editSubMatch}
                       onChange={(event) => setEditSubMatch(event.target.value)}
@@ -497,61 +484,54 @@ export function CategoryEditor({
                       className={fieldClass}
                     />
                     <p id="edit-sub-match-help" className="mt-1 text-xs text-[#5E6B62]">
-                      Optional words matched against billing product names.
+                      {c.matchHelp}
                     </p>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={pending}
-                      className={cn("mt-3", notice === "Subcategory saved" && !pending ? "bg-[#245B3E] hover:bg-[#245B3E]" : primaryButton)}
-                    >
-                      {pending ? "Saving…" : notice === "Subcategory saved" ? "Saved" : "Save subcategory"}
-                    </Button>
+                    <button type="submit" disabled={pending} className={cn("mt-3", buttonClass(notice === c.savedSub && !pending ? "lime" : "primary", "sm"))}>
+                      {pending ? t.common.saving : notice === c.savedSub ? t.common.saved : c.saveSub}
+                    </button>
                   </div>
                 </form>
               ) : null}
 
-              <div className="border-b border-[#1E3317]/10 px-4 py-3">
-                <Label htmlFor="pinned-filter" className="sr-only">
-                  Filter pinned products
-                </Label>
-                <Input
+              <div className="border-b border-[#1E3317]/8 px-5 py-3">
+                <label htmlFor="pinned-filter" className="sr-only">
+                  {c.filterPinned}
+                </label>
+                <input
                   id="pinned-filter"
                   value={productFilter}
                   onChange={(event) => setProductFilter(event.target.value)}
-                  placeholder="Filter pinned products"
-                  className="h-9 max-w-sm rounded-md border-[#1E3317]/15"
+                  placeholder={c.filterPinned}
+                  className={cn(inputClass, "max-w-sm")}
                 />
               </div>
 
               {visibleProducts.length === 0 ? (
-                <p className="px-4 py-8 text-sm text-[#5E6B62]">
-                  {products.length === 0
-                    ? "No products pinned. Search billing stock below, or create a SKU."
-                    : "No pinned products match that filter."}
-                </p>
+                <p className="px-5 py-10 text-center text-sm text-[#5E6B62]">{products.length === 0 ? c.noPinned : c.noPinnedMatch}</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[520px] text-sm">
-                    <thead className="text-left text-xs text-[#5E6B62]">
+                  <table className={cn(tableClass, "min-w-[560px]")}>
+                    <thead className={theadClass}>
                       <tr>
-                        <th className="px-4 py-2 font-medium">Product</th>
-                        <th className="px-4 py-2 font-medium">SKU</th>
-                        <th className="px-4 py-2 text-right font-medium">Price</th>
-                        <th className="px-4 py-2 text-right font-medium">Stock</th>
-                        <th className="px-4 py-2 text-right font-medium">Actions</th>
+                        <th className={thClass}>{c.colProduct}</th>
+                        <th className={thClass}>SKU</th>
+                        <th className={cn(thClass, "text-right")}>{c.colPrice}</th>
+                        <th className={cn(thClass, "text-right")}>{c.colStock}</th>
+                        <th className={cn(thClass, "text-right")}>{t.common.actions}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {visibleProducts.map((product) => (
-                        <tr key={product.id} className="border-t border-[#1E3317]/10">
-                          <td className="px-4 py-2.5 font-medium">{product.name}</td>
-                          <td className="px-4 py-2.5 text-[#5E6B62]">{product.sku || `ID ${product.id}`}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">{formatCurrency(product.saleRate)}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums">{product.stockQty}</td>
-                          <td className="px-4 py-2.5 text-right">
-                            <Link href={`/field/products/${product.id}`} className="text-xs font-medium text-[#245B3E] hover:underline">
-                              Details
+                        <tr key={product.id} className={trClass}>
+                          <td className={cn(tdClass, "font-medium text-[#1E3317]")}>{product.name}</td>
+                          <td className={cn(tdClass, "font-mono text-xs text-[#5E6B62]")}>{product.sku || `ID ${product.id}`}</td>
+                          <td className={cn(tdClass, "text-right tabular-nums")}>{formatCurrency(product.saleRate)}</td>
+                          <td className={cn(tdClass, "text-right")}>
+                            <Badge tone={Number(product.stockQty) > 0 ? "green" : "red"}>{Number(product.stockQty) || 0}</Badge>
+                          </td>
+                          <td className={cn(tdClass, "whitespace-nowrap text-right")}>
+                            <Link href={`/field/products/${product.id}`} className="text-xs font-semibold text-[#245B3E] hover:underline">
+                              {t.common.view}
                             </Link>
                             {unpinId === product.id ? (
                               <span className="ml-3 inline-flex items-center gap-2">
@@ -562,11 +542,11 @@ export function CategoryEditor({
                                     run(async () => {
                                       await unpinProductFromSub(active.id, product.id);
                                       setUnpinId(null);
-                                    }, "Product unpinned")
+                                    }, c.unpinnedNotice)
                                   }
                                   className="text-xs font-medium text-[#8E3B34] hover:underline disabled:opacity-50"
                                 >
-                                  {pending ? "Unpinning…" : "Confirm"}
+                                  {pending ? c.unpinning : t.common.confirm}
                                 </button>
                                 <button
                                   type="button"
@@ -574,7 +554,7 @@ export function CategoryEditor({
                                   onClick={() => setUnpinId(null)}
                                   className="text-xs font-medium text-[#5E6B62] hover:underline disabled:opacity-50"
                                 >
-                                  Cancel
+                                  {t.common.cancel}
                                 </button>
                               </span>
                             ) : (
@@ -584,7 +564,7 @@ export function CategoryEditor({
                                 onClick={() => setUnpinId(product.id)}
                                 className="ml-3 text-xs font-medium text-[#8E3B34] hover:underline disabled:opacity-50"
                               >
-                                Unpin
+                                {c.unpin}
                               </button>
                             )}
                           </td>
@@ -595,15 +575,15 @@ export function CategoryEditor({
                 </div>
               )}
 
-              <div className="space-y-3 border-t border-[#1E3317]/10 px-4 py-4">
-                <h3 className="text-sm font-semibold text-[#1E3317]">Pin a billing product</h3>
+              <div className="space-y-3 border-t border-[#1E3317]/8 bg-[#FAFBF7] px-5 py-5">
+                <h3 className="text-sm font-bold text-[#1E3317]">{c.pinTitle}</h3>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
+                  <input
                     value={q}
                     onChange={(event) => setQ(event.target.value)}
-                    placeholder="Search name or SKU"
-                    aria-label="Search billing products"
-                    className="h-9 rounded-md border-[#1E3317]/15"
+                    placeholder={c.pinSearchPh}
+                    aria-label={c.pinSearchPh}
+                    className={inputClass}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
@@ -611,32 +591,31 @@ export function CategoryEditor({
                       }
                     }}
                   />
-                  <Button type="button" size="sm" disabled={pending} onClick={searchProducts} className={primaryButton}>
-                    {pending ? "Searching…" : "Search"}
-                  </Button>
+                  <button type="button" disabled={pending} onClick={searchProducts} className={buttonClass("primary")}>
+                    <Search aria-hidden /> {pending ? c.pinSearching : c.pinSearch}
+                  </button>
                 </div>
                 {hits && hits.length === 0 ? (
-                  <p className="text-sm text-[#5E6B62]">No billing products matched.</p>
+                  <p className="text-sm text-[#5E6B62]">{c.noHits}</p>
                 ) : null}
                 {hits && hits.length > 0 ? (
-                  <ul className="divide-y divide-[#1E3317]/10 rounded-md border border-[#1E3317]/10">
+                  <ul className="divide-y divide-[#1E3317]/8 overflow-hidden rounded-xl border border-[#1E3317]/10 bg-white">
                     {hits.map((hit) => (
                       <li key={hit.productId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{hit.name}</span>
                           <span className="text-xs text-[#5E6B62]">
-                            {hit.sku || `ID ${hit.productId}`} · {formatCurrency(hit.saleRate)} · stock {hit.productStockQty}
+                            {hit.sku || `ID ${hit.productId}`} · {formatCurrency(hit.saleRate)} · {fmt(c.stock, { n: Number(hit.productStockQty) || 0 })}
                           </span>
                         </span>
-                        <Button
+                        <button
                           type="button"
-                          size="sm"
                           disabled={pending}
-                          className={primaryButton}
-                          onClick={() => run(() => pinProductToSub(active.id, hit.productId), "Product pinned")}
+                          className={buttonClass("primary", "sm")}
+                          onClick={() => run(() => pinProductToSub(active.id, hit.productId), c.pinnedNotice)}
                         >
-                          Pin
-                        </Button>
+                          <Plus aria-hidden /> {c.pin}
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -645,13 +624,13 @@ export function CategoryEditor({
                 <button
                   type="button"
                   onClick={() => setCreatingSku((value) => !value)}
-                  className="text-xs font-medium text-[#245B3E] hover:underline"
+                  className={buttonClass("ghost", "sm")}
                 >
-                  {creatingSku ? "Close new SKU" : "Create a billing SKU and pin it"}
+                  {creatingSku ? t.common.close : c.createSku}
                 </button>
                 {creatingSku ? (
                   <form
-                    className="space-y-3 rounded-md border border-[#1E3317]/10 p-3"
+                    className="space-y-4 rounded-xl border border-[#1E3317]/10 bg-white p-4"
                     onSubmit={(event) => {
                       event.preventDefault();
                       if (!validateSku()) return;
@@ -668,14 +647,15 @@ export function CategoryEditor({
                         setNewRate("");
                         setNewHsn("");
                         setSkuErrors({});
-                      }, "SKU created and pinned");
+                      }, c.createdNotice);
                     }}
                   >
                     <div>
+                      <p className="text-xs text-[#5E6B62]">{c.createSkuHelp}</p>
                       <Label htmlFor="sku-name">
-                        Name <span className="text-[#8E3B34]">*</span>
+                        {c.skuName} <span className="text-[#8E3B34]">*</span>
                       </Label>
-                      <Input
+                      <input
                         id="sku-name"
                         value={newName}
                         onChange={(event) => setNewName(event.target.value)}
@@ -691,8 +671,8 @@ export function CategoryEditor({
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
-                        <Label htmlFor="sku-code">SKU</Label>
-                        <Input
+                        <Label htmlFor="sku-code">{c.skuCode}</Label>
+                        <input
                           id="sku-code"
                           value={newSku}
                           onChange={(event) => setNewSku(event.target.value)}
@@ -700,14 +680,14 @@ export function CategoryEditor({
                           className={fieldClass}
                         />
                         <p id="sku-code-help" className="mt-1 text-xs text-[#5E6B62]">
-                          Optional. A code is taken from the name when this is blank.
+                          {t.common.optional}
                         </p>
                       </div>
                       <div>
                         <Label htmlFor="sku-rate">
-                          Sale rate <span className="text-[#8E3B34]">*</span>
+                          {c.skuRate} <span className="text-[#8E3B34]">*</span>
                         </Label>
-                        <Input
+                        <input
                           id="sku-rate"
                           value={newRate}
                           inputMode="decimal"
@@ -723,8 +703,8 @@ export function CategoryEditor({
                         ) : null}
                       </div>
                       <div>
-                        <Label htmlFor="sku-gst">GST %</Label>
-                        <Input
+                        <Label htmlFor="sku-gst">{c.skuGst}</Label>
+                        <input
                           id="sku-gst"
                           value={newGst}
                           inputMode="decimal"
@@ -739,15 +719,15 @@ export function CategoryEditor({
                           </p>
                         ) : (
                           <p id="sku-gst-help" className="mt-1 text-xs text-[#5E6B62]">
-                            Defaults to 18 when left as 18.
+                            18%
                           </p>
                         )}
                       </div>
                       <div>
                         <Label htmlFor="sku-hsn">
-                          HSN <span className="text-[#8E3B34]">*</span>
+                          {c.skuHsn} <span className="text-[#8E3B34]">*</span>
                         </Label>
-                        <Input
+                        <input
                           id="sku-hsn"
                           value={newHsn}
                           onChange={(event) => setNewHsn(event.target.value)}
@@ -762,34 +742,19 @@ export function CategoryEditor({
                         ) : null}
                       </div>
                     </div>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      disabled={pending}
-                      className={notice === "SKU created and pinned" && !pending ? "bg-[#245B3E] hover:bg-[#245B3E]" : primaryButton}
-                    >
-                      {pending ? "Saving…" : notice === "SKU created and pinned" ? "Saved" : "Create and pin"}
-                    </Button>
+                    <button type="submit" disabled={pending} className={buttonClass(notice === c.createdNotice && !pending ? "lime" : "primary")}>
+                      {pending ? t.common.saving : notice === c.createdNotice ? t.common.saved : c.createAndPin}
+                    </button>
                   </form>
                 ) : null}
               </div>
             </>
           ) : (
-            <p className="px-4 py-10 text-sm text-[#5E6B62]">Add a subcategory to start pinning products.</p>
+            <p className="px-5 py-12 text-center text-sm text-[#5E6B62]">{c.noSubs}</p>
           )}
         </section>
       </div>
 
-      {error ? (
-        <p role="alert" className="text-sm text-[#8E3B34]">
-          {error}
-        </p>
-      ) : null}
-      {notice && !error ? (
-        <p role="status" className="text-sm text-[#245B3E]">
-          {notice}
-        </p>
-      ) : null}
     </div>
   );
 }

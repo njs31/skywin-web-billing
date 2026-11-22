@@ -214,3 +214,20 @@ body {
     transition: none !important;
   }
 }
+
+/* ---- SkyWin Field dashboard ---- */
+.field-ui {
+  font-family: var(--font-geist-sans), var(--font-tamil), system-ui, sans-serif;
+}
+/* Tamil words are long and have no capitals: drop all-caps and wide tracking, loosen lines. */
+.field-ui:lang(ta) .uppercase {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.field-ui:lang(ta) {
+  line-height: 1.6;
+}
+.field-ui:lang(ta) h1,
+.field-ui:lang(ta) h2 {
+  line-height: 1.35;
+}

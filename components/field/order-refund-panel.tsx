@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { refundFieldOrder } from "@/lib/actions/field";
 import { cancelSale } from "@/lib/actions/sales";
 import { formatCurrency } from "@/lib/utils";
+import { useFieldText } from "@/components/field/lang";
+import { fmt } from "@/lib/field-i18n";
 
 export function OrderRefundPanel({
   saleId,
@@ -22,6 +24,9 @@ export function OrderRefundPanel({
   paymentId: string | null;
 }) {
   const router = useRouter();
+  const ft = useFieldText();
+  const x = ft.orders;
+  const back = ft.common.back;
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [cancelReason, setCancelReason] = useState("");
@@ -34,8 +39,8 @@ export function OrderRefundPanel({
   if (cancelled) {
     return (
       <p className="text-sm font-medium text-[#8E3B34]">
-        Order cancelled
-        {refunded > 0 ? ` · ${formatCurrency(refunded)} refunded through Razorpay` : ""}
+        {x.cancelledNote}
+        {refunded > 0 ? fmt(x.refundedThrough, { amount: formatCurrency(refunded) }) : ""}
       </p>
     );
   }
@@ -51,7 +56,7 @@ export function OrderRefundPanel({
         setCancelReason("");
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not refund this order");
+        setError(err instanceof Error ? err.message : x.refundFailed);
       }
     });
   }
@@ -64,11 +69,11 @@ export function OrderRefundPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           <span className="font-semibold text-[#1E3317]">
-            {left > 0 ? `${formatCurrency(left)} refundable` : "Fully refunded"}
+            {left > 0 ? fmt(x.refundable, { amount: formatCurrency(left) }) : x.fullyRefunded}
           </span>
-          {refunded > 0 ? <span className="text-[#5E6B62]"> · {formatCurrency(refunded)} refunded so far</span> : null}
+          {refunded > 0 ? <span className="text-[#5E6B62]">{fmt(x.refundedSoFar, { amount: formatCurrency(refunded) })}</span> : null}
           {paymentId ? null : (
-            <span className="block text-xs text-[#5E6B62]">No Razorpay payment stored, so this order can&apos;t be refunded online.</span>
+            <span className="block text-xs text-[#5E6B62]">{x.noRazorpay}</span>
           )}
         </div>
         {mode === "idle" ? (
@@ -83,7 +88,7 @@ export function OrderRefundPanel({
                   setMode("refund");
                 }}
               >
-                Partial refund
+                {x.partialRefund}
               </button>
             ) : null}
             <button
@@ -94,7 +99,7 @@ export function OrderRefundPanel({
                 setMode("cancel");
               }}
             >
-              Cancel order
+              {x.cancelOrder}
             </button>
           </div>
         ) : null}
@@ -113,10 +118,10 @@ export function OrderRefundPanel({
           }}
         >
           <p className="text-xs text-[#5E6B62] sm:col-span-3">
-            Razorpay sends this amount back to the customer&apos;s original payment. {invoiceNo} stays active.
+            {fmt(x.refundHelp, { invoice: invoiceNo })}
           </p>
           <label className="block text-xs font-semibold text-[#5E6B62]" htmlFor={`refund-amount-${saleId}`}>
-            Amount (₹, up to {formatCurrency(left)})
+            {fmt(x.amountUpTo, { amount: formatCurrency(left) })}
             <input
               id={`refund-amount-${saleId}`}
               inputMode="decimal"
@@ -127,12 +132,12 @@ export function OrderRefundPanel({
             />
           </label>
           <label className="block text-xs font-semibold text-[#5E6B62]" htmlFor={`refund-reason-${saleId}`}>
-            Reason
+            {x.reason}
             <input
               id={`refund-reason-${saleId}`}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="e.g. one item damaged"
+              placeholder={x.reasonRefundPh}
               className={field}
             />
           </label>
@@ -142,7 +147,7 @@ export function OrderRefundPanel({
               disabled={pending || reason.trim().length < 3 || !amount.trim()}
               className="h-10 rounded-lg bg-[#1E3317] px-4 text-sm font-semibold text-white hover:bg-[#2E4A22] disabled:opacity-40"
             >
-              {pending ? "Refunding…" : "Refund"}
+              {pending ? x.refunding : x.refund}
             </button>
             <button
               type="button"
@@ -150,7 +155,7 @@ export function OrderRefundPanel({
               className="h-10 rounded-lg px-3 text-sm font-semibold text-[#5E6B62] hover:bg-[#F4F8EF]"
               onClick={() => setMode("idle")}
             >
-              Back
+              {back}
             </button>
           </div>
         </form>
@@ -165,16 +170,16 @@ export function OrderRefundPanel({
         >
           <p className="text-xs text-[#5E6B62] sm:col-span-2">
             {paymentId && left > 0
-              ? `Razorpay refunds the remaining ${formatCurrency(left)}, then ${invoiceNo} is cancelled and the stock goes back.`
-              : `${invoiceNo} is cancelled and the stock goes back.`}
+              ? fmt(x.cancelHelpRefund, { amount: formatCurrency(left), invoice: invoiceNo })
+              : fmt(x.cancelHelp, { invoice: invoiceNo })}
           </p>
           <label className="block text-xs font-semibold text-[#5E6B62]" htmlFor={`cancel-reason-${saleId}`}>
-            Reason
+            {x.reason}
             <input
               id={`cancel-reason-${saleId}`}
               value={cancelReason}
               onChange={(event) => setCancelReason(event.target.value)}
-              placeholder="e.g. customer asked to cancel"
+              placeholder={x.reasonCancelPh}
               className={field}
             />
           </label>
@@ -184,7 +189,7 @@ export function OrderRefundPanel({
               disabled={pending || cancelReason.trim().length < 3}
               className="h-10 rounded-lg bg-[#8E3B34] px-4 text-sm font-semibold text-white hover:bg-[#7A322C] disabled:opacity-40"
             >
-              {pending ? "Cancelling…" : "Cancel and refund"}
+              {pending ? x.cancelling : x.cancelAndRefund}
             </button>
             <button
               type="button"
@@ -192,7 +197,7 @@ export function OrderRefundPanel({
               className="h-10 rounded-lg px-3 text-sm font-semibold text-[#5E6B62] hover:bg-[#F4F8EF]"
               onClick={() => setMode("idle")}
             >
-              Back
+              {back}
             </button>
           </div>
         </form>

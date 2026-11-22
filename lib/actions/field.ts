@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { customers, users } from "@/db/schema";
+import { customers, fieldDeletionRequests, users } from "@/db/schema";
 import { getCurrentUser, requireAdmin, requireFieldAdmin } from "@/lib/actions/auth";
 import { refundAmountPaise } from "@/lib/field-order-refund-rules";
 import { refundFieldPayment } from "@/lib/field-order-refunds";
@@ -65,7 +65,20 @@ function touchField(paths: string[] = []) {
 
 export async function fieldOverview() {
   await requireFieldAdmin();
-  const [catalog, orders] = await Promise.all([getFieldCatalogTree(), listFieldOrders()]);
+  const [catalog, orders, farmers, officerRows, productStats, deletions] = await Promise.all([
+    getFieldCatalogTree(),
+    listFieldOrders(),
+    countFieldFarmers(),
+    db
+      .select({ access: users.fieldAppAccess })
+      .from(users)
+      .where(inArray(users.role, [...FIELD_OFFICER_ROLES])),
+    fieldProductStats(),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(fieldDeletionRequests)
+      .where(eq(fieldDeletionRequests.status, "pending")),
+  ]);
   const skuCount = catalog.reduce(
     (sum, category) =>
       sum + category.subs.reduce((inner, sub) => inner + sub.productIds.length, 0),
@@ -79,6 +92,12 @@ export async function fieldOverview() {
     todayTotal: orders.todayTotal,
     monthCount: orders.monthCount,
     monthTotal: orders.monthTotal,
+    farmers,
+    officers: officerRows.length,
+    officersWithAccess: officerRows.filter((o) => o.access).length,
+    productsNeedingDetails: productStats.needsDetails,
+    pendingDeletions: Number(deletions[0]?.count ?? 0),
+    ordersToDispatch: orders.orders.filter((o) => o.status !== "cancelled" && !o.waybill).length,
     recentOrders: orders.orders.slice(0, 8).map((order) => ({
       id: order.id,
       invoiceNo: order.invoiceNo,
@@ -90,6 +109,8 @@ export async function fieldOverview() {
       paymentMode: order.paymentMode,
       status: order.status,
       placedGps: order.placedGps,
+      waybill: order.waybill,
+      stage: order.stage,
     })),
   };
 }

@@ -3,11 +3,28 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Leaf, MapPin, Phone, Plus, Trash2, UserPlus, X } from "lucide-react";
 import { fieldFarmersList, saveFieldFarmer } from "@/lib/actions/field";
 import { farmerFieldErrors, type FarmerFieldErrors } from "@/lib/field-farmer-rules";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  Badge,
+  EmptyState,
+  MobileCard,
+  Notice,
+  PageHeader,
+  SearchBox,
+  buttonClass,
+  inputClass,
+  labelClass,
+  tableClass,
+  tdClass,
+  thClass,
+  theadClass,
+  trClass,
+} from "@/components/field/kit";
+import { useFieldText } from "@/components/field/lang";
+import { fmt, type FieldText } from "@/lib/field-i18n";
+import { cn } from "@/lib/utils";
 
 type Officer = { id: number; name: string; phone: string };
 type PaymentMode = "upi" | "cash" | "credit" | "card" | "cheque" | "neft";
@@ -47,22 +64,10 @@ type ListResult = {
   pageSize: number;
 };
 
-const PAYMENT_MODES: Array<{ id: PaymentMode; label: string }> = [
-  { id: "upi", label: "UPI" },
-  { id: "cash", label: "Cash" },
-  { id: "credit", label: "Credit" },
-  { id: "card", label: "Card" },
-  { id: "cheque", label: "Cheque" },
-  { id: "neft", label: "Bank transfer (NEFT)" },
-];
+const PAYMENT_MODES: PaymentMode[] = ["upi", "cash", "credit", "card", "cheque", "neft"];
 
-const fieldClass = "mt-1 h-9 rounded-md border-[#1E3317]/15 text-sm focus-visible:ring-[#1E3317]";
-const primaryButton = "bg-[#1E3317] text-white hover:bg-[#245B3E]";
-
-function countLabel(total: number, query: string) {
-  const noun = total === 1 ? "farmer" : "farmers";
-  const amount = total.toLocaleString("en-IN");
-  return query ? `${amount} ${noun} match` : `${amount} ${noun}`;
+function payLabel(f: FieldText["farmers"], mode: string) {
+  return (f as Record<string, string>)[`pay_${mode}`] ?? mode;
 }
 
 function showPhone(phone: string) {
@@ -72,16 +77,35 @@ function showPhone(phone: string) {
   return phone.trim() || "—";
 }
 
-function cropSummary(farmer: FarmerRecord) {
-  if (!farmer.farms.length) return "—";
-  return farmer.farms.map((farm) => `${farm.crop || "—"} · ${farm.acres} ac`).join(", ");
+/** Validation messages come from shared rules in English; show them in the admin's language. */
+function localError(f: FieldText["farmers"], message?: string) {
+  if (!message) return message;
+  const map: Record<string, string> = {
+    "Name is required.": f.err_name,
+    "Enter a 10-digit phone number.": f.err_phone,
+    "PIN must be 6 digits.": f.err_pin,
+    "Alternate phone must be 10 digits.": f.err_alt,
+    "Reward points must be zero or more.": f.err_points,
+    "Choose a payment method.": f.err_payment,
+    "Acreage must be zero or more.": f.err_acres,
+  };
+  return map[message] ?? message;
 }
 
-function paymentLabel(mode: string) {
-  return PAYMENT_MODES.find((item) => item.id === mode)?.label ?? mode;
+function initials(name: string) {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "•"
+  );
 }
 
 export function FarmersWorkspace({ initial, officers }: { initial: ListResult; officers: Officer[] }) {
+  const t = useFieldText();
+  const f = t.farmers;
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(initial.page);
   const [rows, setRows] = useState(initial.farmers);
@@ -96,33 +120,34 @@ export function FarmersWorkspace({ initial, officers }: { initial: ListResult; o
   const request = useRef(0);
   const firstQuery = useRef(true);
 
-  const load = useCallback(async (nextQuery: string, nextPage: number) => {
-    const token = ++request.current;
-    setLoading(true);
-    setError("");
-    try {
-      const result = await fieldFarmersList({ q: nextQuery.trim(), page: nextPage });
-      if (token !== request.current) return;
-      setRows(result.farmers as FarmerRecord[]);
-      setTotal(result.total);
-      setPage(result.page);
-      setPageSize(result.pageSize);
-    } catch (err) {
-      if (token !== request.current) return;
-      setError(err instanceof Error ? err.message : "Could not load farmers");
-    } finally {
-      if (token === request.current) setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (nextQuery: string, nextPage: number) => {
+      const token = ++request.current;
+      setLoading(true);
+      setError("");
+      try {
+        const result = await fieldFarmersList({ q: nextQuery.trim(), page: nextPage });
+        if (token !== request.current) return;
+        setRows(result.farmers as FarmerRecord[]);
+        setTotal(result.total);
+        setPage(result.page);
+        setPageSize(result.pageSize);
+      } catch (err) {
+        if (token !== request.current) return;
+        setError(err instanceof Error ? err.message : f.loadFailed);
+      } finally {
+        if (token === request.current) setLoading(false);
+      }
+    },
+    [f.loadFailed]
+  );
 
   useEffect(() => {
     if (firstQuery.current) {
       firstQuery.current = false;
       return;
     }
-    const timer = window.setTimeout(() => {
-      void load(query, 1);
-    }, 300);
+    const timer = window.setTimeout(() => void load(query, 1), 300);
     return () => window.clearTimeout(timer);
   }, [query, load]);
 
@@ -136,7 +161,6 @@ export function FarmersWorkspace({ initial, officers }: { initial: ListResult; o
     setDirty(false);
     setDiscard(false);
   }
-
   function requestClose() {
     if (dirty) setDiscard(true);
     else closeEditor();
@@ -154,200 +178,227 @@ export function FarmersWorkspace({ initial, officers }: { initial: ListResult; o
     return () => window.removeEventListener("keydown", onKey);
   }, [open, dirty]);
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-[#1E3317]">Farmers</h1>
-          <p className="mt-1 text-sm text-[#5E6B62]">Manage farmer profiles, locations and field activity.</p>
-          <p className="mt-1 text-sm tabular-nums text-[#29332C]">{countLabel(total, query.trim())}</p>
-        </div>
-        <Button type="button" onClick={() => setEditor("new")} className={`h-9 ${primaryButton}`}>
-          Add farmer
-        </Button>
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 flex-1 sm:max-w-md">
-          <label className="sr-only" htmlFor="farmer-search">
-            Search farmers
-          </label>
-          <input
-            id="farmer-search"
-            role="searchbox"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape" && query) {
-                event.preventDefault();
-                setQuery("");
-              }
-            }}
-            placeholder="Search name, phone, village, territory, officer, or crop"
-            className="h-9 w-full rounded-md border border-[#1E3317]/15 bg-white px-3 pr-16 text-sm text-[#29332C] outline-none focus:ring-2 focus:ring-[#1E3317]"
-          />
-          <span className="absolute inset-y-0 right-1 flex items-center gap-1">
-            {loading ? (
-              <span
-                className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#1E3317]/20 border-t-[#C6E26A]"
-                role="status"
-                aria-label="Searching"
-              />
-            ) : null}
-            {query ? (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setQuery("")}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-[#5E6B62] hover:bg-[#F4F3EE]"
-              >
-                ×
-              </button>
-            ) : null}
+  const crops = (farmer: FarmerRecord) =>
+    farmer.farms.length === 0 ? (
+      <span className="text-xs text-[#5E6B62]">{f.noFarms}</span>
+    ) : (
+      <div className="flex flex-wrap gap-1">
+        {farmer.farms.slice(0, 3).map((farm, i) => (
+          <span key={i} className="rounded-full bg-[#EDF2E7] px-2 py-0.5 text-[11px] font-medium text-[#3E5E2F]">
+            {farm.crop || "—"} · {fmt(f.acres, { n: farm.acres })}
           </span>
+        ))}
+        {farmer.farms.length > 3 ? <span className="text-[11px] text-[#5E6B62]">+{farmer.farms.length - 3}</span> : null}
+      </div>
+    );
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader
+        title={f.title}
+        description={f.subtitle}
+        actions={
+          <button
+            type="button"
+            onClick={() => {
+              setNotice("");
+              setEditor("new");
+            }}
+            className={buttonClass("primary")}
+          >
+            <UserPlus aria-hidden /> {f.add}
+          </button>
+        }
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <SearchBox value={query} onChange={setQuery} placeholder={f.searchPh} label={f.searchPh} className="sm:max-w-lg" />
+        <div className="flex items-center gap-3 text-sm">
+          <Badge tone="lime">{fmt(total === 1 ? f.countOne : query.trim() ? f.countMatch : f.count, { n: total.toLocaleString("en-IN") })}</Badge>
+          {loading ? <span role="status" aria-label={t.common.loading} className="h-4 w-4 animate-spin rounded-full border-2 border-[#1E3317]/20 border-t-[#3E5E2F]" /> : null}
         </div>
-        <p className="text-xs tabular-nums text-[#5E6B62]">
-          {total === 0 ? "0 shown" : `${from.toLocaleString("en-IN")}–${to.toLocaleString("en-IN")} of ${total.toLocaleString("en-IN")}`}
-        </p>
       </div>
 
-      {notice ? (
-        <p role="status" className="text-sm text-[#245B3E]">
-          {notice}
-        </p>
-      ) : null}
+      {notice ? <Notice>{notice}</Notice> : null}
       {error ? (
-        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-[#8E3B34]/30 bg-white px-3 py-2">
-          <p className="text-sm text-[#8E3B34]">{error}</p>
-          <button type="button" onClick={() => void load(query, page)} className="text-sm font-medium text-[#245B3E] hover:underline">
-            Retry
+        <div className="flex flex-wrap items-center gap-3">
+          <Notice tone="red">{error}</Notice>
+          <button type="button" onClick={() => void load(query, page)} className={buttonClass("secondary", "sm")}>
+            {f.retry}
           </button>
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-lg border border-[#1E3317]/10 bg-white" aria-busy={loading}>
+      <div className={cn("overflow-hidden rounded-2xl border border-[#1E3317]/10 bg-white shadow-sm transition-opacity", loading && "opacity-60")} aria-busy={loading}>
         {rows.length === 0 ? (
-          <div className="px-4 py-10 text-center">
-            <p className="text-sm font-medium text-[#1E3317]">{query.trim() ? "No farmers match" : "No farmers yet"}</p>
-            <p className="mt-1 text-sm text-[#5E6B62]">
-              {query.trim() ? "Try another name, village, phone, officer, or crop." : "Add a farmer to start a field profile."}
-            </p>
-          </div>
+          <EmptyState
+            icon={<Leaf />}
+            title={query.trim() ? f.emptyMatch : f.empty}
+            body={query.trim() ? f.emptyMatchBody : f.emptyBody}
+            action={
+              query.trim() ? (
+                <button type="button" onClick={() => setQuery("")} className={buttonClass("secondary")}>
+                  {t.common.clearSearch}
+                </button>
+              ) : (
+                <button type="button" onClick={() => setEditor("new")} className={buttonClass("primary")}>
+                  <UserPlus aria-hidden /> {f.add}
+                </button>
+              )
+            }
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
-              <thead className="border-b border-[#1E3317]/10 text-left text-xs text-[#5E6B62]">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Farmer</th>
-                  <th className="px-3 py-2 font-medium">Village</th>
-                  <th className="px-3 py-2 font-medium">Territory</th>
-                  <th className="px-3 py-2 font-medium">Phone</th>
-                  <th className="px-3 py-2 font-medium">Officer</th>
-                  <th className="px-3 py-2 font-medium">Crops · acres</th>
-                  <th className="px-3 py-2 font-medium">Payment</th>
-                  <th className="px-3 py-2 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((farmer) => (
-                  <tr key={farmer.id} className="border-t border-[#1E3317]/10 hover:bg-[#F7F6F1]">
-                    <td className="max-w-[16rem] px-3 py-2.5">
-                      <Link href={`/field/farmers/${farmer.id}`} className="font-medium break-words text-[#1E3317] hover:underline">
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className={tableClass}>
+                <thead className={theadClass}>
+                  <tr>
+                    <th className={thClass}>{f.colFarmer}</th>
+                    <th className={thClass}>{f.colVillage}</th>
+                    <th className={thClass}>{f.colOfficer}</th>
+                    <th className={thClass}>{f.colCrops}</th>
+                    <th className={thClass}>{f.colPayment}</th>
+                    <th className={cn(thClass, "text-right")}>{t.common.actions}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((farmer) => (
+                    <tr key={farmer.id} className={trClass}>
+                      <td className={tdClass}>
+                        <Link href={`/field/farmers/${farmer.id}`} className="group flex items-center gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EDF2E7] text-xs font-bold text-[#3E5E2F]">
+                            {initials(farmer.name)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block font-semibold text-[#1E3317] group-hover:underline">{farmer.name}</span>
+                            <span className="block text-xs tabular-nums text-[#5E6B62]">{showPhone(farmer.phone)}</span>
+                          </span>
+                        </Link>
+                      </td>
+                      <td className={tdClass}>
+                        <p className="text-[#1E3317]">{farmer.village || "—"}</p>
+                        {farmer.territory ? <p className="text-xs text-[#5E6B62]">{farmer.territory}</p> : null}
+                      </td>
+                      <td className={tdClass}>{farmer.assignedOfficer ? <span className="text-[#1E3317]">{farmer.assignedOfficer}</span> : <Badge tone="amber">{f.unassigned}</Badge>}</td>
+                      <td className={cn(tdClass, "max-w-[18rem]")}>{crops(farmer)}</td>
+                      <td className={tdClass}>
+                        <Badge tone="grey">{payLabel(f, farmer.paymentMode)}</Badge>
+                      </td>
+                      <td className={cn(tdClass, "text-right")}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotice("");
+                            setEditor(farmer);
+                          }}
+                          className={buttonClass("secondary", "sm")}
+                        >
+                          {t.common.edit}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="lg:hidden">
+              {rows.map((farmer) => (
+                <MobileCard key={farmer.id}>
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#EDF2E7] text-xs font-bold text-[#3E5E2F]">
+                      {initials(farmer.name)}
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Link href={`/field/farmers/${farmer.id}`} className="block font-semibold text-[#1E3317] hover:underline">
                         {farmer.name}
                       </Link>
-                    </td>
-                    <td className="max-w-[12rem] px-3 py-2.5 break-words text-[#29332C]">{farmer.village || "—"}</td>
-                    <td className="px-3 py-2.5 text-[#29332C]">{farmer.territory || "—"}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-[#29332C]">{showPhone(farmer.phone)}</td>
-                    <td className="max-w-[12rem] px-3 py-2.5 break-words text-[#29332C]">{farmer.assignedOfficer || "—"}</td>
-                    <td className="max-w-[18rem] px-3 py-2.5 break-words text-[#5E6B62]">{cropSummary(farmer)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5">{paymentLabel(farmer.paymentMode)}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNotice("");
-                          setEditor(farmer);
-                        }}
-                        className="text-xs font-medium text-[#245B3E] hover:underline"
-                      >
-                        Edit
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#5E6B62]">
+                        <span className="inline-flex items-center gap-1">
+                          <Phone className="h-3 w-3" /> {showPhone(farmer.phone)}
+                        </span>
+                        {farmer.village ? (
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3 w-3" /> {farmer.village}
+                          </span>
+                        ) : null}
+                        <span>{farmer.assignedOfficer || f.unassigned}</span>
+                      </p>
+                      {crops(farmer)}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotice("");
+                        setEditor(farmer);
+                      }}
+                      className={buttonClass("secondary", "sm")}
+                    >
+                      {t.common.edit}
+                    </button>
+                  </div>
+                </MobileCard>
+              ))}
+            </div>
+          </>
         )}
+        {pages > 1 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#1E3317]/8 bg-[#FAFBF7] px-4 py-3 text-xs text-[#5E6B62]">
+            <span className="tabular-nums">
+              {fmt(t.common.showing, { from: from.toLocaleString("en-IN"), to: to.toLocaleString("en-IN"), total: total.toLocaleString("en-IN") })}
+            </span>
+            <div className="flex gap-2">
+              <button type="button" disabled={page <= 1 || loading} onClick={() => void load(query, page - 1)} className={buttonClass("secondary", "sm")}>
+                {t.common.previous}
+              </button>
+              <button type="button" disabled={page >= pages || loading} onClick={() => void load(query, page + 1)} className={buttonClass("secondary", "sm")}>
+                {t.common.next}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
-
-      {pages > 1 ? (
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <Button type="button" variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => void load(query, page - 1)}>
-            Previous
-          </Button>
-          <span className="text-[#5E6B62]">
-            Page {page.toLocaleString("en-IN")} of {pages.toLocaleString("en-IN")}
-          </span>
-          <Button type="button" variant="outline" size="sm" disabled={page >= pages || loading} onClick={() => void load(query, page + 1)}>
-            Next
-          </Button>
-        </div>
-      ) : null}
 
       {editor !== false ? (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <button type="button" aria-label="Close" className="absolute inset-0 bg-[#1E3317]/40" onClick={requestClose} />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="farmer-editor-title"
-            className="relative flex h-full w-full max-w-2xl flex-col bg-[#F4F3EE] shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-[#1E3317]/10 bg-white px-4 py-3">
+          <button type="button" aria-label={t.common.close} className="absolute inset-0 bg-[#0F1A0C]/50" onClick={requestClose} />
+          <div role="dialog" aria-modal="true" aria-labelledby="farmer-editor-title" className="relative flex h-full w-full max-w-2xl flex-col bg-[#F4F3EE] shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-[#1E3317]/10 bg-white px-5 py-4">
               <div>
-                <h2 id="farmer-editor-title" className="text-base font-semibold text-[#1E3317]">
-                  {editor === "new" ? "Add farmer" : `Edit ${editor.name}`}
+                <h2 id="farmer-editor-title" className="text-lg font-bold text-[#1E3317]">
+                  {editor === "new" ? f.add : fmt(f.editTitle, { name: editor.name })}
                 </h2>
-                <p className="mt-0.5 text-xs text-[#5E6B62]">
-                  {editor === "new"
-                    ? "Name and phone are required. The farmer signs in with this phone."
-                    : "The login phone stays the same. Other profile details update the Field app."}
-                </p>
+                <p className="mt-0.5 text-xs text-[#5E6B62]">{editor === "new" ? f.newHelp : f.editHelp}</p>
               </div>
-              <button type="button" aria-label="Close editor" onClick={requestClose} className="text-xl leading-none text-[#5E6B62]">
-                ×
+              <button type="button" aria-label={t.common.close} onClick={requestClose} className="flex h-9 w-9 items-center justify-center rounded-full text-[#5E6B62] hover:bg-[#EDF2E7]">
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
               {discard ? (
-                <div role="alert" className="mb-3 rounded-md border border-[#1E3317]/15 bg-white px-3 py-3">
-                  <p className="text-sm text-[#1E3317]">Discard unsaved changes?</p>
-                  <div className="mt-2 flex gap-2">
-                    <Button type="button" variant="destructive" size="sm" onClick={closeEditor}>
-                      Discard
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setDiscard(false)}>
-                      Keep editing
-                    </Button>
+                <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#8A5A00]/20 bg-[#FFF8EB] px-4 py-3">
+                  <p className="text-sm font-medium text-[#1E3317]">{f.discardQ}</p>
+                  <div className="flex gap-2">
+                    <button type="button" className={buttonClass("danger", "sm")} onClick={closeEditor}>
+                      {f.discard}
+                    </button>
+                    <button type="button" className={buttonClass("secondary", "sm")} onClick={() => setDiscard(false)}>
+                      {f.keepEditing}
+                    </button>
                   </div>
                 </div>
               ) : null}
-              <div className="rounded-lg border border-[#1E3317]/10 bg-white p-4">
-                <FarmerEditor
-                  key={editor === "new" ? "new" : editor.id}
-                  farmer={editor === "new" ? undefined : editor}
-                  officers={officers}
-                  onDirty={setDirty}
-                  onCancel={requestClose}
-                  onSaved={(row) => {
-                    setNotice(`Saved ${row.name}`);
-                    closeEditor();
-                    void load(query, editor === "new" ? 1 : page);
-                  }}
-                />
-              </div>
+              <FarmerEditor
+                key={editor === "new" ? "new" : editor.id}
+                farmer={editor === "new" ? undefined : editor}
+                officers={officers}
+                onDirty={setDirty}
+                onCancel={requestClose}
+                onSaved={(row) => {
+                  setNotice(fmt(f.savedNotice, { name: row.name }));
+                  closeEditor();
+                  void load(query, editor === "new" ? 1 : page);
+                }}
+              />
             </div>
           </div>
         </div>
@@ -417,6 +468,8 @@ export function FarmerEditor({
   onCancel?: () => void;
   onDirty?: (dirty: boolean) => void;
 }) {
+  const t = useFieldText();
+  const f = t.farmers;
   const router = useRouter();
   const formId = useId();
   const [pending, setPending] = useState(false);
@@ -513,17 +566,21 @@ export function FarmerEditor({
       farmer?.id
     )
       .then((row) => {
-        if (!row) throw new Error("Farmer was not saved");
+        if (!row) throw new Error(f.notSaved);
         setBaseline(snapshot);
         setSaved(true);
         if (onSaved) onSaved(row as FarmerRecord);
         else router.refresh();
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Could not save farmer");
+        setError(err instanceof Error ? err.message : f.saveFailed);
       })
       .finally(() => setPending(false));
   }
+
+  const card = "space-y-4 rounded-2xl border border-[#1E3317]/10 bg-white p-4 shadow-sm sm:p-5";
+  const h3 = "text-sm font-bold text-[#1E3317]";
+  const err = (m?: string) => localError(f, m);
 
   return (
     <form
@@ -533,139 +590,132 @@ export function FarmerEditor({
         submit();
       }}
     >
-      {farmer ? <p className="text-xs text-[#5E6B62]">Farmer ID {farmer.id}</p> : null}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <TextField
-          id={`${formId}-name`}
-          label="Name"
-          required
-          value={name}
-          error={errors.name}
-          onChange={setName}
-        />
-        <div>
-          <Label htmlFor={`${formId}-phone`}>
-            Phone {farmer ? null : <span className="text-[#8E3B34]">*</span>}
-          </Label>
-          <Input
-            id={`${formId}-phone`}
-            value={farmer ? showPhone(farmer.phone) : phone}
-            onChange={(event) => setPhone(event.target.value)}
-            readOnly={Boolean(farmer)}
-            inputMode="tel"
-            aria-invalid={errors.phone ? true : undefined}
-            aria-describedby={`${formId}-phone-help`}
-            className={`${fieldClass} ${farmer ? "bg-[#F4F3EE] text-[#5E6B62]" : ""}`}
-          />
-          <p id={`${formId}-phone-help`} className="mt-1 text-xs text-[#5E6B62]">
-            {farmer
-              ? "Login phone. It stays with this account."
-              : "The farmer signs in to the Field app with this number."}
-          </p>
-          {errors.phone ? <p className="mt-1 text-xs text-[#8E3B34]">{errors.phone}</p> : null}
-        </div>
-        <TextField id={`${formId}-alt`} label="Alternate phone" value={altPhone} error={errors.altPhone} onChange={setAltPhone} />
-        <TextField id={`${formId}-village`} label="Village" value={village} onChange={setVillage} />
-        <TextField id={`${formId}-territory`} label="Territory" value={territory} onChange={setTerritory} help="Taluk or beat area stored on the farmer." />
-        <TextField id={`${formId}-pin`} label="PIN" value={pin} error={errors.pin} onChange={setPin} inputMode="numeric" />
-        <div className="sm:col-span-2">
-          <TextField id={`${formId}-address`} label="Address" value={address} onChange={setAddress} />
-        </div>
-        <div>
-          <Label htmlFor={`${formId}-language`}>Notification language</Label>
-          <select
-            id={`${formId}-language`}
-            className={`${fieldClass} w-full bg-white px-3`}
-            value={language}
-            onChange={(event) => setLanguage(event.target.value === "en" ? "en" : "ta")}
-          >
-            <option value="ta">Tamil</option>
-            <option value="en">English</option>
-          </select>
-        </div>
-        <div>
-          <Label htmlFor={`${formId}-officer`}>Field officer</Label>
-          <select
-            id={`${formId}-officer`}
-            className={`${fieldClass} w-full bg-white px-3`}
-            value={officerId}
-            onChange={(event) => setOfficerId(event.target.value)}
-          >
-            <option value="">Unassigned</option>
-            {officers.map((officer) => (
-              <option key={officer.id} value={officer.id}>
-                {officer.name} · {showPhone(officer.phone)}
-              </option>
-            ))}
-          </select>
-          {farmer && !farmer.assignedOfficerId && farmer.fieldOfficerName ? (
-            <p className="mt-1 text-xs text-[#5E6B62]">Recorded name: {farmer.fieldOfficerName}</p>
-          ) : (
-            <p className="mt-1 text-xs text-[#5E6B62]">The name shown for this farmer in the Field app.</p>
-          )}
-        </div>
-        <div>
-          <Label htmlFor={`${formId}-pay`}>Payment method</Label>
-          <select
-            id={`${formId}-pay`}
-            className={`${fieldClass} w-full bg-white px-3`}
-            value={paymentMode}
-            onChange={(event) => setPaymentMode(event.target.value as PaymentMode)}
-          >
-            {PAYMENT_MODES.map((mode) => (
-              <option key={mode.id} value={mode.id}>
-                {mode.label}
-              </option>
-            ))}
-          </select>
-          {errors.payment ? <p className="mt-1 text-xs text-[#8E3B34]">{errors.payment}</p> : null}
-        </div>
-        <TextField id={`${formId}-points`} label="Reward points" value={points} error={errors.points} onChange={setPoints} inputMode="numeric" />
-        <div className="sm:col-span-2">
-          <TextField id={`${formId}-photo`} label="Photo URL" value={photo} onChange={setPhoto} help="Optional. Leave blank to keep no photo." />
-        </div>
-      </div>
-
-      <div className="space-y-2">
+      <section className={card}>
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-[#1E3317]">Farms</h3>
-          <button type="button" onClick={() => setFarmRows((rows) => [...rows, blankFarm()])} className="text-xs font-medium text-[#245B3E] hover:underline">
-            Add farm
+          <h3 className={h3}>{f.sectionProfile}</h3>
+          {farmer ? <span className="text-xs text-[#5E6B62]">{fmt(f.farmerId, { id: farmer.id })}</span> : null}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField id={`${formId}-name`} label={f.name} required value={name} error={err(errors.name)} onChange={setName} />
+          <div>
+            <label htmlFor={`${formId}-phone`} className={labelClass}>
+              {f.phone} {farmer ? null : <span className="text-[#8E3B34]">*</span>}
+            </label>
+            <input
+              id={`${formId}-phone`}
+              value={farmer ? showPhone(farmer.phone) : phone}
+              onChange={(event) => setPhone(event.target.value)}
+              readOnly={Boolean(farmer)}
+              inputMode="tel"
+              aria-invalid={errors.phone ? true : undefined}
+              aria-describedby={`${formId}-phone-help`}
+              className={cn(inputClass, farmer && "bg-[#F4F3EE] text-[#5E6B62]")}
+            />
+            <p id={`${formId}-phone-help`} className="mt-1 text-xs text-[#5E6B62]">
+              {farmer ? f.phoneHelpEdit : f.phoneHelpNew}
+            </p>
+            {errors.phone ? <p className="mt-1 text-xs font-medium text-[#8E3B34]">{err(errors.phone)}</p> : null}
+          </div>
+          <div>
+            <label htmlFor={`${formId}-language`} className={labelClass}>
+              {f.language}
+            </label>
+            <select id={`${formId}-language`} className={inputClass} value={language} onChange={(event) => setLanguage(event.target.value === "en" ? "en" : "ta")}>
+              <option value="ta">{f.tamil}</option>
+              <option value="en">{f.english}</option>
+            </select>
+          </div>
+          <TextField id={`${formId}-photo`} label={f.photo} value={photo} onChange={setPhoto} help={f.photoHelp} />
+        </div>
+      </section>
+
+      <section className={card}>
+        <h3 className={h3}>{f.sectionContact}</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField id={`${formId}-alt`} label={f.altPhone} value={altPhone} error={err(errors.altPhone)} onChange={setAltPhone} inputMode="tel" />
+          <TextField id={`${formId}-village`} label={f.village} value={village} onChange={setVillage} />
+          <TextField id={`${formId}-territory`} label={f.territory} value={territory} onChange={setTerritory} help={f.territoryHelp} />
+          <TextField id={`${formId}-pin`} label={f.pin} value={pin} error={err(errors.pin)} onChange={setPin} inputMode="numeric" />
+          <div className="sm:col-span-2">
+            <TextField id={`${formId}-address`} label={f.address} value={address} onChange={setAddress} />
+          </div>
+        </div>
+      </section>
+
+      <section className={card}>
+        <h3 className={h3}>{f.sectionField}</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label htmlFor={`${formId}-officer`} className={labelClass}>
+              {f.officer}
+            </label>
+            <select id={`${formId}-officer`} className={inputClass} value={officerId} onChange={(event) => setOfficerId(event.target.value)}>
+              <option value="">{f.unassigned}</option>
+              {officers.map((officer) => (
+                <option key={officer.id} value={officer.id}>
+                  {officer.name} · {showPhone(officer.phone)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-[#5E6B62]">
+              {farmer && !farmer.assignedOfficerId && farmer.fieldOfficerName ? fmt(f.recordedName, { name: farmer.fieldOfficerName }) : f.officerHelp}
+            </p>
+          </div>
+          <div>
+            <label htmlFor={`${formId}-pay`} className={labelClass}>
+              {f.payment}
+            </label>
+            <select id={`${formId}-pay`} className={inputClass} value={paymentMode} onChange={(event) => setPaymentMode(event.target.value as PaymentMode)}>
+              {PAYMENT_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {payLabel(f, mode)}
+                </option>
+              ))}
+            </select>
+            {errors.payment ? <p className="mt-1 text-xs font-medium text-[#8E3B34]">{err(errors.payment)}</p> : null}
+          </div>
+          <TextField id={`${formId}-points`} label={f.points} value={points} error={err(errors.points)} onChange={setPoints} inputMode="numeric" />
+        </div>
+      </section>
+
+      <section className={card}>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className={h3}>{f.farms}</h3>
+          <button type="button" onClick={() => setFarmRows((rows) => [...rows, blankFarm()])} className={buttonClass("secondary", "sm")}>
+            <Plus aria-hidden /> {f.addFarm}
           </button>
         </div>
-        {farmRows.length === 0 ? <p className="text-xs text-[#5E6B62]">No farms recorded. Crops and acreage are added per farm.</p> : null}
-        {errors.acres ? <p className="text-xs text-[#8E3B34]">{errors.acres}</p> : null}
+        {farmRows.length === 0 ? <p className="rounded-xl bg-[#FAFBF7] px-4 py-5 text-center text-sm text-[#5E6B62]">{f.noFarmsHelp}</p> : null}
+        {errors.acres ? <p className="text-xs font-medium text-[#8E3B34]">{err(errors.acres)}</p> : null}
         {farmRows.map((farm, index) => (
-          <div key={farm.id ?? `new-${index}`} className="grid gap-2 rounded-md border border-[#1E3317]/10 p-3 sm:grid-cols-3">
-            <FarmInput label="Farm" value={farm.name} onChange={(value) => patchFarm(index, { name: value })} />
-            <FarmInput label="Crop" value={farm.crop} onChange={(value) => patchFarm(index, { crop: value })} />
-            <FarmInput label="Acres" value={farm.acres} onChange={(value) => patchFarm(index, { acres: value })} />
-            <FarmInput label="GPS" value={farm.gps} onChange={(value) => patchFarm(index, { gps: value })} />
-            <FarmInput label="Address" value={farm.address} onChange={(value) => patchFarm(index, { address: value })} />
-            <FarmInput label="PIN" value={farm.pin} onChange={(value) => patchFarm(index, { pin: value })} />
-            <button
-              type="button"
-              onClick={() => setFarmRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}
-              className="text-left text-xs font-medium text-[#8E3B34] hover:underline"
-            >
-              Remove farm
-            </button>
+          <div key={farm.id ?? `new-${index}`} className="grid gap-3 rounded-xl border border-[#1E3317]/10 bg-[#FAFBF7] p-4 sm:grid-cols-3">
+            <FarmInput label={f.farm} value={farm.name} onChange={(value) => patchFarm(index, { name: value })} />
+            <FarmInput label={f.crop} value={farm.crop} onChange={(value) => patchFarm(index, { crop: value })} />
+            <FarmInput label={f.acresLabel} value={farm.acres} onChange={(value) => patchFarm(index, { acres: value })} />
+            <FarmInput label={f.gps} value={farm.gps} onChange={(value) => patchFarm(index, { gps: value })} />
+            <FarmInput label={f.address} value={farm.address} onChange={(value) => patchFarm(index, { address: value })} />
+            <FarmInput label={f.pin} value={farm.pin} onChange={(value) => patchFarm(index, { pin: value })} />
+            <div className="sm:col-span-3">
+              <button type="button" onClick={() => setFarmRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))} className={buttonClass("danger", "sm")}>
+                <Trash2 aria-hidden /> {f.removeFarm}
+              </button>
+            </div>
           </div>
         ))}
-      </div>
+      </section>
 
       {error ? (
-        <p role="alert" className="text-sm text-[#8E3B34]">
-          {error} Your edits are still here.
-        </p>
+        <Notice tone="red">
+          {error} {f.keptEdits}
+        </Notice>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pending} className={saved && !dirty ? "bg-[#245B3E] hover:bg-[#245B3E]" : primaryButton}>
-          {pending ? "Saving…" : saved && !dirty ? "Saved" : farmer ? "Save farmer" : "Add farmer"}
-        </Button>
-        <Button type="button" variant="outline" disabled={pending} onClick={() => (onCancel ? onCancel() : router.push("/field/farmers"))}>
-          Cancel
-        </Button>
+      <div className="sticky bottom-0 -mx-4 flex flex-wrap justify-end gap-2 border-t border-[#1E3317]/10 bg-[#F4F3EE]/95 px-4 py-3 backdrop-blur sm:-mx-5 sm:px-5">
+        <button type="button" disabled={pending} onClick={() => (onCancel ? onCancel() : router.push("/field/farmers"))} className={buttonClass("secondary")}>
+          {t.common.cancel}
+        </button>
+        <button type="submit" disabled={pending} className={buttonClass(saved && !dirty ? "lime" : "primary")}>
+          {pending ? t.common.saving : saved && !dirty ? t.common.saved : farmer ? f.saveFarmer : f.add}
+        </button>
       </div>
     </form>
   );
@@ -696,20 +746,20 @@ function TextField({
 }) {
   return (
     <div>
-      <Label htmlFor={id}>
+      <label htmlFor={id} className={labelClass}>
         {label} {required ? <span className="text-[#8E3B34]">*</span> : null}
-      </Label>
-      <Input
+      </label>
+      <input
         id={id}
         value={value}
         inputMode={inputMode}
         onChange={(event) => onChange(event.target.value)}
         aria-invalid={error ? true : undefined}
         aria-describedby={error || help ? `${id}-note` : undefined}
-        className={fieldClass}
+        className={inputClass}
       />
       {error ? (
-        <p id={`${id}-note`} className="mt-1 text-xs text-[#8E3B34]">
+        <p id={`${id}-note`} className="mt-1 text-xs font-medium text-[#8E3B34]">
           {error}
         </p>
       ) : help ? (
@@ -725,10 +775,11 @@ function FarmInput({ label, value, onChange }: { label: string; value: string; o
   const id = useId();
   return (
     <div>
-      <Label htmlFor={id} className="text-xs text-[#5E6B62]">
+      <label htmlFor={id} className={labelClass}>
         {label}
-      </Label>
-      <Input id={id} value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass} />
+      </label>
+      <input id={id} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass} />
     </div>
   );
 }
+

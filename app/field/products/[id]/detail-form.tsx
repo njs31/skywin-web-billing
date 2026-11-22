@@ -6,15 +6,25 @@ import { useRouter } from "next/navigation";
 import { saveFieldProductDetail } from "@/lib/actions/field";
 import type { FieldProductDetailInput } from "@/lib/queries/field-product-details";
 import { fieldDetailGaps, fieldDetailHasPhoto, formatGst, formatInr, formatQty, httpUrlError, orderQtyPairError } from "@/lib/field-product-rules";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { CheckCircle2, CircleAlert, ImageOff, Plus, Smartphone, Trash2 } from "lucide-react";
 import { ImagePicker } from "./image-picker";
+import { Badge, Notice, PageHeader, buttonClass, inputClass, labelClass } from "@/components/field/kit";
+import { useFieldLang, useFieldText } from "@/components/field/lang";
+import { fieldLocale, fmt } from "@/lib/field-i18n";
+import { cn } from "@/lib/utils";
 
-const area =
-  "mt-1 w-full rounded-md border border-[#1E3317]/15 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#1E3317]";
-const fieldClass = "mt-1 h-9 rounded-md border-[#1E3317]/15 text-sm focus-visible:ring-[#1E3317]";
-const primaryButton = "bg-[#1E3317] text-white hover:bg-[#245B3E]";
+const area = cn(inputClass, "h-auto py-2.5 leading-6");
+const fieldClass = inputClass;
+function Label({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
+  return (
+    <label htmlFor={htmlFor} className={labelClass}>
+      {children}
+    </label>
+  );
+}
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} />;
+}
 
 function ytThumb(url: string) {
   const match = url.match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/);
@@ -45,6 +55,9 @@ export function ProductDetailForm({
   initial: FieldProductDetailInput;
 }) {
   const router = useRouter();
+  const t = useFieldText();
+  const d = t.detail;
+  const locale = fieldLocale(useFieldLang());
   const [pending, start] = useTransition();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -75,11 +88,10 @@ export function ProductDetailForm({
   }, [dirty]);
 
   function submit() {
-    const nextBrochure = httpUrlError(f.brochureUrl);
-    const nextQty = orderQtyPairError(f.minOrderQty, f.maxOrderQty);
-    const nextVideo = f.videos.some((video) => httpUrlError(video.url))
-      ? "Each video link must start with http:// or https://."
-      : "";
+    const nextBrochure = httpUrlError(f.brochureUrl) ? d.linkError : "";
+    const qtyProblem = orderQtyPairError(f.minOrderQty, f.maxOrderQty);
+    const nextQty = qtyProblem === "Minimum order quantity cannot be higher than the maximum." ? d.qtyOrderError : qtyProblem;
+    const nextVideo = f.videos.some((video) => httpUrlError(video.url)) ? d.videoError : "";
     setBrochureError(nextBrochure);
     setQtyError(nextQty);
     setVideoError(nextVideo);
@@ -93,409 +105,347 @@ export function ProductDetailForm({
         setSaved(true);
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not save product details");
+        setError(err instanceof Error ? err.message : d.saveFailed);
       }
     });
   }
 
+  const gapName = (gap: string) => (gap === "description" ? t.products.gapDescription : gap === "ingredient or usage" ? t.products.gapUsage : gap);
+  const leave = () => (dirty ? setDiscard(true) : router.push("/field/products"));
+  const section = "space-y-4 rounded-2xl border border-[#1E3317]/10 bg-white p-5 shadow-sm";
+  const h2 = "text-base font-bold text-[#1E3317]";
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          {discard ? (
-            <div role="alert" className="mb-3 rounded-md border border-[#1E3317]/15 bg-white px-3 py-3">
-              <p className="text-sm text-[#1E3317]">Discard unsaved changes?</p>
-              <div className="mt-2 flex gap-2">
-                <Button type="button" variant="destructive" size="sm" onClick={() => router.push("/field/products")}>
-                  Discard
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={() => setDiscard(false)}>
-                  Keep editing
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => (dirty ? setDiscard(true) : router.push("/field/products"))}
-              className="text-xs font-medium text-[#245B3E] hover:underline"
-            >
-              Product details
-            </button>
-          )}
-          <h1 className="mt-2 text-xl font-semibold tracking-tight text-[#1E3317]">{productName}</h1>
-          <p className="mt-1 text-sm text-[#5E6B62]">
-            {sku || `ID ${productId}`}
-            {updatedAt
-              ? ` · saved ${new Date(updatedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`
-              : " · no farmer details saved yet"}
-          </p>
-        </div>
+    <div className="mx-auto max-w-7xl space-y-6 pb-24">
+      <div>
+        <button type="button" onClick={leave} className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-[#245B3E] hover:underline">
+          <span aria-hidden>←</span> {d.back}
+        </button>
+        <PageHeader
+          title={f.displayName || productName}
+          description={
+            <>
+              <span className="font-mono">{sku || `ID ${productId}`}</span>
+              {" · "}
+              {updatedAt
+                ? fmt(d.savedAt, { date: new Date(updatedAt).toLocaleString(locale, { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) })
+                : d.notSaved}
+            </>
+          }
+          actions={gaps.length ? <Badge tone="amber">{d.needsDetails}</Badge> : <Badge tone="green">{d.complete}</Badge>}
+        />
       </div>
 
+      {discard ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#8A5A00]/20 bg-[#FFF8EB] px-5 py-4">
+          <p className="text-sm font-medium text-[#1E3317]">{d.discardQ}</p>
+          <div className="flex gap-2">
+            <button type="button" className={buttonClass("danger", "sm")} onClick={() => router.push("/field/products")}>
+              {d.discard}
+            </button>
+            <button type="button" className={buttonClass("secondary", "sm")} onClick={() => setDiscard(false)}>
+              {d.keepEditing}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <form
-        className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]"
+        className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
       >
-        <div className="space-y-4">
-          <section className="rounded-lg border border-[#1E3317]/10 bg-white p-4">
-            <h2 className="text-sm font-semibold text-[#1E3317]">Billing product</h2>
-            <p className="mt-1 text-xs text-[#5E6B62]">
-              SKU, MRP, GST, HSN, and available stock come from billing inventory. This page does not change them.
-            </p>
-            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-              <div>
-                <dt className="text-xs text-[#5E6B62]">Name</dt>
-                <dd className="mt-1 break-words font-medium text-[#1E3317]">{productName}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-[#5E6B62]">Product code / SKU</dt>
-                <dd className="mt-1 font-medium text-[#1E3317]">{sku || "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-[#5E6B62]">MRP</dt>
-                <dd className="mt-1 font-medium tabular-nums text-[#1E3317]">{formatInr(mrp)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-[#5E6B62]">GST / tax rate</dt>
-                <dd className="mt-1 font-medium tabular-nums text-[#1E3317]">{formatGst(gstRate)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-[#5E6B62]">HSN code</dt>
-                <dd className="mt-1 font-medium text-[#1E3317]">{hsnCode?.trim() || "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-[#5E6B62]">Available stock</dt>
-                <dd className="mt-1 font-medium tabular-nums text-[#1E3317]">{formatQty(stockQty)}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="rounded-lg border border-[#1E3317]/10 bg-white p-4">
-            <h2 className="text-sm font-semibold text-[#1E3317]">Catalog</h2>
-            {placement ? (
-              <p className="mt-1 text-sm text-[#29332C]">
-                <Link href={`/field/catalog/${placement.categorySlug}`} className="font-medium text-[#245B3E] hover:underline">
-                  {placement.category}
-                </Link>
-                <span className="text-[#5E6B62]"> · {placement.sub}</span>
-              </p>
-            ) : (
-              <p className="mt-1 text-sm text-[#5E6B62]">
-                Not in the catalogue.{" "}
-                <Link href="/field/catalog" className="font-medium text-[#245B3E] hover:underline">
-                  Pin it from Catalog
-                </Link>
-                .
-              </p>
-            )}
-          </section>
-
-          <section className="space-y-3 rounded-lg border border-[#1E3317]/10 bg-white p-4">
-            <h2 className="text-sm font-semibold text-[#1E3317]">Farmer-facing information</h2>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="brand">Brand</Label>
-                <Input
-                  id="brand"
-                  value={f.brand}
-                  placeholder="Brand name"
-                  onChange={(event) => set("brand", event.target.value)}
-                  className={fieldClass}
-                />
-              </div>
-              <div>
-                <Label htmlFor="crops">Applicable crops</Label>
-                <Input
-                  id="crops"
-                  value={f.crops}
-                  placeholder="Paddy, maize, cotton"
-                  onChange={(event) => set("crops", event.target.value)}
-                  aria-describedby="crops-help"
-                  className={fieldClass}
-                />
-                <p id="crops-help" className="mt-1 text-xs text-[#5E6B62]">
-                  Separate crops with commas. Crops on the usage rows are included as well.
-                </p>
-              </div>
+        <div className="min-w-0 space-y-6">
+          <section className={section}>
+            <div>
+              <h2 className={h2}>{d.billing}</h2>
+              <p className="mt-1 text-xs text-[#5E6B62]">{d.billingHelp}</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <dl className="grid grid-cols-2 gap-4 rounded-xl bg-[#FAFBF7] p-4 text-sm sm:grid-cols-3">
+              <Info label={d.name} wide>{productName}</Info>
+              <Info label={d.sku}>
+                <span className="font-mono">{sku || "—"}</span>
+              </Info>
+              <Info label={d.mrp}>{formatInr(mrp)}</Info>
+              <Info label={d.gst}>{formatGst(gstRate)}</Info>
+              <Info label={d.hsn}>
+                <span className="font-mono">{hsnCode?.trim() || "—"}</span>
+              </Info>
+              <Info label={d.stock}>{formatQty(stockQty)}</Info>
+            </dl>
+            <p className="text-sm text-[#29332C]">
+              <span className="text-xs font-semibold text-[#5E6B62]">{d.catalog}: </span>
+              {placement ? (
+                <Link href={`/field/catalog/${placement.categorySlug}`} className="font-semibold text-[#245B3E] hover:underline">
+                  {placement.category} › {placement.sub}
+                </Link>
+              ) : (
+                <>
+                  {d.notInCatalogue}{" "}
+                  <Link href="/field/catalog" className="font-semibold text-[#245B3E] hover:underline">
+                    {d.pinFromCatalog}
+                  </Link>
+                </>
+              )}
+            </p>
+          </section>
+
+          <section className={section}>
+            <h2 className={h2}>{d.farmerInfo}</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label htmlFor="min-qty">Minimum order quantity</Label>
+                <Label htmlFor="display-name">{d.displayName}</Label>
+                <Input id="display-name" value={f.displayName} placeholder={productName} onChange={(e) => set("displayName", e.target.value)} aria-describedby="display-name-help" className={fieldClass} />
+                <p id="display-name-help" className="mt-1 text-xs text-[#5E6B62]">{d.displayHelp}</p>
+              </div>
+              <div>
+                <Label htmlFor="brand">{d.brand}</Label>
+                <Input id="brand" value={f.brand} placeholder={d.brandPh} onChange={(e) => set("brand", e.target.value)} className={fieldClass} />
+              </div>
+              <div>
+                <Label htmlFor="ingredient">{d.ingredient}</Label>
+                <Input id="ingredient" value={f.activeIngredient} onChange={(e) => set("activeIngredient", e.target.value)} className={fieldClass} />
+              </div>
+              <div>
+                <Label htmlFor="packs">{d.packs}</Label>
+                <Input id="packs" value={f.packSizes} placeholder="1L, 500ml, 250ml" onChange={(e) => set("packSizes", e.target.value)} className={fieldClass} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="crops">{d.crops}</Label>
+                <Input id="crops" value={f.crops} placeholder={d.cropsPh} onChange={(e) => set("crops", e.target.value)} aria-describedby="crops-help" className={fieldClass} />
+                <p id="crops-help" className="mt-1 text-xs text-[#5E6B62]">{d.cropsHelp}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="headline">{d.headline}</Label>
+                <Input id="headline" value={f.headline} onChange={(e) => set("headline", e.target.value)} className={fieldClass} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="description">{d.description}</Label>
+                <textarea id="description" rows={7} className={area} value={f.description} onChange={(e) => set("description", e.target.value)} aria-describedby="description-help" />
+                <p id="description-help" className="mt-1 text-xs text-[#5E6B62]">{d.descriptionHelp}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="instructions">{d.instructions}</Label>
+                <textarea id="instructions" rows={4} className={area} value={f.instructions} onChange={(e) => set("instructions", e.target.value)} aria-describedby="instructions-help" placeholder={d.instructionsPh} />
+                <p id="instructions-help" className="mt-1 text-xs text-[#5E6B62]">{d.instructionsHelp}</p>
+              </div>
+              <div>
+                <Label htmlFor="min-qty">{d.minQty}</Label>
                 <Input
                   id="min-qty"
                   inputMode="decimal"
                   value={f.minOrderQty}
-                  placeholder="No minimum"
-                  onChange={(event) => {
-                    set("minOrderQty", event.target.value);
+                  placeholder={d.noMin}
+                  onChange={(e) => {
+                    set("minOrderQty", e.target.value);
                     if (qtyError) setQtyError("");
                   }}
                   aria-invalid={qtyError ? true : undefined}
                   aria-describedby={qtyError ? "qty-error" : "min-qty-help"}
                   className={fieldClass}
                 />
-                <p id="min-qty-help" className="mt-1 text-xs text-[#5E6B62]">
-                  Leave blank when an order can be any quantity.
-                </p>
+                <p id="min-qty-help" className="mt-1 text-xs text-[#5E6B62]">{d.qtyHelp}</p>
               </div>
               <div>
-                <Label htmlFor="max-qty">Maximum order quantity</Label>
+                <Label htmlFor="max-qty">{d.maxQty}</Label>
                 <Input
                   id="max-qty"
                   inputMode="decimal"
                   value={f.maxOrderQty}
-                  placeholder="No maximum"
-                  onChange={(event) => {
-                    set("maxOrderQty", event.target.value);
+                  placeholder={d.noMax}
+                  onChange={(e) => {
+                    set("maxOrderQty", e.target.value);
                     if (qtyError) setQtyError("");
                   }}
                   aria-invalid={qtyError ? true : undefined}
                   className={fieldClass}
                 />
               </div>
-            </div>
-            {qtyError ? (
-              <p id="qty-error" className="text-xs text-[#8E3B34]">
-                {qtyError}
-              </p>
-            ) : null}
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="display-name">Display name</Label>
-                <Input
-                  id="display-name"
-                  value={f.displayName}
-                  placeholder={productName}
-                  onChange={(event) => set("displayName", event.target.value)}
-                  aria-describedby="display-name-help"
-                  className={fieldClass}
-                />
-                <p id="display-name-help" className="mt-1 text-xs text-[#5E6B62]">
-                  Optional. The billing name is used when this is blank.
-                </p>
-              </div>
-              <div>
-                <Label htmlFor="packs">Pack sizes</Label>
-                <Input
-                  id="packs"
-                  value={f.packSizes}
-                  placeholder="1L, 500ml, 250ml"
-                  onChange={(event) => set("packSizes", event.target.value)}
-                  className={fieldClass}
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="ingredient">Active ingredient</Label>
-              <Input
-                id="ingredient"
-                value={f.activeIngredient}
-                onChange={(event) => set("activeIngredient", event.target.value)}
-                className={fieldClass}
-              />
-            </div>
-            <div>
-              <Label>Photos</Label>
-              <p className="mt-1 text-xs text-[#5E6B62]">The first photo is the one shown in the app.</p>
-              <div className="mt-2">
-                <ImagePicker images={f.images} onChange={(next) => set("images", next)} />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="brochure">Brochure link</Label>
-              <Input
-                id="brochure"
-                value={f.brochureUrl}
-                onChange={(event) => {
-                  set("brochureUrl", event.target.value);
-                  if (brochureError) setBrochureError("");
-                }}
-                aria-invalid={brochureError ? true : undefined}
-                aria-describedby={brochureError ? "brochure-error" : undefined}
-                className={fieldClass}
-              />
-              {brochureError ? (
-                <p id="brochure-error" className="mt-1 text-xs text-[#8E3B34]">
-                  {brochureError}
+              {qtyError ? (
+                <p id="qty-error" className="text-xs font-medium text-[#8E3B34] sm:col-span-2">
+                  {qtyError}
                 </p>
               ) : null}
-            </div>
-            <div>
-              <Label htmlFor="headline">Headline</Label>
-              <Input id="headline" value={f.headline} onChange={(event) => set("headline", event.target.value)} className={fieldClass} />
-            </div>
-            <div>
-              <Label htmlFor="instructions">Usage / application instructions</Label>
-              <textarea
-                id="instructions"
-                rows={4}
-                className={area}
-                value={f.instructions}
-                onChange={(event) => set("instructions", event.target.value)}
-                aria-describedby="instructions-help"
-                placeholder="How to mix and apply this product."
-              />
-              <p id="instructions-help" className="mt-1 text-xs text-[#5E6B62]">
-                Dose rows below are shown with this text on the catalogue.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="description">Product description</Label>
-              <textarea
-                id="description"
-                rows={8}
-                className={area}
-                value={f.description}
-                onChange={(event) => set("description", event.target.value)}
-                aria-describedby="description-help"
-              />
-              <p id="description-help" className="mt-1 text-xs text-[#5E6B62]">
-                A blank line starts a new paragraph in the app.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="antidote">Antidote</Label>
-              <Input id="antidote" value={f.antidote} onChange={(event) => set("antidote", event.target.value)} className={fieldClass} />
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-lg border border-[#1E3317]/10 bg-white p-4">
-            <div className="flex items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-semibold text-[#1E3317]">Usage by crop</h2>
-                <p className="mt-1 text-xs text-[#5E6B62]">Each crop here is an applicable crop on the catalogue.</p>
+                <Label htmlFor="antidote">{d.antidote}</Label>
+                <Input id="antidote" value={f.antidote} onChange={(e) => set("antidote", e.target.value)} className={fieldClass} />
               </div>
-              <button
-                type="button"
-                className="text-xs font-medium text-[#245B3E] hover:underline"
-                onClick={() => set("usage", [...f.usage, { crop: "", pest: "", perHectare: "", perAcre: "" }])}
-              >
-                Add row
-              </button>
+              <div>
+                <Label htmlFor="brochure">{d.brochure}</Label>
+                <Input
+                  id="brochure"
+                  value={f.brochureUrl}
+                  placeholder="https://"
+                  onChange={(e) => {
+                    set("brochureUrl", e.target.value);
+                    if (brochureError) setBrochureError("");
+                  }}
+                  aria-invalid={brochureError ? true : undefined}
+                  aria-describedby={brochureError ? "brochure-error" : undefined}
+                  className={fieldClass}
+                />
+                {brochureError ? (
+                  <p id="brochure-error" className="mt-1 text-xs font-medium text-[#8E3B34]">
+                    {brochureError}
+                  </p>
+                ) : null}
+              </div>
             </div>
-            {f.usage.length === 0 ? <p className="text-xs text-[#5E6B62]">No usage rows yet.</p> : null}
-            {f.usage.map((row, index) => (
-              <div key={index} className="grid gap-2 rounded-md border border-[#1E3317]/10 p-3 sm:grid-cols-2">
-                <Field label="Crop" value={row.crop} onChange={(value) => updateUsage(index, "crop", value)} />
-                <Field label="Insect or disease" value={row.pest} onChange={(value) => updateUsage(index, "pest", value)} />
-                <Field label="Per hectare" value={row.perHectare} onChange={(value) => updateUsage(index, "perHectare", value)} />
-                <Field label="Per acre" value={row.perAcre} onChange={(value) => updateUsage(index, "perAcre", value)} />
-                <button
-                  type="button"
-                  className="text-left text-xs font-medium text-[#8E3B34] hover:underline"
-                  onClick={() => set("usage", f.usage.filter((_, rowIndex) => rowIndex !== index))}
-                >
-                  Remove row
-                </button>
-              </div>
-            ))}
           </section>
 
-          <section className="space-y-3 rounded-lg border border-[#1E3317]/10 bg-white p-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-[#1E3317]">Videos</h2>
-              <button
-                type="button"
-                className="text-xs font-medium text-[#245B3E] hover:underline"
-                onClick={() => set("videos", [...f.videos, { title: "", url: "" }])}
-              >
-                Add video
+          <section className={section}>
+            <div>
+              <h2 className={h2}>{d.photos}</h2>
+              <p className="mt-1 text-xs text-[#5E6B62]">{d.photosHelp}</p>
+            </div>
+            <ImagePicker images={f.images} onChange={(next) => set("images", next)} />
+          </section>
+
+          <section className={section}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className={h2}>{d.usageTitle}</h2>
+                <p className="mt-1 text-xs text-[#5E6B62]">{d.usageHelp}</p>
+              </div>
+              <button type="button" className={buttonClass("secondary", "sm")} onClick={() => set("usage", [...f.usage, { crop: "", pest: "", perHectare: "", perAcre: "" }])}>
+                <Plus aria-hidden /> {d.addRow}
               </button>
             </div>
-            {videoError ? <p className="text-xs text-[#8E3B34]">{videoError}</p> : null}
-            {f.videos.length === 0 ? (
-              <p className="text-xs text-[#5E6B62]">YouTube links pick up a thumbnail in the app.</p>
-            ) : null}
+            {f.usage.length === 0 ? <p className="rounded-xl bg-[#FAFBF7] px-4 py-6 text-center text-sm text-[#5E6B62]">{d.noUsage}</p> : null}
+            <div className="space-y-3">
+              {f.usage.map((row, index) => (
+                <div key={index} className="grid gap-3 rounded-xl border border-[#1E3317]/10 bg-[#FAFBF7] p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_0.8fr_0.8fr_auto] lg:items-end">
+                  <Field label={d.crop} value={row.crop} onChange={(v) => updateUsage(index, "crop", v)} />
+                  <Field label={d.pest} value={row.pest} onChange={(v) => updateUsage(index, "pest", v)} />
+                  <Field label={d.perHectare} value={row.perHectare} onChange={(v) => updateUsage(index, "perHectare", v)} />
+                  <Field label={d.perAcre} value={row.perAcre} onChange={(v) => updateUsage(index, "perAcre", v)} />
+                  <button
+                    type="button"
+                    aria-label={d.removeRow}
+                    title={d.removeRow}
+                    className={cn(buttonClass("danger", "sm"), "h-10")}
+                    onClick={() => set("usage", f.usage.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 aria-hidden />
+                    <span className="lg:sr-only">{d.removeRow}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={section}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className={h2}>{d.videos}</h2>
+                <p className="mt-1 text-xs text-[#5E6B62]">{d.videosHelp}</p>
+              </div>
+              <button type="button" className={buttonClass("secondary", "sm")} onClick={() => set("videos", [...f.videos, { title: "", url: "" }])}>
+                <Plus aria-hidden /> {d.addVideo}
+              </button>
+            </div>
+            {videoError ? <Notice tone="red">{videoError}</Notice> : null}
             {f.videos.map((video, index) => (
               <div key={index} className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto]">
-                <Input
-                  aria-label="Video title"
-                  value={video.title}
-                  placeholder="Title"
-                  onChange={(event) => updateVideo(index, "title", event.target.value)}
-                  className={fieldClass}
-                />
-                <Input
-                  aria-label="Video link"
-                  value={video.url}
-                  placeholder="https://youtu.be/…"
-                  onChange={(event) => updateVideo(index, "url", event.target.value)}
-                  className={fieldClass}
-                />
-                <button
-                  type="button"
-                  className="text-xs font-medium text-[#8E3B34] hover:underline"
-                  onClick={() => set("videos", f.videos.filter((_, rowIndex) => rowIndex !== index))}
-                >
-                  Remove
+                <Input aria-label={d.videoTitle} value={video.title} placeholder={d.videoTitle} onChange={(e) => updateVideo(index, "title", e.target.value)} className={fieldClass} />
+                <Input aria-label={d.videoLink} value={video.url} placeholder="https://youtu.be/…" onChange={(e) => updateVideo(index, "url", e.target.value)} className={fieldClass} />
+                <button type="button" aria-label={t.common.remove} className={cn(buttonClass("danger", "sm"), "h-10")} onClick={() => set("videos", f.videos.filter((_, i) => i !== index))}>
+                  <Trash2 aria-hidden />
                 </button>
               </div>
             ))}
           </section>
 
           {error ? (
-            <p role="alert" className="text-sm text-[#8E3B34]">
-              {error} Your edits are still here.
-            </p>
+            <Notice tone="red">
+              {error} {d.keptEdits}
+            </Notice>
           ) : null}
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={pending} className={saved && !dirty ? "bg-[#245B3E] hover:bg-[#245B3E]" : primaryButton}>
-              {pending ? "Saving…" : saved && !dirty ? "Saved" : "Save details"}
-            </Button>
-            <Button type="button" variant="outline" disabled={pending} onClick={() => (dirty ? setDiscard(true) : router.push("/field/products"))}>
-              Cancel
-            </Button>
-          </div>
         </div>
 
-        <aside className="space-y-3 xl:sticky xl:top-4">
-          <section className="rounded-lg border border-[#1E3317]/10 bg-white p-4">
-            <h2 className="text-sm font-semibold text-[#1E3317]">{gaps.length ? "Needs details" : "Complete"}</h2>
+        <aside className="space-y-4 xl:sticky xl:top-4">
+          <section className="rounded-2xl border border-[#1E3317]/10 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              {gaps.length ? <CircleAlert className="h-5 w-5 text-[#8A5A00]" /> : <CheckCircle2 className="h-5 w-5 text-[#245B3E]" />}
+              <h2 className="text-sm font-bold text-[#1E3317]">{gaps.length ? d.needsDetails : d.complete}</h2>
+            </div>
             {gaps.length ? (
-              <ul className="mt-2 space-y-1 text-xs text-[#5E6B62]">
+              <ul className="mt-2 space-y-1 text-sm text-[#8A5A00]">
                 {gaps.map((gap) => (
-                  <li key={gap}>Missing {gap}</li>
+                  <li key={gap}>• {fmt(d.missing, { gap: gapName(gap) })}</li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-xs text-[#5E6B62]">Description and crop information are present.</p>
+              <p className="mt-2 text-sm text-[#5E6B62]">{d.completeBody}</p>
             )}
-            {hasPhoto ? null : <p className="mt-2 text-xs text-[#5E6B62]">No photo yet. The written details still show in the app.</p>}
-            <p className="mt-3 text-xs leading-5 text-[#5E6B62]">
-              Brand, order quantities, crops, application instructions, pack sizes, headline, antidote, brochure, and videos stay optional.
-            </p>
+            {hasPhoto ? null : <p className="mt-2 text-xs text-[#5E6B62]">{d.noPhotoNote}</p>}
+            <p className="mt-3 border-t border-[#1E3317]/8 pt-3 text-xs leading-5 text-[#5E6B62]">{d.optionalNote}</p>
           </section>
-          <section className="rounded-lg border border-[#1E3317]/10 bg-white p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-[#5E6B62]">App preview</h2>
-            <p className="mt-2 font-medium text-[#1E3317]">{f.displayName || productName}</p>
-            {f.brand ? <p className="mt-1 text-xs text-[#5E6B62]">{f.brand}</p> : null}
-            {f.images[0] ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={f.images[0]} alt="" className="mt-2 h-36 w-full object-contain" />
-            ) : (
-              <p className="mt-3 text-xs text-[#5E6B62]">No photo</p>
-            )}
-            {f.activeIngredient ? <p className="mt-2 text-xs text-[#29332C]">{f.activeIngredient}</p> : null}
-            {f.headline ? <p className="mt-2 text-xs font-medium text-[#1E3317]">{f.headline}</p> : null}
-            {f.description ? <p className="mt-2 line-clamp-4 text-xs text-[#5E6B62]">{f.description}</p> : null}
-            {f.instructions ? <p className="mt-2 line-clamp-3 text-xs text-[#29332C]">{f.instructions}</p> : null}
-            {f.crops ? <p className="mt-2 text-xs text-[#29332C]">{f.crops}</p> : null}
-            {f.videos.some((video) => ytThumb(video.url)) ? (
-              <div className="mt-2 grid grid-cols-3 gap-1">
-                {f.videos.map((video, index) =>
-                  ytThumb(video.url) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={index} src={ytThumb(video.url)} alt="" className="aspect-video w-full rounded object-cover" />
-                  ) : null
+
+          <section className="overflow-hidden rounded-[28px] border-[6px] border-[#1E3317] bg-[#F4F5EF] shadow-lg">
+            <div className="flex items-center gap-1.5 bg-[#1E3317] px-3 pb-1.5 text-[11px] font-semibold text-white/80">
+              <Smartphone className="h-3.5 w-3.5" /> {d.preview}
+            </div>
+            <div className="space-y-2 p-4">
+              <div className="flex h-40 items-center justify-center overflow-hidden rounded-2xl bg-white">
+                {f.images[0] ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={f.images[0]} alt="" className="h-full w-full object-contain p-2" />
+                ) : (
+                  <span className="flex flex-col items-center gap-1 text-xs text-[#5E6B62]">
+                    <ImageOff className="h-5 w-5" />
+                    {d.noPhoto}
+                  </span>
                 )}
               </div>
-            ) : null}
+              <p className="text-[15px] font-bold leading-5 text-[#1E3317]">{f.displayName || productName}</p>
+              {f.brand ? <p className="text-xs text-[#5E6B62]">{f.brand}</p> : null}
+              <p className="text-base font-bold text-[#1E3317]">{formatInr(mrp)}</p>
+              {f.headline ? <p className="text-xs font-semibold text-[#245B3E]">{f.headline}</p> : null}
+              {f.activeIngredient ? <p className="text-xs text-[#29332C]">{f.activeIngredient}</p> : null}
+              {f.description ? <p className="line-clamp-4 text-xs leading-5 text-[#5E6B62]">{f.description}</p> : null}
+              {f.crops ? (
+                <div className="flex flex-wrap gap-1">
+                  {f.crops
+                    .split(",")
+                    .map((c) => c.trim())
+                    .filter(Boolean)
+                    .slice(0, 6)
+                    .map((c) => (
+                      <span key={c} className="rounded-full bg-[#E4ECD9] px-2 py-0.5 text-[10px] font-medium text-[#3E5E2F]">
+                        {c}
+                      </span>
+                    ))}
+                </div>
+              ) : null}
+              {f.videos.some((v) => ytThumb(v.url)) ? (
+                <div className="grid grid-cols-3 gap-1">
+                  {f.videos.map((v, i) =>
+                    ytThumb(v.url) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={i} src={ytThumb(v.url)} alt="" className="aspect-video w-full rounded object-cover" />
+                    ) : null
+                  )}
+                </div>
+              ) : null}
+            </div>
           </section>
         </aside>
+
+        {/* Sticky save bar */}
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[#1E3317]/10 bg-white/95 px-4 py-3 shadow-[0_-6px_20px_rgba(30,51,23,0.08)] backdrop-blur md:left-[76px] lg:left-64">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-end gap-2">
+            {dirty ? <span className="mr-auto text-xs font-semibold text-[#8A5A00]">● {d.unsaved}</span> : null}
+            <button type="button" className={buttonClass("secondary")} disabled={pending} onClick={leave}>
+              {t.common.cancel}
+            </button>
+            <button type="submit" disabled={pending} className={buttonClass(saved && !dirty ? "lime" : "primary")}>
+              {pending ? t.common.saving : saved && !dirty ? t.common.saved : d.saveDetails}
+            </button>
+          </div>
+        </div>
       </form>
     </div>
   );
@@ -518,9 +468,18 @@ export function ProductDetailForm({
 
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
-    <div>
-      <Label>{label}</Label>
-      <Input value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass} />
+    <label className="block">
+      <span className={labelClass}>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} className={fieldClass} />
+    </label>
+  );
+}
+
+function Info({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "col-span-2 sm:col-span-3" : undefined}>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-[#5E6B62]">{label}</dt>
+      <dd className="mt-0.5 break-words font-semibold tabular-nums text-[#1E3317]">{children}</dd>
     </div>
   );
 }

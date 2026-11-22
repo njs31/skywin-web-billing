@@ -4,7 +4,7 @@ import { ProductsWorkspace } from "./products-workspace";
 export default async function FieldProductsPage() {
   const data = await fieldProductsPage({ page: 1 });
   return (
-    <div className="mx-auto max-w-[96rem]">
+    <div>
       <ProductsWorkspace initial={data} />
     </div>
   );

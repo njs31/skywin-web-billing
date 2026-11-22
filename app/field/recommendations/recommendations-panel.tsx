@@ -8,10 +8,12 @@ import {
   searchFieldRecommendationFarmers,
   searchFieldRecommendationProducts,
 } from "@/lib/actions/field";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Package, Pencil, Search, Sparkles, Trash2, X } from "lucide-react";
 import { roleLabel } from "@/lib/user-roles";
+import { Badge, EmptyState, Notice, PageHeader, SearchBox, buttonClass, inputClass, labelClass } from "@/components/field/kit";
+import { useFieldLang, useFieldText } from "@/components/field/lang";
+import { fieldLocale, fmt } from "@/lib/field-i18n";
+import { cn } from "@/lib/utils";
 
 type Product = { id: number; name: string; sku: string; price: number; stock: number };
 type Farmer = { id: number; name: string; phone: string; village: string };
@@ -33,10 +35,10 @@ export type RecommendationRow = {
 
 const empty = { crop: "", stage: "", problem: "", note: "" };
 
-function savedOn(iso: string) {
+function savedOn(iso: string, locale: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-IN", {
+  return date.toLocaleDateString(locale, {
     timeZone: "Asia/Kolkata",
     day: "numeric",
     month: "short",
@@ -52,6 +54,9 @@ export function RecommendationsPanel({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const t = useFieldText();
+  const r = t.recs;
+  const locale = fieldLocale(useFieldLang());
   const [pending, start] = useTransition();
   const [rows, setRows] = useState(initial);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -147,6 +152,8 @@ export function RecommendationsPanel({
   }
 
   function startEdit(row: RecommendationRow) {
+    window.scrollTo?.({ top: 0, behavior: "smooth" });
+    document.getElementById("rec-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
     setEditingId(row.id);
     setFarmer({ id: row.farmerId, name: row.farmerName || `Farmer ${row.farmerId}`, phone: "", village: "" });
     setFarmerOpen(false);
@@ -166,7 +173,7 @@ export function RecommendationsPanel({
   function submit() {
     setError("");
     if (!farmer) {
-      setError("Choose the farmer.");
+      setError(r.chooseFarmer);
       return;
     }
     start(async () => {
@@ -186,7 +193,7 @@ export function RecommendationsPanel({
   }
 
   function remove(row: RecommendationRow) {
-    if (!window.confirm(`Remove the ${row.crop} recommendation “${row.problem}”?`)) return;
+    if (!window.confirm(fmt(r.removeConfirm, { crop: row.crop, problem: row.problem }))) return;
     setError("");
     start(async () => {
       const result = await deleteFieldRecommendationAction(row.id);
@@ -199,230 +206,216 @@ export function RecommendationsPanel({
     });
   }
 
+  const field = (id: string, label: string, value: string, key: keyof typeof empty, max: number, ph: string, wide = false) => (
+    <div className={wide ? "sm:col-span-2" : undefined}>
+      <label htmlFor={id} className={labelClass}>
+        {label}
+      </label>
+      <input id={id} value={value} maxLength={max} onChange={(e) => setForm({ ...form, [key]: e.target.value })} placeholder={ph} className={inputClass} />
+    </div>
+  );
+
   return (
-    <div className="space-y-6">
-      {canEdit ? (
-        <form
-          className="space-y-4 rounded-lg border border-[#1E3317]/10 bg-white p-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-[#1E3317]">
-              {editingId ? "Edit recommendation" : "New recommendation"}
-            </h2>
-            {editingId ? (
-              <button type="button" onClick={resetForm} className="text-xs font-medium text-[#245B3E] hover:underline">
-                Cancel edit
-              </button>
-            ) : null}
-          </div>
-          <div className="relative">
-            <Label htmlFor="rec-farmer">Farmer</Label>
-            {farmer ? (
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-[#EEF1E6] px-3 py-1 text-xs font-medium text-[#245B3E]">
-                  {farmer.name}
-                  {farmer.village ? ` · ${farmer.village}` : ""}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFarmer(null);
-                    setFarmerOpen(true);
-                  }}
-                  className="text-xs font-medium text-[#245B3E] hover:underline"
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              <>
-                <Input
-                  id="rec-farmer"
-                  value={farmerQuery}
-                  onFocus={() => setFarmerOpen(true)}
-                  onChange={(event) => {
-                    setFarmerQuery(event.target.value);
-                    setFarmerOpen(true);
-                  }}
-                  placeholder="Search your farmers by name, phone or village"
-                />
-                {farmerOpen && farmerHits.length > 0 ? (
-                  <ul className="mt-2 max-h-64 overflow-auto rounded-md border border-[#1E3317]/10">
-                    {farmerHits.map((hit) => (
-                      <li key={hit.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFarmer(hit);
-                            setFarmerQuery("");
-                            setFarmerHits([]);
-                            setFarmerOpen(false);
-                          }}
-                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-[#F4F3EE]"
-                        >
-                          <span>{hit.name}</span>
-                          <span className="text-xs text-[#5E6B62]">{[hit.village, hit.phone].filter(Boolean).join(" · ")}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader title={r.title} description={r.subtitle} />
+      <div className={cn("grid items-start gap-6", canEdit && "xl:grid-cols-[26rem_minmax(0,1fr)]")}>
+        {canEdit ? (
+          <form
+            id="rec-form"
+            className={cn(
+              "space-y-4 rounded-2xl border bg-white p-5 shadow-sm xl:sticky xl:top-4",
+              editingId ? "border-[#3E5E2F] ring-2 ring-[#C6E26A]/50" : "border-[#1E3317]/10"
             )}
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="rec-crop">Crop</Label>
-              <Input id="rec-crop" value={form.crop} maxLength={40} onChange={(event) => setForm({ ...form, crop: event.target.value })} placeholder="Paddy" />
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit();
+            }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 text-base font-bold text-[#1E3317]">
+                <Sparkles className="h-4 w-4 text-[#3E5E2F]" />
+                {editingId ? r.editTitle : r.newTitle}
+              </h2>
+              {editingId ? (
+                <button type="button" onClick={resetForm} className={buttonClass("ghost", "sm")}>
+                  {r.cancelEdit}
+                </button>
+              ) : null}
             </div>
-            <div>
-              <Label htmlFor="rec-stage">Stage</Label>
-              <Input id="rec-stage" value={form.stage} maxLength={80} onChange={(event) => setForm({ ...form, stage: event.target.value })} placeholder="Flowering" />
+            <div className="relative">
+              <label htmlFor="rec-farmer" className={labelClass}>
+                {r.farmer} <span className="text-[#8E3B34]">*</span>
+              </label>
+              {farmer ? (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-[#3E5E2F]/25 bg-[#F4F8EF] px-3 py-2.5">
+                  <span className="min-w-0 truncate text-sm font-semibold text-[#1E3317]">
+                    {farmer.name}
+                    {farmer.village ? <span className="font-normal text-[#5E6B62]"> · {farmer.village}</span> : null}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFarmer(null);
+                      setFarmerOpen(true);
+                    }}
+                    className="shrink-0 text-xs font-semibold text-[#245B3E] hover:underline"
+                  >
+                    {r.change}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    id="rec-farmer"
+                    value={farmerQuery}
+                    onFocus={() => setFarmerOpen(true)}
+                    onChange={(event) => {
+                      setFarmerQuery(event.target.value);
+                      setFarmerOpen(true);
+                    }}
+                    placeholder={r.farmerPh}
+                    className={inputClass}
+                  />
+                  {farmerOpen && farmerHits.length > 0 ? (
+                    <ul className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-[#1E3317]/10 bg-white shadow-lg">
+                      {farmerHits.map((hit) => (
+                        <li key={hit.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFarmer(hit);
+                              setFarmerQuery("");
+                              setFarmerHits([]);
+                              setFarmerOpen(false);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-[#F4F8EF]"
+                          >
+                            <span className="font-medium text-[#1E3317]">{hit.name}</span>
+                            <span className="text-xs text-[#5E6B62]">{[hit.village, hit.phone].filter(Boolean).join(" · ")}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </>
+              )}
             </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="rec-problem">Problem</Label>
-              <Input id="rec-problem" value={form.problem} maxLength={160} onChange={(event) => setForm({ ...form, problem: event.target.value })} placeholder="Grain filling" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              {field("rec-crop", r.crop, form.crop, "crop", 40, r.cropPh)}
+              {field("rec-stage", r.stage, form.stage, "stage", 80, r.stagePh)}
+              {field("rec-problem", r.problem, form.problem, "problem", 160, r.problemPh, true)}
+              {field("rec-note", r.note, form.note, "note", 500, r.notePh, true)}
             </div>
-            <div className="sm:col-span-2">
-              <Label htmlFor="rec-note">Note</Label>
-              <Input id="rec-note" value={form.note} maxLength={500} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Suggestions only. The officer can order any in-stock product." />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="rec-product">Products</Label>
-            <Input
-              id="rec-product"
-              value={productQuery}
-              onChange={(event) => setProductQuery(event.target.value)}
-              placeholder="Search the field catalogue by name or SKU"
-            />
-            {searching ? <p className="mt-1 text-xs text-[#5E6B62]">Searching…</p> : null}
-            {hits.length > 0 ? (
-              <ul className="mt-2 overflow-hidden rounded-md border border-[#1E3317]/10">
-                {hits.map((product) => (
-                  <li key={product.id}>
+            <div className="relative">
+              <label htmlFor="rec-product" className={labelClass}>
+                {r.products} <span className="text-[#8E3B34]">*</span>
+              </label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5E6B62]" />
+                <input id="rec-product" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder={r.productsPh} className={cn(inputClass, "pl-9")} />
+              </div>
+              {searching ? <p className="mt-1 text-xs text-[#5E6B62]">{r.searching}</p> : null}
+              {hits.length > 0 ? (
+                <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-[#1E3317]/10 bg-white shadow-lg">
+                  {hits.map((product) => (
+                    <li key={product.id}>
+                      <button type="button" onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-[#F4F8EF]">
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-[#1E3317]">{product.name}</span>
+                          {product.sku ? <span className="font-mono text-xs text-[#5E6B62]">{product.sku}</span> : null}
+                        </span>
+                        <Badge tone={product.stock > 0 ? "green" : "red"}>{product.stock > 0 ? fmt(r.inStock, { n: product.stock }) : r.outOfStock}</Badge>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selected.map((product) => (
+                  <span key={product.id} className="inline-flex max-w-full items-center gap-1 rounded-full bg-[#EDF2E7] py-1 pl-3 pr-1 text-xs font-medium text-[#245B3E]">
+                    <span className="truncate">{product.name}</span>
                     <button
                       type="button"
-                      onClick={() => addProduct(product)}
-                      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-[#F4F3EE]"
+                      aria-label={`${t.common.remove} ${product.name}`}
+                      onClick={() => setSelected((current) => current.filter((item) => item.id !== product.id))}
+                      className="flex h-5 w-5 items-center justify-center rounded-full hover:bg-[#D6E5C8]"
                     >
-                      <span>
-                        {product.name}
-                        {product.sku ? <span className="text-[#5E6B62]"> · {product.sku}</span> : null}
-                      </span>
-                      <span className="text-xs text-[#5E6B62]">{product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}</span>
+                      <X className="h-3 w-3" />
                     </button>
-                  </li>
+                  </span>
                 ))}
-              </ul>
-            ) : null}
-            <div className="mt-2 flex flex-wrap gap-2">
-              {selected.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => setSelected((current) => current.filter((item) => item.id !== product.id))}
-                  className="rounded-full bg-[#EEF1E6] px-3 py-1 text-xs font-medium text-[#245B3E]"
-                >
-                  {product.name} ×
-                </button>
-              ))}
-              {selected.length === 0 ? <p className="text-xs text-[#5E6B62]">Choose at least one product. Up to 8.</p> : null}
+              </div>
+              <p className="mt-2 text-xs text-[#5E6B62]">
+                {r.chooseProducts} ({selected.length}/8)
+              </p>
             </div>
-          </div>
-          {error ? <p className="text-sm text-[#8E3B34]">{error}</p> : null}
-          <Button type="submit" disabled={pending}>
-            {pending ? "Saving…" : editingId ? "Save changes" : "Add recommendation"}
-          </Button>
-        </form>
-      ) : (
-        <p className="rounded-lg border border-[#1E3317]/10 bg-white px-4 py-3 text-sm text-[#5E6B62]">
-          Only field officers can add or change recommendations.
-        </p>
-      )}
-
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-[#1E3317]">{filtered.length} recommendation{filtered.length === 1 ? "" : "s"}</h2>
-          <Input
-            value={listQuery}
-            onChange={(event) => setListQuery(event.target.value)}
-            placeholder="Search farmer, crop, problem, product, or author"
-            className="max-w-sm"
-          />
-        </div>
-        {filtered.length === 0 ? (
-          <div className="rounded-lg border border-[#1E3317]/10 bg-white px-4 py-10 text-center">
-            <p className="text-sm font-medium text-[#1E3317]">No recommendations yet</p>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-[#5E6B62]">
-              {canEdit ? "Add the first recommendation for one of your farmers above." : "A field officer has not added one yet."}
-            </p>
-          </div>
+            {error ? <Notice tone="red">{error}</Notice> : null}
+            <button type="submit" disabled={pending} className={cn(buttonClass("primary"), "w-full")}>
+              {pending ? t.common.saving : editingId ? r.save : r.add}
+            </button>
+          </form>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-[#1E3317]/10 bg-white">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead className="border-b border-[#1E3317]/10 text-left text-xs text-[#5E6B62]">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Farmer</th>
-                    <th className="px-3 py-2 font-medium">Crop</th>
-                    <th className="px-3 py-2 font-medium">Problem</th>
-                    <th className="px-3 py-2 font-medium">Products</th>
-                    <th className="px-3 py-2 font-medium">Added by</th>
-                    {canEdit ? <th className="px-3 py-2 font-medium"> </th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((row) => (
-                    <tr key={row.id} className="border-t border-[#1E3317]/10 align-top">
-                      <td className="px-3 py-3 font-medium text-[#1E3317]">{row.farmerName || `Farmer ${row.farmerId}`}</td>
-                      <td className="px-3 py-3">
-                        <p className="font-medium text-[#1E3317]">{row.crop}</p>
-                        {row.stage ? <p className="text-xs text-[#5E6B62]">{row.stage}</p> : null}
-                      </td>
-                      <td className="px-3 py-3">
-                        <p>{row.problem}</p>
-                        {row.note ? <p className="mt-1 max-w-xs text-xs text-[#5E6B62]">{row.note}</p> : null}
-                      </td>
-                      <td className="px-3 py-3 text-[#1E3317]">
-                        {row.products.length
-                          ? row.products.map((product) => (
-                              <p key={product.id}>
-                                {product.name}
-                                {product.sku ? <span className="text-[#5E6B62]"> · {product.sku}</span> : null}
-                              </p>
-                            ))
-                          : "—"}
-                      </td>
-                      <td className="px-3 py-3">
-                        <p>{row.authorName}</p>
-                        <p className="text-xs text-[#5E6B62]">
-                          {roleLabel(row.authorRole)}
-                          {savedOn(row.updatedAt) ? ` · ${savedOn(row.updatedAt)}` : ""}
-                        </p>
-                      </td>
-                      {canEdit ? (
-                        <td className="px-3 py-3 text-right">
-                          <button type="button" onClick={() => startEdit(row)} className="text-xs font-medium text-[#245B3E] hover:underline">
-                            Edit
-                          </button>
-                          <button type="button" onClick={() => remove(row)} className="ml-3 text-xs font-medium text-[#8E3B34] hover:underline">
-                            Remove
-                          </button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Notice tone="amber">{r.onlyOfficers}</Notice>
         )}
-        {!canEdit && error ? <p className="text-sm text-[#8E3B34]">{error}</p> : null}
+
+        <section className="min-w-0 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-sm font-bold text-[#1E3317]">{fmt(filtered.length === 1 ? r.countOne : r.count, { n: filtered.length })}</h2>
+            <SearchBox value={listQuery} onChange={setListQuery} placeholder={r.listSearchPh} label={r.listSearchPh} />
+          </div>
+          {filtered.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[#1E3317]/15 bg-white">
+              <EmptyState icon={<Sparkles />} title={r.empty} body={canEdit ? r.emptyEdit : r.emptyView} />
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {filtered.map((row) => (
+                <li
+                  key={row.id}
+                  className={cn("rounded-2xl border bg-white p-4 shadow-sm sm:p-5", editingId === row.id ? "border-[#3E5E2F] ring-2 ring-[#C6E26A]/50" : "border-[#1E3317]/10")}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[15px] font-bold text-[#1E3317]">{row.farmerName || `#${row.farmerId}`}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {row.crop ? <Badge tone="green">{row.crop}</Badge> : null}
+                        {row.stage ? <Badge tone="grey">{row.stage}</Badge> : null}
+                      </div>
+                    </div>
+                    {canEdit ? (
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => startEdit(row)} className={buttonClass("secondary", "sm")}>
+                          <Pencil aria-hidden /> {t.common.edit}
+                        </button>
+                        <button type="button" disabled={pending} onClick={() => remove(row)} className={buttonClass("danger", "sm")} aria-label={t.common.remove}>
+                          <Trash2 aria-hidden />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {row.problem ? <p className="mt-3 text-sm font-medium text-[#29332C]">{row.problem}</p> : null}
+                  {row.note ? <p className="mt-1 text-sm leading-6 text-[#5E6B62]">{row.note}</p> : null}
+                  {row.products.length ? (
+                    <ul className="mt-3 flex flex-wrap gap-2">
+                      {row.products.map((product) => (
+                        <li key={product.id} className="inline-flex items-center gap-1.5 rounded-xl border border-[#1E3317]/10 bg-[#FAFBF7] px-2.5 py-1.5 text-xs">
+                          <Package className="h-3.5 w-3.5 text-[#3E5E2F]" />
+                          <span className="font-medium text-[#1E3317]">{product.name}</span>
+                          {product.sku ? <span className="font-mono text-[#5E6B62]">{product.sku}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <p className="mt-3 border-t border-[#1E3317]/8 pt-3 text-xs text-[#5E6B62]">
+                    {fmt(r.addedBy, { name: row.authorName })} · {roleLabel(row.authorRole)}
+                    {savedOn(row.updatedAt, locale) ? ` · ${savedOn(row.updatedAt, locale)}` : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!canEdit && error ? <Notice tone="red">{error}</Notice> : null}
+        </section>
       </div>
     </div>
   );

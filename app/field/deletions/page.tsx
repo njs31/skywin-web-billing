@@ -1,20 +1,17 @@
 import { fieldDeletionRequests } from "@/lib/actions/field-deletions";
 import { DeletionsPanel } from "./deletions-panel";
+import { PageHeader } from "@/components/field/kit";
+import { getFieldLang } from "@/lib/field-lang";
+import { fieldText } from "@/lib/field-i18n";
 
 export const dynamic = "force-dynamic";
 
 export default async function FieldDeletionsPage() {
-  const requests = await fieldDeletionRequests();
+  const [requests, lang] = await Promise.all([fieldDeletionRequests(), getFieldLang()]);
+  const d = fieldText(lang).deletions;
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Account deletion requests</h1>
-        <p className="text-sm text-[#2E4A22]/70">
-          Farmers who tapped &ldquo;Delete my account&rdquo; in the Field app. Nothing is erased until you press
-          Proceed: then their name, phone, address and farm details are removed. Past bills stay for GST
-          under &ldquo;Deleted farmer&rdquo;.
-        </p>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <PageHeader title={d.title} description={d.subtitle} />
       <DeletionsPanel
         requests={requests.map((r) => ({
           id: r.id,

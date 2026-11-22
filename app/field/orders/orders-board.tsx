@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { OrderRefundPanel } from "@/components/field/order-refund-panel";
 import { formatCurrency } from "@/lib/utils";
+import { useFieldLang, useFieldText } from "@/components/field/lang";
+import { fieldLocale, fmt, type FieldText } from "@/lib/field-i18n";
 
 export type OrderView = {
   id: number;
@@ -47,22 +49,16 @@ export type OrderView = {
 
 type Filter = "all" | "open" | "delivered" | "refunded" | "cancelled";
 
-const FILTERS: Array<{ key: Filter; label: string }> = [
-  { key: "all", label: "All" },
-  { key: "open", label: "In progress" },
-  { key: "delivered", label: "Delivered" },
-  { key: "refunded", label: "Refunded" },
-  { key: "cancelled", label: "Cancelled" },
-];
-
 /** One status for the order, most important first. */
-function orderState(o: OrderView) {
-  if (o.status === "cancelled") return { key: "cancelled" as const, label: "Cancelled", tone: "red" as const };
-  if (o.refunded > 0 && o.refunded + 0.5 >= o.paid) return { key: "refunded" as const, label: "Refunded", tone: "amber" as const };
-  if (o.refunded > 0) return { key: "refunded" as const, label: "Partly refunded", tone: "amber" as const };
-  if (o.stage === "Delivered") return { key: "delivered" as const, label: "Delivered", tone: "green" as const };
-  if (o.stage) return { key: "open" as const, label: o.stage, tone: "blue" as const };
-  return { key: "open" as const, label: o.waybill ? "Booked with Delhivery" : "Paid · to dispatch", tone: "lime" as const };
+function orderState(o: OrderView, t?: FieldText) {
+  const x = t?.orders;
+  const stage = (s: string) => (t?.stages as Record<string, string> | undefined)?.[s] ?? s;
+  if (o.status === "cancelled") return { key: "cancelled" as const, label: x?.stCancelled ?? "Cancelled", tone: "red" as const };
+  if (o.refunded > 0 && o.refunded + 0.5 >= o.paid) return { key: "refunded" as const, label: x?.stRefunded ?? "Refunded", tone: "amber" as const };
+  if (o.refunded > 0) return { key: "refunded" as const, label: x?.stPartRefunded ?? "Partly refunded", tone: "amber" as const };
+  if (o.stage === "Delivered") return { key: "delivered" as const, label: stage("Delivered"), tone: "green" as const };
+  if (o.stage) return { key: "open" as const, label: stage(o.stage), tone: "blue" as const };
+  return { key: "open" as const, label: o.waybill ? (x?.stBooked ?? "Booked with Delhivery") : (x?.stToDispatch ?? "Paid · to dispatch"), tone: "lime" as const };
 }
 
 const TONES = {
@@ -73,14 +69,9 @@ const TONES = {
   lime: "bg-[#EEF6CF] text-[#3E5E2F] ring-[#3E5E2F]/15",
 };
 
-const dateFmt = new Intl.DateTimeFormat("en-IN", {
-  timeZone: "Asia/Kolkata",
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
+function dateFmt(locale: string) {
+  return new Intl.DateTimeFormat(locale, { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
 
 function phoneLabel(raw: string) {
   const d = raw.replace(/\D/g, "").slice(-10);
@@ -96,6 +87,15 @@ export function OrdersBoard({
   canRefund: boolean;
   stats: { todayCount: number; todayTotal: number; monthCount: number; monthTotal: number };
 }) {
+  const t = useFieldText();
+  const x = t.orders;
+  const FILTERS: Array<{ key: Filter; label: string }> = [
+    { key: "all", label: x.filterAll },
+    { key: "open", label: x.filterOpen },
+    { key: "delivered", label: x.filterDelivered },
+    { key: "refunded", label: x.filterRefunded },
+    { key: "cancelled", label: x.filterCancelled },
+  ];
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
 
@@ -123,33 +123,30 @@ export function OrdersBoard({
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#3E5E2F]">SkyWin Field</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#1E3317]">Orders</h1>
-          <p className="mt-1 max-w-xl text-sm text-[#5E6B62]">
-            Every order paid in the Field app. Refund part of an order or cancel it here; refunds go back to the
-            customer through Razorpay.
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#3E5E2F]">{x.eyebrow}</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#1E3317] sm:text-[28px]">{x.title}</h1>
+          <p className="mt-1 max-w-xl text-sm text-[#5E6B62]">{x.subtitle}</p>
         </div>
         <label className="relative block w-full md:w-80">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5E6B62]" aria-hidden />
-          <span className="sr-only">Search orders</span>
+          <span className="sr-only">{x.searchPh}</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Order, farmer, phone, product, AWB…"
+            placeholder={x.searchPh}
             className="h-11 w-full rounded-xl border border-[#1E3317]/10 bg-white pl-9 pr-3 text-sm text-[#1E3317] shadow-sm outline-none placeholder:text-[#5E6B62]/70 focus:border-[#3E5E2F]/40 focus:ring-2 focus:ring-[#B8D94A]/40"
           />
         </label>
       </header>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={<ShoppingBag className="h-4 w-4" />} label="Today" value={String(stats.todayCount)} sub={stats.todayCount === 1 ? "order" : "orders"} />
-        <Stat icon={<Wallet className="h-4 w-4" />} label="Collected today" value={formatCurrency(stats.todayTotal)} sub="invoice value" />
-        <Stat icon={<CalendarDays className="h-4 w-4" />} label="This month" value={String(stats.monthCount)} sub={stats.monthCount === 1 ? "order" : "orders"} />
-        <Stat icon={<IndianRupee className="h-4 w-4" />} label="Month value" value={formatCurrency(stats.monthTotal)} sub="invoice value" highlight />
+        <Stat icon={<ShoppingBag className="h-4 w-4" />} label={x.statToday} value={String(stats.todayCount)} sub={stats.todayCount === 1 ? x.order : x.orders} />
+        <Stat icon={<Wallet className="h-4 w-4" />} label={x.statCollected} value={formatCurrency(stats.todayTotal)} sub={x.invoiceValue} />
+        <Stat icon={<CalendarDays className="h-4 w-4" />} label={x.statMonth} value={String(stats.monthCount)} sub={stats.monthCount === 1 ? x.order : x.orders} />
+        <Stat icon={<IndianRupee className="h-4 w-4" />} label={x.statMonthValue} value={formatCurrency(stats.monthTotal)} sub={x.invoiceValue} highlight />
       </section>
 
-      <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" aria-label="Filter orders">
+      <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" aria-label={x.title}>
         {FILTERS.map((f) => {
           const active = filter === f.key;
           return (
@@ -181,12 +178,10 @@ export function OrdersBoard({
         <div className="rounded-2xl border border-dashed border-[#1E3317]/15 bg-white px-6 py-14 text-center">
           <ClipboardList className="mx-auto h-8 w-8 text-[#3E5E2F]/60" aria-hidden />
           <p className="mt-3 text-sm font-semibold text-[#1E3317]">
-            {orders.length === 0 ? "No orders yet" : "No orders match"}
+            {orders.length === 0 ? x.empty : x.noMatch}
           </p>
           <p className="mx-auto mt-1 max-w-sm text-sm text-[#5E6B62]">
-            {orders.length === 0
-              ? "An order appears here as soon as a farmer pays in the app."
-              : "Try another search or filter."}
+            {orders.length === 0 ? x.emptyBody : x.noMatchBody}
           </p>
         </div>
       ) : (
@@ -236,7 +231,10 @@ function Stat({
 }
 
 function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean }) {
-  const state = orderState(order);
+  const t = useFieldText();
+  const x = t.orders;
+  const locale = fieldLocale(useFieldLang());
+  const state = orderState(order, t);
   const cancelled = order.status === "cancelled";
   const goodsTotal = order.goods.reduce((sum, g) => sum + g.amount, 0);
   // Line amounts are before GST; the rest of the invoice total is GST (and any round-off).
@@ -252,11 +250,11 @@ function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean 
               {state.label}
             </span>
           </div>
-          <p className="mt-0.5 text-xs text-[#5E6B62]">{dateFmt.format(new Date(order.date))}</p>
+          <p className="mt-0.5 text-xs text-[#5E6B62]">{dateFmt(locale).format(new Date(order.date))}</p>
         </div>
         <div className="flex items-center justify-between gap-4 sm:justify-end">
         <div className="sm:text-right">
-          <p className="text-xs text-[#5E6B62]">Paid</p>
+          <p className="text-xs text-[#5E6B62]">{x.paid}</p>
           <p className={`text-lg font-bold tabular-nums ${cancelled ? "text-[#5E6B62] line-through" : "text-[#1E3317]"}`}>
             {formatCurrency(order.paid)}
           </p>
@@ -274,11 +272,11 @@ function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean 
       <div className="grid gap-0 md:grid-cols-[minmax(0,1.35fr)_minmax(18rem,1fr)]">
         <section className="border-b border-[#1E3317]/8 px-5 py-4 md:border-b-0 md:border-r">
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#5E6B62]">
-            <Package className="h-3.5 w-3.5" aria-hidden /> Items
-            <span className="ml-auto font-normal normal-case tracking-normal">before GST</span>
+            <Package className="h-3.5 w-3.5" aria-hidden /> {x.items}
+            <span className="ml-auto font-normal normal-case tracking-normal">{x.beforeGst}</span>
           </p>
           {order.goods.length === 0 ? (
-            <p className="mt-3 text-sm text-[#5E6B62]">No product lines on this invoice.</p>
+            <p className="mt-3 text-sm text-[#5E6B62]">{x.noLines}</p>
           ) : (
             <ul className="mt-3 divide-y divide-[#1E3317]/8">
               {order.goods.map((g, i) => (
@@ -287,7 +285,7 @@ function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean 
                     <p className="text-sm font-medium text-[#1E3317]">{g.name}</p>
                     <p className="mt-0.5 text-xs text-[#5E6B62]">
                       <span className="mr-2 inline-flex rounded-md bg-[#EDF2E7] px-1.5 py-px font-semibold text-[#3E5E2F]">× {g.qty}</span>
-                      {[g.batch ? `Batch ${g.batch}` : "", g.expiry ? `Exp ${g.expiry}` : ""].filter(Boolean).join(" · ")}
+                      {[g.batch ? fmt(x.batch, { b: g.batch }) : "", g.expiry ? fmt(x.exp, { d: g.expiry }) : ""].filter(Boolean).join(" · ")}
                     </p>
                   </div>
                   <p className="shrink-0 text-sm font-semibold tabular-nums text-[#29332C]">{formatCurrency(g.amount)}</p>
@@ -297,30 +295,30 @@ function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean 
           )}
           <dl className="mt-3 space-y-1.5 rounded-xl bg-[#F7F9F3] px-4 py-3 text-sm">
             <div className="flex justify-between gap-4">
-              <dt className="text-[#5E6B62]">Products</dt>
+              <dt className="text-[#5E6B62]">{x.products}</dt>
               <dd className="tabular-nums text-[#29332C]">{formatCurrency(goodsTotal)}</dd>
             </div>
             {order.deliveryCharge > 0 ? (
               <div className="flex justify-between gap-4">
-                <dt className="text-[#5E6B62]">Delivery</dt>
+                <dt className="text-[#5E6B62]">{x.delivery}</dt>
                 <dd className="tabular-nums text-[#29332C]">{formatCurrency(order.deliveryCharge)}</dd>
               </div>
             ) : null}
             {gst > 0.004 ? (
               <div className="flex justify-between gap-4">
-                <dt className="text-[#5E6B62]">GST</dt>
+                <dt className="text-[#5E6B62]">{x.gst}</dt>
                 <dd className="tabular-nums text-[#29332C]">{formatCurrency(gst)}</dd>
               </div>
             ) : null}
             <div className="flex justify-between gap-4 border-t border-[#1E3317]/10 pt-1.5 font-semibold">
-              <dt className="text-[#1E3317]">Invoice total</dt>
+              <dt className="text-[#1E3317]">{x.invoiceTotal}</dt>
               <dd className="tabular-nums text-[#1E3317]">{formatCurrency(order.total)}</dd>
             </div>
           </dl>
         </section>
 
         <section className="space-y-4 px-5 py-4">
-          <Info icon={<UserRound className="h-4 w-4" />} label="Farmer">
+          <Info icon={<UserRound className="h-4 w-4" />} label={x.farmer}>
             <p className="font-semibold text-[#1E3317]">{order.farmerName || "—"}</p>
             {order.farmerPhone ? (
               <a href={`tel:+91${order.farmerPhone.replace(/\D/g, "").slice(-10)}`} className="inline-flex items-center gap-1 text-xs font-medium text-[#245B3E] hover:underline">
@@ -329,34 +327,34 @@ function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean 
               </a>
             ) : null}
             <p className="mt-0.5 text-xs text-[#5E6B62]">
-              {order.placedBy ? `Ordered by officer ${order.placedBy}` : "Ordered by the farmer in the app"}
+              {order.placedBy ? fmt(x.byOfficer, { name: order.placedBy }) : x.byFarmer}
             </p>
           </Info>
 
-          <Info icon={<CreditCard className="h-4 w-4" />} label="Razorpay payment">
-            {order.paymentId ? <CopyText text={order.paymentId} /> : <p className="text-sm text-[#5E6B62]">No payment id stored</p>}
+          <Info icon={<CreditCard className="h-4 w-4" />} label={x.payment}>
+            {order.paymentId ? <CopyText text={order.paymentId} /> : <p className="text-sm text-[#5E6B62]">{x.noPayment}</p>}
           </Info>
 
-          <Info icon={<Truck className="h-4 w-4" />} label="Delivery">
+          <Info icon={<Truck className="h-4 w-4" />} label={x.deliveryInfo}>
             {order.trackUrl ? (
               <a href={order.trackUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#245B3E] hover:underline">
                 Delhivery {order.waybill}
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
               </a>
             ) : (
-              <p className="text-sm text-[#5E6B62]">Not booked yet</p>
+              <p className="text-sm text-[#5E6B62]">{x.notBooked}</p>
             )}
-            {order.stage ? <p className="text-xs text-[#5E6B62]">Latest: {order.stage}</p> : null}
+            {order.stage ? <p className="text-xs text-[#5E6B62]">{fmt(x.latest, { s: (t.stages as Record<string, string>)[order.stage] ?? order.stage })}</p> : null}
           </Info>
 
-          <Info icon={<MapPin className="h-4 w-4" />} label="Where it was ordered">
+          <Info icon={<MapPin className="h-4 w-4" />} label={x.where}>
             {order.mapsUrl ? (
               <a href={order.mapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-[#245B3E] hover:underline">
                 {order.gps}
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
               </a>
             ) : (
-              <p className="text-sm text-[#5E6B62]">Location not captured</p>
+              <p className="text-sm text-[#5E6B62]">{x.noLocation}</p>
             )}
           </Info>
         </section>
@@ -391,6 +389,7 @@ function Info({ icon, label, children }: { icon: React.ReactNode; label: string;
 }
 
 function CopyText({ text }: { text: string }) {
+  const t = useFieldText();
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -401,12 +400,12 @@ function CopyText({ text }: { text: string }) {
           setTimeout(() => setCopied(false), 1500);
         });
       }}
-      title="Copy payment id"
+      title={t.common.copy}
       className="group inline-flex max-w-full items-center gap-1.5 rounded-md text-left font-mono text-xs text-[#1E3317] hover:text-[#245B3E]"
     >
       <span className="break-all">{text}</span>
       {copied ? <Check className="h-3.5 w-3.5 shrink-0 text-[#245B3E]" aria-hidden /> : <Copy className="h-3.5 w-3.5 shrink-0 opacity-50 group-hover:opacity-100" aria-hidden />}
-      <span className="sr-only">{copied ? "Copied" : "Copy"}</span>
+      <span className="sr-only">{copied ? t.common.copied : t.common.copy}</span>
     </button>
   );
 }

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useId, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ChevronRight, FolderTree, Layers, Package, Plus } from "lucide-react";
 import { saveFieldCategory } from "@/lib/actions/field";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { EmptyState, PageHeader, SearchBox, StatCard, StatGrid, buttonClass, inputClass, labelClass, Notice } from "@/components/field/kit";
+import { Modal } from "@/components/field/modal";
+import { useFieldText } from "@/components/field/lang";
+import { plural } from "@/lib/field-i18n";
 
 export type CatalogSummary = {
   id: number;
@@ -14,12 +16,12 @@ export type CatalogSummary = {
   title: string;
   subcategories: number;
   skus: number;
+  subNames: string[];
 };
 
-const fieldClass =
-  "mt-1 h-9 rounded-md border-[#1E3317]/15 text-sm focus-visible:ring-[#1E3317]";
-
 export function CatalogIndex({ categories }: { categories: CatalogSummary[] }) {
+  const t = useFieldText();
+  const c = t.catalog;
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const needle = query.trim().toLowerCase();
@@ -27,66 +29,94 @@ export function CatalogIndex({ categories }: { categories: CatalogSummary[] }) {
     (category) =>
       !needle ||
       category.title.toLowerCase().includes(needle) ||
-      category.slug.toLowerCase().includes(needle)
+      category.slug.toLowerCase().includes(needle) ||
+      category.subNames.some((name) => name.toLowerCase().includes(needle))
   );
+  const subs = categories.reduce((sum, cat) => sum + cat.subcategories, 0);
+  const skus = categories.reduce((sum, cat) => sum + cat.skus, 0);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <label className="sr-only" htmlFor="catalog-search">
-          Search categories
-        </label>
-        <Input
-          id="catalog-search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search categories"
-          className="h-9 max-w-sm rounded-md border-[#1E3317]/15"
-        />
-        <Button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="h-9 bg-[#1E3317] hover:bg-[#245B3E] sm:ml-auto"
-        >
-          Add category
-        </Button>
-      </div>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader
+        title={c.title}
+        description={c.subtitle}
+        actions={
+          <button type="button" onClick={() => setOpen(true)} className={buttonClass("primary")}>
+            <Plus aria-hidden /> {c.add}
+          </button>
+        }
+      />
 
-      <div className="overflow-hidden rounded-lg border border-[#1E3317]/10 bg-white">
-        {rows.length === 0 ? (
-          <div className="px-4 py-10 text-center">
-            <p className="text-sm font-medium text-[#1E3317]">
-              {categories.length === 0 ? "No categories yet" : "No matching categories"}
-            </p>
-            <p className="mt-1 text-sm text-[#5E6B62]">
-              {categories.length === 0
-                ? "Add a category, then add subcategories and pin billing products."
-                : "Try another name or slug."}
-            </p>
-          </div>
-        ) : (
-          <ul>
-            {rows.map((category) => (
-              <li key={category.id} className="border-t border-[#1E3317]/10 first:border-t-0">
-                <Link
-                  href={`/field/catalog/${category.slug}`}
-                  className="flex items-center gap-4 px-4 py-3 hover:bg-[#F7F6F1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1E3317]"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-[#1E3317]">{category.title}</span>
-                    <span className="block truncate text-xs text-[#5E6B62]">{category.slug}</span>
+      <StatGrid cols={3}>
+        <StatCard icon={<FolderTree />} label={c.statCategories} value={categories.length} />
+        <StatCard icon={<Layers />} label={c.subcats} value={subs} />
+        <div className="col-span-2 lg:col-span-1">
+          <StatCard icon={<Package />} label={c.statProducts} value={skus.toLocaleString("en-IN")} />
+        </div>
+      </StatGrid>
+
+      <SearchBox value={query} onChange={setQuery} placeholder={c.searchPh} label={c.searchPh} />
+
+      {rows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[#1E3317]/15 bg-white">
+          <EmptyState
+            icon={<FolderTree />}
+            title={categories.length === 0 ? c.empty : c.noMatch}
+            body={categories.length === 0 ? c.emptyBody : t.common.tryAnother}
+            action={
+              categories.length === 0 ? (
+                <button type="button" onClick={() => setOpen(true)} className={buttonClass("primary")}>
+                  <Plus aria-hidden /> {c.add}
+                </button>
+              ) : (
+                <button type="button" onClick={() => setQuery("")} className={buttonClass("secondary")}>
+                  {t.common.clearSearch}
+                </button>
+              )
+            }
+          />
+        </div>
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {rows.map((category) => (
+            <li key={category.id}>
+              <Link
+                href={`/field/catalog/${category.slug}`}
+                className="group flex h-full flex-col rounded-2xl border border-[#1E3317]/10 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#1E3317]/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C6E26A]"
+              >
+                <div className="mb-3 flex items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#EDF2E7] text-base font-bold text-[#3E5E2F]">
+                    {category.title.trim().charAt(0).toUpperCase() || "•"}
                   </span>
-                  <span className="shrink-0 text-right text-xs tabular-nums text-[#5E6B62]">
-                    {category.subcategories} {category.subcategories === 1 ? "subcategory" : "subcategories"}
-                    <span className="mx-1.5 text-[#1E3317]/20">·</span>
-                    {category.skus} {category.skus === 1 ? "SKU" : "SKUs"}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-bold text-[#1E3317]">{category.title}</p>
+                    <p className="truncate text-xs text-[#5E6B62]">/{category.slug}</p>
+                  </div>
+                  <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-[#5E6B62] transition group-hover:translate-x-0.5" />
+                </div>
+                {category.subNames.length ? (
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {category.subNames.map((name) => (
+                      <span key={name} className="max-w-full truncate rounded-full bg-[#F4F3EE] px-2.5 py-0.5 text-[11px] font-medium text-[#3E5E2F]">
+                        {name}
+                      </span>
+                    ))}
+                    {category.subcategories > category.subNames.length ? (
+                      <span className="rounded-full bg-[#F4F3EE] px-2.5 py-0.5 text-[11px] font-medium text-[#5E6B62]">
+                        +{category.subcategories - category.subNames.length}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="mt-auto flex items-center gap-4 border-t border-[#1E3317]/8 pt-3 text-xs text-[#5E6B62]">
+                  <span>{plural(category.subcategories, c.subcategory, c.subcategories)}</span>
+                  <span className="font-semibold text-[#1E3317]">{plural(category.skus, c.product, c.products)}</span>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {open ? <AddCategoryDialog onClose={() => setOpen(false)} /> : null}
     </div>
@@ -94,8 +124,9 @@ export function CatalogIndex({ categories }: { categories: CatalogSummary[] }) {
 }
 
 function AddCategoryDialog({ onClose }: { onClose: () => void }) {
+  const t = useFieldText();
+  const c = t.catalog;
   const router = useRouter();
-  const titleId = useId();
   const [pending, start] = useTransition();
   const [title, setTitle] = useState("");
   const [queries, setQueries] = useState("");
@@ -103,18 +134,10 @@ function AddCategoryDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && !pending) onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, pending]);
-
   function submit() {
     const nextTitle = title.trim();
     if (!nextTitle) {
-      setTitleError("Title is required.");
+      setTitleError(c.titleRequired);
       return;
     }
     setTitleError("");
@@ -126,34 +149,25 @@ function AddCategoryDialog({ onClose }: { onClose: () => void }) {
         router.refresh();
         window.setTimeout(onClose, 500);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not save category");
+        setError(err instanceof Error ? err.message : c.saveFailed);
       }
     });
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
-      <button type="button" aria-label="Close" className="absolute inset-0 bg-[#1E3317]/40" onClick={() => !pending && onClose()} />
+    <Modal title={c.addTitle} description={c.addHelp} onClose={onClose} busy={pending} closeLabel={t.common.close}>
       <form
-        role="dialog"
-        aria-labelledby={titleId}
-        className="relative w-full max-w-md rounded-lg border border-[#1E3317]/10 bg-white p-4 shadow-lg"
+        className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
       >
-        <h2 id={titleId} className="text-base font-semibold text-[#1E3317]">
-          Add category
-        </h2>
-        <p className="mt-1 text-xs leading-5 text-[#5E6B62]">
-          The title becomes the category the Field app shows. Search queries are optional words used to find products.
-        </p>
-        <div className="mt-4">
-          <Label htmlFor="new-category-title">
-            Title <span className="text-[#8E3B34]">*</span>
-          </Label>
-          <Input
+        <div>
+          <label htmlFor="new-category-title" className={labelClass}>
+            {c.fieldTitle} <span className="text-[#8E3B34]">*</span>
+          </label>
+          <input
             id="new-category-title"
             autoFocus
             value={title}
@@ -163,42 +177,40 @@ function AddCategoryDialog({ onClose }: { onClose: () => void }) {
             }}
             aria-invalid={titleError ? true : undefined}
             aria-describedby={titleError ? "new-category-title-error" : undefined}
-            className={fieldClass}
+            className={inputClass}
           />
           {titleError ? (
-            <p id="new-category-title-error" className="mt-1 text-xs text-[#8E3B34]">
+            <p id="new-category-title-error" className="mt-1 text-xs font-medium text-[#8E3B34]">
               {titleError}
             </p>
           ) : null}
         </div>
-        <div className="mt-3">
-          <Label htmlFor="new-category-queries">Search queries</Label>
-          <Input
+        <div>
+          <label htmlFor="new-category-queries" className={labelClass}>
+            {c.fieldQueries} <span className="font-normal text-[#5E6B62]">({t.common.optional})</span>
+          </label>
+          <input
             id="new-category-queries"
             value={queries}
             onChange={(event) => setQueries(event.target.value)}
             placeholder="weeder, harvester"
             aria-describedby="new-category-queries-help"
-            className={fieldClass}
+            className={inputClass}
           />
           <p id="new-category-queries-help" className="mt-1 text-xs text-[#5E6B62]">
-            Separate words with commas. Leave blank if you will pin products by hand.
+            {c.queriesHelp}
           </p>
         </div>
-        {error ? <p className="mt-3 text-sm text-[#8E3B34]">{error}</p> : null}
-        <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={pending}
-            className={saved ? "bg-[#245B3E] hover:bg-[#245B3E]" : "bg-[#1E3317] hover:bg-[#245B3E]"}
-          >
-            {saved ? "Saved" : pending ? "Saving…" : "Add category"}
-          </Button>
+        {error ? <Notice tone="red">{error}</Notice> : null}
+        <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+          <button type="button" disabled={pending} onClick={onClose} className={buttonClass("secondary")}>
+            {t.common.cancel}
+          </button>
+          <button type="submit" disabled={pending} className={buttonClass(saved ? "lime" : "primary")}>
+            {saved ? t.common.saved : pending ? t.common.saving : c.add}
+          </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }

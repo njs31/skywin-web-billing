@@ -1,19 +1,32 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ClipboardList, Leaf, ShoppingBag, Users } from "lucide-react";
 import { getCurrentUser } from "@/lib/actions/auth";
 import { salesTeamDashboard } from "@/lib/queries/sales-team";
 import type { TeamOrderStatus } from "@/lib/sales-team-status";
 import { isSalesManager } from "@/lib/user-roles";
-import { formatCurrency, formatDateTimeIST } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
+import {
+  Badge,
+  EmptyState,
+  MobileCard,
+  PageHeader,
+  Panel,
+  StatCard,
+  StatGrid,
+  buttonClass,
+  inputClass,
+  tableClass,
+  tdClass,
+  thClass,
+  theadClass,
+  trClass,
+  type Tone,
+} from "@/components/field/kit";
+import { getFieldLang } from "@/lib/field-lang";
+import { fieldLocale, fieldText, fmt } from "@/lib/field-i18n";
 
-const STATUSES: Array<TeamOrderStatus | "All"> = [
-  "All",
-  "Paid",
-  "Shipped",
-  "Partly refunded",
-  "Refunded",
-  "Cancelled",
-];
+const STATUSES: Array<TeamOrderStatus | "All"> = ["All", "Paid", "Shipped", "Partly refunded", "Refunded", "Cancelled"];
 
 function phoneLabel(phone: string) {
   const digits = phone.replace(/\D/g, "");
@@ -22,11 +35,11 @@ function phoneLabel(phone: string) {
   return `+91 ${ten.slice(0, 5)} ${ten.slice(5)}`;
 }
 
-function statusClass(status: TeamOrderStatus) {
-  if (status === "Cancelled" || status === "Refunded") return "bg-[#F8E8E6] text-[#8E3B34]";
-  if (status === "Shipped") return "bg-[#E7F0E4] text-[#245B3E]";
-  if (status === "Partly refunded") return "bg-[#F8F1D8] text-[#6B5420]";
-  return "bg-[#EEF1E6] text-[#1E3317]";
+function statusTone(status: TeamOrderStatus): Tone {
+  if (status === "Cancelled" || status === "Refunded") return "red";
+  if (status === "Shipped") return "green";
+  if (status === "Partly refunded") return "amber";
+  return "lime";
 }
 
 export default async function SalesTeamPage({
@@ -38,193 +51,205 @@ export default async function SalesTeamPage({
   if (!user) redirect("/login");
   if (!isSalesManager(user.role) && user.role !== "admin") redirect("/field");
 
+  const lang = await getFieldLang();
+  const tm = fieldText(lang).team;
+  const locale = fieldLocale(lang);
+  const stLabel = (s: string) => (tm as Record<string, string>)[`st_${s}`] ?? s;
+  const when = new Intl.DateTimeFormat(locale, { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
   const params = await searchParams;
   const officerFilter = Number(params.officer || "");
-  const statusFilter = STATUSES.includes(params.status as TeamOrderStatus | "All")
-    ? (params.status as TeamOrderStatus | "All")
-    : "All";
+  const statusFilter = STATUSES.includes(params.status as TeamOrderStatus | "All") ? (params.status as TeamOrderStatus | "All") : "All";
   const query = (params.q || "").trim().toLowerCase();
   const data = await salesTeamDashboard(user.id);
   const orders = data.orders.filter((order) => {
     if (Number.isFinite(officerFilter) && officerFilter > 0 && order.officerId !== officerFilter) return false;
     if (statusFilter !== "All" && order.status !== statusFilter) return false;
     if (!query) return true;
-    return (
-      order.farmer.toLowerCase().includes(query) ||
-      order.invoiceNo.toLowerCase().includes(query) ||
-      order.officerName.toLowerCase().includes(query)
-    );
+    return order.farmer.toLowerCase().includes(query) || order.invoiceNo.toLowerCase().includes(query) || order.officerName.toLowerCase().includes(query);
   });
   const shown = orders.slice(0, 200);
-
-  const cards = [
-    { label: "Field officers", value: String(data.officers.length), sub: "Reporting to you" },
-    { label: "Farmers", value: String(data.farmerCount), sub: "Assigned to your officers" },
-    { label: "Orders", value: String(data.orderCount), sub: formatCurrency(data.amount) },
-    {
-      label: "Open orders",
-      value: String(data.statusCounts.Paid + data.statusCounts.Shipped),
-      sub: `${data.statusCounts.Cancelled} cancelled`,
-    },
-  ];
+  const filteredOfficer = data.officers.find((o) => o.id === officerFilter);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5E6B62]">Sales officer</p>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#1E3317]">{user.name}</h1>
-        <p className="mt-1 text-sm text-[#5E6B62]">
-          Field officers on your team, the farmers assigned to them, and the orders they placed.
-        </p>
-      </div>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader eyebrow={tm.eyebrow} title={user.name} description={tm.subtitle} />
 
-      <section aria-label="Team summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map((card) => (
-          <div key={card.label} className="rounded-lg border border-[#1E3317]/10 bg-white px-4 py-3">
-            <p className="text-xs font-medium text-[#5E6B62]">{card.label}</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-[#1E3317]">{card.value}</p>
-            <p className="mt-1 text-xs text-[#5E6B62]">{card.sub}</p>
-          </div>
-        ))}
-      </section>
+      <StatGrid>
+        <StatCard icon={<Users />} label={tm.statOfficers} value={String(data.officers.length)} sub={tm.statOfficersSub} />
+        <StatCard icon={<Leaf />} label={tm.statFarmers} value={data.farmerCount.toLocaleString("en-IN")} sub={tm.statFarmersSub} />
+        <StatCard dark icon={<ShoppingBag />} label={tm.statOrders} value={String(data.orderCount)} sub={formatCurrency(data.amount)} />
+        <StatCard
+          icon={<ClipboardList />}
+          label={tm.statOpen}
+          value={String(data.statusCounts.Paid + data.statusCounts.Shipped)}
+          sub={fmt(tm.statOpenSub, { n: data.statusCounts.Cancelled })}
+        />
+      </StatGrid>
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-[#1E3317]">Field officers</h2>
-        <div className="overflow-hidden rounded-lg border border-[#1E3317]/10 bg-white">
-          {data.officers.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-[#5E6B62]">No field officers are linked to this login yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-sm">
-                <thead className="border-b border-[#1E3317]/10 text-left text-xs text-[#5E6B62]">
+      <Panel title={tm.officers}>
+        {data.officers.length === 0 ? (
+          <EmptyState icon={<Users />} title={tm.noOfficers} />
+        ) : (
+          <>
+            <div className="hidden overflow-x-auto md:block">
+              <table className={tableClass}>
+                <thead className={theadClass}>
                   <tr>
-                    <th className="px-3 py-2 font-medium">Field officer</th>
-                    <th className="px-3 py-2 font-medium">Mobile</th>
-                    <th className="px-3 py-2 text-right font-medium">Farmers</th>
-                    <th className="px-3 py-2 text-right font-medium">Orders</th>
-                    <th className="px-3 py-2 text-right font-medium">Today</th>
-                    <th className="px-3 py-2 text-right font-medium">Amount</th>
+                    <th className={thClass}>{tm.colOfficer}</th>
+                    <th className={thClass}>{tm.colMobile}</th>
+                    <th className={`${thClass} text-right`}>{tm.colFarmers}</th>
+                    <th className={`${thClass} text-right`}>{tm.colOrders}</th>
+                    <th className={`${thClass} text-right`}>{tm.colToday}</th>
+                    <th className={`${thClass} text-right`}>{tm.colAmount}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.officers.map((officer) => {
                     const on = officerFilter === officer.id;
                     return (
-                      <tr key={officer.id} className="border-t border-[#1E3317]/10">
-                        <td className="px-3 py-2.5">
-                          <Link
-                            href={on ? "/field/team" : `/field/team?officer=${officer.id}`}
-                            className="font-medium text-[#245B3E] hover:underline"
-                          >
+                      <tr key={officer.id} className={`${trClass} ${on ? "bg-[#F4F8EF]" : ""}`}>
+                        <td className={tdClass}>
+                          <Link href={on ? "/field/team" : `/field/team?officer=${officer.id}`} className="font-semibold text-[#245B3E] hover:underline">
                             {officer.name}
                           </Link>
                         </td>
-                        <td className="px-3 py-2.5">
-                          <a href={`tel:+91${officer.phone.replace(/\D/g, "").slice(-10)}`} className="hover:underline">
+                        <td className={tdClass}>
+                          <a href={`tel:+91${officer.phone.replace(/\D/g, "").slice(-10)}`} className="tabular-nums hover:underline">
                             {phoneLabel(officer.phone)}
                           </a>
                         </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{officer.farmers}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{officer.orders}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{officer.todayOrders}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(officer.amount)}</td>
+                        <td className={`${tdClass} text-right tabular-nums`}>{officer.farmers}</td>
+                        <td className={`${tdClass} text-right tabular-nums`}>{officer.orders}</td>
+                        <td className={`${tdClass} text-right tabular-nums`}>{officer.todayOrders}</td>
+                        <td className={`${tdClass} text-right font-semibold tabular-nums text-[#1E3317]`}>{formatCurrency(officer.amount)}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-      </section>
+            <div className="md:hidden">
+              {data.officers.map((officer) => (
+                <MobileCard key={officer.id} href={officerFilter === officer.id ? "/field/team" : `/field/team?officer=${officer.id}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[#1E3317]">{officer.name}</p>
+                      <p className="text-xs text-[#5E6B62]">
+                        {phoneLabel(officer.phone)} · {officer.farmers} {tm.colFarmers}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold tabular-nums text-[#1E3317]">{formatCurrency(officer.amount)}</p>
+                      <p className="text-xs text-[#5E6B62]">
+                        {officer.orders} {tm.colOrders} · {officer.todayOrders} {tm.colToday}
+                      </p>
+                    </div>
+                  </div>
+                </MobileCard>
+              ))}
+            </div>
+          </>
+        )}
+      </Panel>
 
-      <section>
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-          <h2 className="text-sm font-semibold text-[#1E3317]">Orders</h2>
+      <Panel
+        title={tm.orders}
+        description={
+          filteredOfficer ? (
+            <>
+              {fmt(tm.filtered, { name: filteredOfficer.name })} ·{" "}
+              <Link href="/field/team" className="font-semibold text-[#245B3E] hover:underline">
+                {tm.clearFilter}
+              </Link>
+            </>
+          ) : undefined
+        }
+        actions={
           <form method="get" className="flex flex-wrap items-center gap-2" action="/field/team">
-            {Number.isFinite(officerFilter) && officerFilter > 0 ? (
-              <input type="hidden" name="officer" value={String(officerFilter)} />
-            ) : null}
-            <label className="text-xs text-[#5E6B62]">
-              Status
-              <select
-                name="status"
-                defaultValue={statusFilter}
-                className="ml-2 h-9 rounded-md border border-[#1E3317]/15 bg-white px-2 text-sm text-[#1E3317]"
-              >
-                {STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                    {status !== "All" ? ` (${data.statusCounts[status]})` : ""}
-                  </option>
-                ))}
-              </select>
+            {Number.isFinite(officerFilter) && officerFilter > 0 ? <input type="hidden" name="officer" value={String(officerFilter)} /> : null}
+            <label className="sr-only" htmlFor="team-status">
+              {tm.status}
             </label>
-            <input
-              name="q"
-              defaultValue={params.q || ""}
-              placeholder="Farmer or invoice"
-              className="h-9 rounded-md border border-[#1E3317]/15 bg-white px-3 text-sm"
-            />
-            <button
-              type="submit"
-              className="h-9 rounded-md bg-[#1E3317] px-3 text-sm font-medium text-white"
-            >
-              Show
+            <select id="team-status" name="status" defaultValue={statusFilter} className={`${inputClass} h-9 w-auto`}>
+              {STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {stLabel(status)}
+                  {status !== "All" ? ` (${data.statusCounts[status]})` : ""}
+                </option>
+              ))}
+            </select>
+            <input name="q" defaultValue={params.q || ""} placeholder={tm.searchPh} aria-label={tm.searchPh} className={`${inputClass} h-9 w-44`} />
+            <button type="submit" className={buttonClass("primary", "sm")}>
+              {tm.show}
             </button>
           </form>
-        </div>
-        <div className="overflow-hidden rounded-lg border border-[#1E3317]/10 bg-white">
-          {shown.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-[#5E6B62]">No orders match this view.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead className="border-b border-[#1E3317]/10 text-left text-xs text-[#5E6B62]">
+        }
+      >
+        {shown.length === 0 ? (
+          <EmptyState icon={<ClipboardList />} title={tm.noOrders} />
+        ) : (
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className={tableClass}>
+                <thead className={theadClass}>
                   <tr>
-                    <th className="px-3 py-2 font-medium">When</th>
-                    <th className="px-3 py-2 font-medium">Invoice</th>
-                    <th className="px-3 py-2 font-medium">Field officer</th>
-                    <th className="px-3 py-2 font-medium">Farmer</th>
-                    <th className="px-3 py-2 font-medium">Payment</th>
-                    <th className="px-3 py-2 text-right font-medium">Amount</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className={thClass}>{tm.colWhen}</th>
+                    <th className={thClass}>{tm.colInvoice}</th>
+                    <th className={thClass}>{tm.colOfficer}</th>
+                    <th className={thClass}>{tm.colFarmer}</th>
+                    <th className={`${thClass} text-right`}>{tm.colAmount}</th>
+                    <th className={thClass}>{tm.colStatus}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {shown.map((order) => (
-                    <tr key={order.id} className="border-t border-[#1E3317]/10 align-top">
-                      <td className="px-3 py-2.5 whitespace-nowrap text-[#5E6B62]">{formatDateTimeIST(order.date)}</td>
-                      <td className="px-3 py-2.5">
-                        <p className="font-medium text-[#1E3317]">{order.invoiceNo}</p>
+                    <tr key={order.id} className={trClass}>
+                      <td className={`${tdClass} whitespace-nowrap text-[#5E6B62]`}>{when.format(new Date(order.date))}</td>
+                      <td className={tdClass}>
+                        <p className="font-semibold text-[#1E3317]">{order.invoiceNo}</p>
                         {order.lines.length > 0 ? (
-                          <p className="mt-1 max-w-xs text-xs text-[#5E6B62]">
-                            {order.lines.map((line) => `${line.name} × ${line.qty}`).join(", ")}
-                          </p>
+                          <p className="mt-1 max-w-xs text-xs text-[#5E6B62]">{order.lines.map((line) => `${line.name} × ${line.qty}`).join(", ")}</p>
                         ) : null}
                       </td>
-                      <td className="px-3 py-2.5">{order.officerName}</td>
-                      <td className="px-3 py-2.5">{order.farmer}</td>
-                      <td className="px-3 py-2.5 capitalize">{order.paymentMode}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(order.amount)}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(order.status)}`}>
-                          {order.status}
-                        </span>
+                      <td className={tdClass}>{order.officerName}</td>
+                      <td className={tdClass}>
+                        <p>{order.farmer}</p>
+                        <p className="text-xs uppercase text-[#5E6B62]">{order.paymentMode}</p>
+                      </td>
+                      <td className={`${tdClass} text-right font-semibold tabular-nums text-[#1E3317]`}>{formatCurrency(order.amount)}</td>
+                      <td className={tdClass}>
+                        <Badge tone={statusTone(order.status)}>{stLabel(order.status)}</Badge>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
-          {orders.length > shown.length ? (
-            <p className="border-t border-[#1E3317]/10 px-3 py-2 text-xs text-[#5E6B62]">
-              Showing the latest {shown.length} of {orders.length} orders.
-            </p>
-          ) : null}
-        </div>
-      </section>
+            <div className="lg:hidden">
+              {shown.map((order) => (
+                <MobileCard key={order.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[#1E3317]">{order.farmer}</p>
+                      <p className="text-xs text-[#5E6B62]">
+                        {order.invoiceNo} · {order.officerName} · {when.format(new Date(order.date))}
+                      </p>
+                    </div>
+                    <div className="space-y-1 text-right">
+                      <p className="font-bold tabular-nums text-[#1E3317]">{formatCurrency(order.amount)}</p>
+                      <Badge tone={statusTone(order.status)}>{stLabel(order.status)}</Badge>
+                    </div>
+                  </div>
+                </MobileCard>
+              ))}
+            </div>
+          </>
+        )}
+        {orders.length > shown.length ? (
+          <p className="border-t border-[#1E3317]/8 bg-[#FAFBF7] px-4 py-2 text-xs text-[#5E6B62]">{fmt(tm.showingLatest, { shown: shown.length, total: orders.length })}</p>
+        ) : null}
+      </Panel>
     </div>
   );
 }
