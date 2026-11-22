@@ -2,8 +2,7 @@ import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { chargeableGramsForItems } from "@/lib/field-listed";
-import { checkDelhiveryPincode } from "@/lib/delivery/delhivery";
-import { calculateManualShippingRate, getShippingProvider } from "@/lib/delivery/manual-rates";
+import { quoteFieldDelivery } from "@/lib/field-shipping";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,17 +20,9 @@ export async function GET(req: NextRequest) {
       ? await chargeableGramsForItems(items)
       : Math.max(100, Math.round((Number(req.nextUrl.searchParams.get("kg")) || 1) * 1000));
 
-    // The customer pays the SkyWin rate table (Shipping dashboard → Rates), whichever courier
-    // carries the parcel. With Delhivery as the courier, the PIN must also be one they serve.
-    const provider = await getShippingProvider();
-    if (provider === "delhivery") {
-      const service = await checkDelhiveryPincode(pin).catch(() => null);
-      if (service && !service.prepaid) {
-        return fieldJson({ error: `Delivery is not available to PIN ${service.pin} yet.` }, 400);
-      }
-    }
-    const quote = await calculateManualShippingRate(pin, grams);
-    return fieldJson({ ...quote, courier: provider === "delhivery" ? "Delhivery" : quote.courier });
+    // Priced by the provider switched on in the Shipping module (Delhivery or the rate sheet).
+    const quote = await quoteFieldDelivery(pin, grams);
+    return fieldJson({ ...quote, zoneName: quote.zone, transitTime: quote.transitDays });
   } catch (err) {
     return fieldJson({ error: err instanceof Error ? err.message : "Quote failed" }, 400);
   }

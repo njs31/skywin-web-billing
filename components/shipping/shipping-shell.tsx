@@ -100,47 +100,26 @@ export function ShippingShell({
               </div>
             </div>
 
-            {/* Center: Live Method Switch */}
-            <div className="flex items-center gap-3 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200 shadow-inner">
-              <span className="text-xs font-semibold text-slate-500 pl-2 hidden md:inline">
-                Active Provider:
-              </span>
-
-              {/* Manual Button */}
-              <button
-                type="button"
-                onClick={() => handleToggleProvider("manual")}
-                disabled={switching}
-                className={`relative px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${
-                  provider === "manual"
-                    ? "bg-white text-emerald-800 shadow-sm border border-emerald-200 font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {provider === "manual" && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                )}
-                <span>Manual (Rate Sheet)</span>
-              </button>
-
-              {/* Delhivery Button */}
-              <button
-                type="button"
-                onClick={() => handleToggleProvider("delhivery")}
-                disabled={switching}
-                className={`relative px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${
-                  provider === "delhivery"
-                    ? "bg-white text-blue-800 shadow-sm border border-blue-200 font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {provider === "delhivery" && (
-                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                )}
-                <span>Delhivery API</span>
-              </button>
-
-              {switching && <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-400 mr-1" />}
+            {/* Center: delivery method switches (exactly one is on) */}
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="hidden text-xs font-semibold text-slate-500 md:inline">Delivery method:</span>
+              <ProviderSwitch
+                label="Delhivery fees"
+                hint="Customers pay Delhivery's live rate"
+                on={provider === "delhivery"}
+                busy={switching}
+                tone="blue"
+                onChange={(next) => handleToggleProvider(next ? "delhivery" : "manual")}
+              />
+              <ProviderSwitch
+                label="Delivery fees (rate sheet)"
+                hint="Customers pay the Rates tab prices"
+                on={provider === "manual"}
+                busy={switching}
+                tone="emerald"
+                onChange={(next) => handleToggleProvider(next ? "manual" : "delhivery")}
+              />
+              {switching && <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-400" />}
             </div>
 
             {/* Right: User / Links */}
@@ -259,5 +238,49 @@ export function ShippingShell({
         </p>
       </footer>
     </div>
+  );
+}
+
+/** One on/off switch; turning it on turns the other method off. */
+function ProviderSwitch({
+  label,
+  hint,
+  on,
+  busy,
+  tone,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  on: boolean;
+  busy: boolean;
+  tone: "blue" | "emerald";
+  onChange: (next: boolean) => void;
+}) {
+  const track = on ? (tone === "blue" ? "bg-blue-600" : "bg-emerald-600") : "bg-slate-300";
+  return (
+    <label
+      title={hint}
+      className={`flex cursor-pointer select-none items-center gap-2 rounded-xl px-2.5 py-1.5 transition-colors ${
+        on ? "bg-white shadow-sm ring-1 ring-slate-200" : "hover:bg-white/70"
+      } ${busy ? "pointer-events-none opacity-60" : ""}`}
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        disabled={busy || on}
+        onClick={() => onChange(!on)}
+        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-slate-400 disabled:cursor-default ${track}`}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+            on ? "translate-x-[18px]" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+      <span className={`text-xs font-semibold ${on ? "text-slate-900" : "text-slate-500"}`}>{label}</span>
+    </label>
   );
 }

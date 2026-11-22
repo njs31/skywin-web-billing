@@ -7,17 +7,58 @@
  * at the products' GST rates (lib/delivery/rate-engine.ts splitShippingByGst).
  */
 import { chargeableGramsForItems } from "@/lib/field-listed";
-import { calculateManualShippingRate } from "@/lib/delivery/manual-rates";
+import { calculateManualShippingRate, getShippingProvider } from "@/lib/delivery/manual-rates";
+import { quoteDelhivery } from "@/lib/delivery/delhivery";
 import { splitShippingByGst } from "@/lib/delivery/rate-engine";
 import { getRazorpayOrder } from "@/lib/payments/razorpay";
 
 /** Services Accounting Code for courier services. */
 export const SHIPPING_SAC = "996812";
 
+/**
+ * The delivery fee the customer pays, from the provider switched on in the Shipping module:
+ * Delhivery → Delhivery's live fee ("Delhivery fees"); Manual → the rate sheet ("Delivery fees").
+ * If Delhivery's price service is down, the rate sheet is used and labelled as such; a PIN
+ * Delhivery does not serve is refused.
+ */
+export async function quoteFieldDelivery(pin: string, grams: number) {
+  const weight = Math.max(100, Math.round(grams || 100));
+  if ((await getShippingProvider()) === "delhivery") {
+    try {
+      const live = await quoteDelhivery(pin, weight);
+      return {
+        provider: "delhivery" as const,
+        label: "Delhivery fees",
+        amount: live.amount,
+        pin: live.pin,
+        weightGrams: live.weightGrams,
+        transitDays: "3 - 5 Days",
+        zone: "Delhivery",
+        courier: "Delhivery",
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/does not deliver|valid 6-digit/i.test(message)) throw new Error(`Delivery is not available to PIN ${pin} yet.`);
+      console.warn("[field-shipping] Delhivery price unavailable, using the rate sheet:", message);
+    }
+  }
+  const manual = await calculateManualShippingRate(pin, weight);
+  return {
+    provider: "manual" as const,
+    label: "Delivery fees",
+    amount: manual.amount,
+    pin: manual.pin,
+    weightGrams: manual.weightGrams,
+    transitDays: manual.transitDays,
+    zone: manual.zoneName,
+    courier: "SkyWin Delivery",
+  };
+}
+
 export async function quoteOrderShipping(pin: string, items: Array<{ productId: number; qty: number }>) {
   const grams = await chargeableGramsForItems(items);
-  const quote = await calculateManualShippingRate(pin, grams || 100);
-  return { amount: quote.amount, pin: quote.pin, zone: quote.zoneName, grams: quote.weightGrams };
+  const quote = await quoteFieldDelivery(pin, grams || 100);
+  return { amount: quote.amount, pin: quote.pin, zone: quote.zone, grams: quote.weightGrams, provider: quote.provider };
 }
 
 /** Delivery charge and PIN the server priced for a Razorpay order, if it priced one. */
