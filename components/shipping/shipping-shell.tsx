@@ -16,7 +16,7 @@ import {
   RefreshCw,
   Sparkles,
 } from "lucide-react";
-import { logout } from "@/lib/actions/auth";
+import { signOutEverywhere } from "@/lib/sso-client";
 import type { ShippingProviderMode } from "@/lib/delivery/shipping-constants";
 
 export function ShippingShell({
@@ -81,9 +81,9 @@ export function ShippingShell({
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex min-h-16 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2">
             {/* Brand */}
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-600 to-green-800 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
                 <Truck className="h-5 w-5" />
               </div>
@@ -100,30 +100,30 @@ export function ShippingShell({
               </div>
             </div>
 
-            {/* Center: delivery method switches (exactly one is on) */}
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <span className="hidden text-xs font-semibold text-slate-500 md:inline">Delivery method:</span>
-              <ProviderSwitch
-                label="Delhivery"
-                hint="Customers pay Delhivery's live rate"
-                on={provider === "delhivery"}
-                busy={switching}
-                tone="blue"
-                onChange={(next) => handleToggleProvider(next ? "delhivery" : "manual")}
-              />
-              <ProviderSwitch
-                label="Delivery"
-                hint="Customers pay the Rates tab prices"
-                on={provider === "manual"}
-                busy={switching}
-                tone="emerald"
-                onChange={(next) => handleToggleProvider(next ? "manual" : "delhivery")}
-              />
-              {switching && <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-            </div>
+            {/* Right: delivery method, links, user (moves under the brand when there is no room) */}
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+              {/* Delivery method switches (exactly one is on) */}
+              <div className="flex shrink-0 items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1.5 sm:gap-2 sm:px-3">
+                <span className="hidden whitespace-nowrap text-xs font-semibold text-slate-500 sm:inline">Delivery method:</span>
+                <ProviderSwitch
+                  label="Delhivery"
+                  hint="Customers pay Delhivery's live rate"
+                  on={provider === "delhivery"}
+                  busy={switching}
+                  tone="blue"
+                  onChange={(next) => handleToggleProvider(next ? "delhivery" : "manual")}
+                />
+                <ProviderSwitch
+                  label="Delivery"
+                  hint="Customers pay the Rates tab prices"
+                  on={provider === "manual"}
+                  busy={switching}
+                  tone="emerald"
+                  onChange={(next) => handleToggleProvider(next ? "manual" : "delhivery")}
+                />
+                {switching && <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+              </div>
 
-            {/* Right: User / Links */}
-            <div className="flex items-center gap-3">
               <Link
                 href={billingHref}
                 className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 hover:text-slate-900 transition-colors"
@@ -142,10 +142,7 @@ export function ShippingShell({
 
               <button
                 type="button"
-                onClick={async () => {
-                  await logout();
-                  router.push("/login");
-                }}
+                onClick={() => void signOutEverywhere()}
                 title="Sign out"
                 className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
               >
