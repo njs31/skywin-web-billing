@@ -21,6 +21,9 @@ export async function GET(req: NextRequest) {
     const cleanPhone = rawPhone.replace(/\D/g, "").slice(-10);
     const orderId = who ? "" : req.nextUrl.searchParams.get("orderId") || "";
 
+    // Never list every phone's feed: a request must name whose notifications it wants.
+    if (!cleanPhone && !orderId) return fieldJson({ notifications: [] });
+
     let query = db.select().from(orderNotifications).$dynamic();
 
     if (cleanPhone && orderId) {
@@ -45,6 +48,7 @@ export async function GET(req: NextRequest) {
         title: r.title,
         body: r.body,
         checkpoint: r.checkpoint,
+        url: r.url || (r.orderId ? `/order/${r.orderId}` : null),
         at: r.createdAt.getTime(),
         date: r.createdAt.toISOString(),
       })),

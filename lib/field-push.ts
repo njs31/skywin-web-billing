@@ -4,7 +4,7 @@
  * - Sends to every device registered for a phone, in batches of 100.
  * - Removes tokens Expo reports as DeviceNotRegistered (app uninstalled or signed out).
  * - Farmers get Tamil or English from their saved language.
- * - Order messages are also saved to the in-app notification feed.
+ * - Every message is also saved to the phone's in-app notification feed (unless feed: false).
  * - Never throws: a failed push must not fail the order, refund or save that triggered it.
  */
 import { randomUUID } from "node:crypto";
@@ -21,7 +21,7 @@ export type PushMessage = {
   url?: string;
   orderId?: string;
   channel?: PushChannel;
-  /** Save to the in-app order feed (only for order messages). */
+  /** Saved to the in-app notification feed unless false (e.g. the caller already saved it). */
   feed?: boolean;
   checkpoint?: string;
 };
@@ -103,15 +103,16 @@ export async function notifyPhones(phones: Array<string | null | undefined>, mes
 
     for (const phone of unique) {
       const msg = message.ta && (await farmerLanguage(phone)) === "ta" ? message.ta : message.en;
-      if (msg.feed && msg.orderId) {
+      if (msg.feed !== false) {
         await db
           .insert(orderNotifications)
           .values({
             id: `push-${randomUUID()}`,
-            orderId: msg.orderId,
+            orderId: msg.orderId || null,
             phone,
             title: msg.title,
             body: msg.body,
+            url: msg.url || (msg.orderId ? `/order/${msg.orderId}` : null),
             checkpoint: msg.checkpoint || null,
             read: false,
             createdAt: new Date(),
@@ -276,7 +277,8 @@ export function checkpointCopy(orderId: string, checkpoint: string): Bilingual {
   };
   const [enTitle, enBody] = en[checkpoint] ?? ["Order update", `Your order is now: ${checkpoint}.`];
   const [taTitle, taBody] = ta[checkpoint] ?? ["ஆர்டர் நிலை", `உங்கள் ஆர்டர் நிலை: ${checkpoint}.`];
-  const base = { url: `/order/${orderId}`, orderId, checkpoint, channel: "orders" as const };
+  // The checkpoint service saves its own feed row for the farmer, so don't save it twice.
+  const base = { url: `/order/${orderId}`, orderId, checkpoint, channel: "orders" as const, feed: false };
   return {
     en: { ...base, title: `${enTitle} · ${orderId}`, body: enBody },
     ta: { ...base, title: `${taTitle} · ${orderId}`, body: taBody },

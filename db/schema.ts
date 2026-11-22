@@ -1043,9 +1043,12 @@ export const orderNotifications = pgTable(
   "order_notifications",
   {
     id: text("id").primaryKey(),
-    orderId: text("order_id").notNull(),
+    /** Null for pushes that are not about an order (advice, new farmer). */
+    orderId: text("order_id"),
     phone: text("phone"),
     title: text("title").notNull(),
+    /** In-app route the app opens on tap. */
+    url: text("url"),
     body: text("body").notNull(),
     checkpoint: text("checkpoint"),
     read: boolean("read").default(false).notNull(),

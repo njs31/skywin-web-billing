@@ -242,6 +242,7 @@ export async function recordOrderCheckpoint(input: {
     phone: targetPhone || null,
     title: notifCopy.title,
     body: notifCopy.body,
+    url: `/order/${orderId}`,
     checkpoint,
     read: false,
     createdAt: new Date(),
