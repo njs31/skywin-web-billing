@@ -104,7 +104,7 @@ export function ShippingShell({
             <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
               <span className="hidden text-xs font-semibold text-slate-500 md:inline">Delivery method:</span>
               <ProviderSwitch
-                label="Delhivery fees"
+                label="Delhivery"
                 hint="Customers pay Delhivery's live rate"
                 on={provider === "delhivery"}
                 busy={switching}
@@ -112,7 +112,7 @@ export function ShippingShell({
                 onChange={(next) => handleToggleProvider(next ? "delhivery" : "manual")}
               />
               <ProviderSwitch
-                label="Delivery fees (rate sheet)"
+                label="Delivery"
                 hint="Customers pay the Rates tab prices"
                 on={provider === "manual"}
                 busy={switching}
