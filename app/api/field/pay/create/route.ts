@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
-import { cleanMobile, fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-auth";
-import { packCart, priceFieldLines, rewardPointsFor, type FieldLineIn } from "@/lib/field-order-pricing";
+import { cleanMobile, clientIp, fieldIdentity, legacyFieldKeyAllowed, rateLimited } from "@/lib/field-auth";
+import { packCart, priceFieldLines, type FieldLineIn } from "@/lib/field-order-pricing";
+import { officerMayServeFarmer } from "@/lib/field-order-access";
 import { createRazorpayOrder } from "@/lib/payments/razorpay";
 import { placeStockHolds, releaseHolds } from "@/lib/stock-holds";
 import { quoteOrderShipping } from "@/lib/field-shipping";
@@ -42,6 +43,13 @@ export async function POST(req: NextRequest) {
     const receipt = String(body.orderId || `SW-${Date.now()}`).slice(0, 40);
     const farmerPhone = who?.role === "farmer" ? who.phone : cleanMobile(body.farmerPhone);
     const items = Array.isArray(body.items) ? body.items : [];
+    // Each payment start holds stock for 15 minutes, so one phone can't start them endlessly.
+    if (rateLimited(`pay-create:${who?.phone || clientIp(req)}`, 15, 10 * 60 * 1000)) {
+      return fieldJson({ error: "Too many payment attempts. Wait a few minutes and try again." }, 429);
+    }
+    // Checked before payment: billing would refuse (and refund) an order for another officer's farmer.
+    const notYours = await officerMayServeFarmer(who, farmerPhone);
+    if (notYours) return fieldJson({ error: notYours }, 409);
 
     let cart: string | null = null;
     let holdExpiresAt: string | null = null;
@@ -54,8 +62,8 @@ export async function POST(req: NextRequest) {
         const quote = await quoteOrderShipping(shipPin, priced.lines);
         shipping = { amount: quote.amount, pin: quote.pin };
       }
-      const rewards = Math.min(await rewardPointsFor(farmerPhone), priced.minimumTotal);
-      const minimum = Math.max(1, priced.minimumTotal + (shipping?.amount ?? 0) - rewards);
+      // Reward points are not redeemed in the app (nothing deducts them), so the full price is due.
+      const minimum = Math.max(1, priced.minimumTotal + (shipping?.amount ?? 0));
       if (rupees + 1 < minimum) {
         return fieldJson(
           { error: "The order total or delivery charge changed. Go back to the cart, check the total and try again." },

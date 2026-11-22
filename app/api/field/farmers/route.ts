@@ -4,6 +4,7 @@ import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { fieldIdentity } from "@/lib/field-auth";
 import { notifyLater, officerPhoneForCustomer, pushCopy } from "@/lib/field-push";
 import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
+import { farmerAssignment } from "@/lib/field-order-access";
 import {
   assignmentForFarmerPin,
   getFieldFarmer,
@@ -116,6 +117,16 @@ export async function POST(req: NextRequest) {
       if (body.id) {
         const existing = await getFieldFarmer(body.id, scope.officerId);
         if (!existing) return fieldJson({ error: "Farmer not found" }, 404);
+      } else if (body.phone) {
+        // Registering a number that already exists updates that record, so it must not be
+        // another officer's farmer (it would overwrite their details and move them).
+        const existing = await farmerAssignment(body.phone);
+        if (existing?.assignedOfficerId && existing.assignedOfficerId !== scope.officerId) {
+          return fieldJson(
+            { error: "This farmer is already registered with another field officer. Ask the office to move them to you." },
+            409
+          );
+        }
       }
       body.assignedOfficerId = scope.officerId;
       body.assignedOfficerPhone = undefined;

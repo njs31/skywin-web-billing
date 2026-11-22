@@ -108,6 +108,26 @@ export function checkOtpChallenge(
   return { ok: true, phone, role: role as FieldRole };
 }
 
+// Challenges that already signed someone in, until they expire. One server instance, so memory works.
+const usedChallenges = new Map<string, number>();
+
+/**
+ * Marks a verified challenge as used. False when it was used before, so a code that was seen
+ * (or a replayed request) cannot mint a second login token within its 10 minutes.
+ */
+export function consumeOtpChallenge(challenge: string, now = Date.now()): boolean {
+  const parts = String(challenge || "").split(".");
+  const sig = parts[4];
+  const exp = Number(parts[2]);
+  if (!sig || !Number.isFinite(exp)) return false;
+  if (usedChallenges.size > 2000) {
+    for (const [key, until] of usedChallenges) if (until < now) usedChallenges.delete(key);
+  }
+  if (usedChallenges.has(sig)) return false;
+  usedChallenges.set(sig, exp);
+  return true;
+}
+
 export function createFieldToken(identity: Omit<FieldIdentity, "exp">, now = Date.now()): string {
   const body: FieldIdentity = { ...identity, exp: now + TOKEN_TTL_MS };
   const payload = Buffer.from(JSON.stringify(body)).toString("base64url");
@@ -155,7 +175,8 @@ export function rateLimited(key: string, max: number, windowMs: number, now = Da
   recent.push(now);
   hits.set(key, recent);
   if (hits.size > 5000) {
-    for (const [k, times] of hits) if (!times.some((t) => now - t < windowMs)) hits.delete(k);
+    // Keep a day of history so daily limits survive the clean-up.
+    for (const [k, times] of hits) if (!times.some((t) => now - t < 24 * 60 * 60 * 1000)) hits.delete(k);
   }
   return recent.length > max;
 }

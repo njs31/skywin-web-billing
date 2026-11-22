@@ -4,7 +4,7 @@ import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
 import { listFieldOrders, placeFieldOrder } from "@/lib/queries/field-orders";
 import { fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-auth";
-import { priceFieldLines, rewardPointsFor } from "@/lib/field-order-pricing";
+import { priceFieldLines } from "@/lib/field-order-pricing";
 import { getRazorpayPayment } from "@/lib/payments/razorpay";
 import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
 import { refundUnfillableOrder, STOCK_UNAVAILABLE } from "@/lib/stock-holds";
@@ -122,9 +122,9 @@ export async function POST(req: NextRequest) {
       };
       // Delivery the server priced at payment start goes on the invoice.
       shippingAmount = (await shippingOnRazorpayOrder(payment.order_id))?.amount ?? 0;
-      const rewards = Math.min(await rewardPointsFor(farmerPhone.replace(/\D/g, "").slice(-10)), priced.minimumTotal);
-      if (paidAmount + 1 < priced.minimumTotal + shippingAmount - rewards) {
-        console.error("[field/orders] underpaid", { orderId: body.orderId, paymentId, paidAmount, minimum: priced.minimumTotal - rewards });
+      // Reward points are not redeemed in the app (nothing deducts them), so the full price is due.
+      if (paidAmount + 1 < priced.minimumTotal + shippingAmount) {
+        console.error("[field/orders] underpaid", { orderId: body.orderId, paymentId, paidAmount, minimum: priced.minimumTotal + shippingAmount });
         return fieldJson({ success: false, error: "The payment is less than the order total. SkyWin will refund it." }, 402);
       }
     } else if (who || !legacyFieldKeyAllowed()) {

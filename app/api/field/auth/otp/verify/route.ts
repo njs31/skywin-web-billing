@@ -4,6 +4,7 @@ import {
   checkOtpChallenge,
   cleanMobile,
   clientIp,
+  consumeOtpChallenge,
   createFieldToken,
   rateLimited,
   reviewLogin,
@@ -28,7 +29,12 @@ export async function POST(req: NextRequest) {
   }
   const phone = cleanMobile(body.phone);
   const role: FieldRole = body.as === "manager" ? "manager" : body.as === "officer" ? "officer" : "farmer";
-  if (rateLimited(`otp-verify:${phone}`, 8, 10 * 60 * 1000) || rateLimited(`otp-verify-ip:${clientIp(req)}`, 40, 10 * 60 * 1000)) {
+  if (
+    rateLimited(`otp-verify:${phone}`, 8, 10 * 60 * 1000) ||
+    // A daily cap per number keeps guessing a 6-digit code impractical over days, too.
+    rateLimited(`otp-verify-day:${phone}`, 30, 24 * 60 * 60 * 1000) ||
+    rateLimited(`otp-verify-ip:${clientIp(req)}`, 40, 10 * 60 * 1000)
+  ) {
     return fieldJson({ error: "Too many tries. Wait 10 minutes and request a new code." }, 429);
   }
 
@@ -39,6 +45,10 @@ export async function POST(req: NextRequest) {
         ? "This code has expired. Tap Resend for a new one."
         : "Wrong code. Check WhatsApp and try again.";
     return fieldJson({ error }, 401);
+  }
+
+  if (!consumeOtpChallenge(String(body.challenge || ""))) {
+    return fieldJson({ error: "This code was already used. Tap Resend for a new one." }, 401);
   }
 
   let officer: { id: number; name: string; role: string } | null = null;

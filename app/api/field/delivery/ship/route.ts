@@ -2,7 +2,9 @@ import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { createDelhiveryShipment } from "@/lib/delivery/delhivery";
-import { attachFieldWaybill } from "@/lib/queries/field-orders";
+import { attachFieldWaybill, waybillFromNotes } from "@/lib/queries/field-orders";
+import { fieldOrderAccess } from "@/lib/field-order-access";
+import { clientIp, rateLimited } from "@/lib/field-auth";
 import { getShippingProvider } from "@/lib/delivery/manual-rates";
 import { recordOrderCheckpoint } from "@/lib/services/shipping-checkpoints";
 
@@ -29,7 +31,24 @@ export async function POST(req: NextRequest) {
       quantity?: number;
     };
 
-    const orderId = String(body.orderId || "");
+    const orderId = String(body.orderId || "").trim();
+    // Only the farmer or officer who owns this paid order may book its delivery.
+    const access = await fieldOrderAccess(req, orderId);
+    if (!access.ok) return fieldJson({ error: access.error }, access.status);
+    if (access.sale?.status === "cancelled") return fieldJson({ error: "This order is cancelled." }, 400);
+    // Booking twice would create a second shipment (and a second notification): return the first.
+    const existing = waybillFromNotes(access.sale?.notes ?? null);
+    if (existing) {
+      const skywin = /^SWD$/i.test(existing);
+      return fieldJson({
+        waybill: skywin ? `SWD-${orderId}` : existing,
+        status: skywin ? "Order Received" : "Manifested",
+        courier: skywin ? "SkyWin Delivery" : "Delhivery",
+      });
+    }
+    if (rateLimited(`ship:${access.who?.phone || clientIp(req)}`, 20, 10 * 60 * 1000)) {
+      return fieldJson({ error: "Too many requests. Try again in a few minutes." }, 429);
+    }
     const provider = await getShippingProvider();
 
     if (provider === "delhivery") {

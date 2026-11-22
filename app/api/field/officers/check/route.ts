@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
+import { fieldIdentity } from "@/lib/field-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { canSignInAsFieldOfficer } from "@/lib/user-roles";
 
@@ -23,7 +24,10 @@ export async function GET(req: NextRequest) {
   if (!(await verifyFieldApiKey(req))) {
     return fieldJson({ error: "Unauthorized" }, 401);
   }
-  const phone = (req.nextUrl.searchParams.get("phone") ?? "").replace(/\D/g, "").slice(-10);
+  const who = fieldIdentity(req);
+  // With a login token this only answers for the signed-in number (no looking up other staff).
+  if (who?.role === "farmer") return fieldJson({ allowed: false, reason: "not_registered" });
+  const phone = who ? who.phone : (req.nextUrl.searchParams.get("phone") ?? "").replace(/\D/g, "").slice(-10);
   const as = req.nextUrl.searchParams.get("as") === "manager" ? "manager" : "officer";
   if (phone.length !== 10) return fieldJson({ allowed: false, reason: "invalid_phone" });
 

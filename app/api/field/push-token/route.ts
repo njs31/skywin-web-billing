@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { pushTokens } from "@/db/schema";
 import { fieldIdentity } from "@/lib/field-auth";
@@ -24,7 +24,9 @@ export async function POST(req: NextRequest) {
     const platform = body.platform === "ios" ? "ios" : "android";
 
     if (body.remove && token) {
-      await db.delete(pushTokens).where(eq(pushTokens.token, token));
+      await db
+        .delete(pushTokens)
+        .where(who ? and(eq(pushTokens.token, token), eq(pushTokens.phone, who.phone)) : eq(pushTokens.token, token));
       return fieldJson({ ok: true });
     }
 

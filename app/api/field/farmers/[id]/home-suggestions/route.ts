@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { customers } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
+import { fieldIdentity } from "@/lib/field-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-officer-scope";
 import { homeSuggestionsForFarmer } from "@/lib/queries/home-suggestions";
@@ -22,7 +23,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const farmerId = Number(id);
   if (!Number.isInteger(farmerId) || farmerId <= 0) return fieldJson(none);
   try {
-    const viewerPhone = req.nextUrl.searchParams.get("viewer") || "";
+    const who = fieldIdentity(req);
+    if (who?.role === "farmer") {
+      // A farmer only gets suggestions built from their own purchases.
+      const [own] = await db
+        .select({ phone: customers.phone })
+        .from(customers)
+        .where(eq(customers.id, farmerId))
+        .limit(1);
+      if (String(own?.phone ?? "").replace(/\D/g, "").slice(-10) !== who.phone) return fieldJson(none);
+      return fieldJson(await homeSuggestionsForFarmer(farmerId));
+    }
+    const viewerPhone = who ? who.phone : req.nextUrl.searchParams.get("viewer") || "";
     if (viewerPhone.trim()) {
       const viewer = await fieldAppUserByPhone(viewerPhone);
       if (!viewer) return fieldJson(none);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   checkOtpChallenge,
   cleanMobile,
+  consumeOtpChallenge,
   createFieldToken,
   createOtpChallenge,
   rateLimited,
@@ -45,6 +46,14 @@ describe("field OTP challenge", () => {
     const c = createOtpChallenge(phone, "farmer", "123456").split(".");
     c[2] = String(Number(c[2]) + 3600_000);
     assert.equal(checkOtpChallenge(c.join("."), { phone, role: "farmer", code: "123456" }).ok, false);
+  });
+
+  it("signs in only once per challenge", () => {
+    const c = createOtpChallenge(phone, "officer", "246810");
+    assert.equal(checkOtpChallenge(c, { phone, role: "officer", code: "246810" }).ok, true);
+    assert.equal(consumeOtpChallenge(c), true);
+    assert.equal(consumeOtpChallenge(c), false);
+    assert.equal(consumeOtpChallenge(createOtpChallenge(phone, "officer", "246810")), true);
   });
 
   it("does not contain the code", () => {
