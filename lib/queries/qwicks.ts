@@ -135,6 +135,10 @@ export async function validateQwicksStockCheck(body: {
     .from(products)
     .where(eq(products.isActive, true));
 
+  // Stock held for SkyWin Field app payments in progress is not available to Qwicks orders.
+  const { heldTotals } = await import("@/lib/stock-holds");
+  const held = await heldTotals(allProducts.map((p) => p.id));
+
   let canPlaceOrder = true;
   const results = items.map((item) => {
     const targetCode = (item.productCode || item.productId || item.barCode || "").trim();
@@ -156,7 +160,7 @@ export async function validateQwicksStockCheck(body: {
       };
     }
 
-    const availableQty = Math.max(0, Math.floor(toNumber(matched.stockQty)));
+    const availableQty = Math.max(0, Math.floor(toNumber(matched.stockQty) - (held.byProduct.get(matched.id) ?? 0)));
     const reqQty = Number(item.requestedQty) || 1;
     const isAvailable = availableQty >= reqQty;
 

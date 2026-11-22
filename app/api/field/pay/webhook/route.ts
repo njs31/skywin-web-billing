@@ -4,6 +4,7 @@ import { placeFieldOrder } from "@/lib/queries/field-orders";
 import { priceFieldLines, unpackCart } from "@/lib/field-order-pricing";
 import { captureVerifiedPayment } from "@/lib/payments/razorpay";
 import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
+import { refundUnfillableOrder, releaseHolds, STOCK_UNAVAILABLE } from "@/lib/stock-holds";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +38,7 @@ function signatureOk(raw: string, signature: string | null) {
  * closed, lost signal or crashed between paying and saving.
  *
  * Razorpay dashboard → Webhooks: URL https://<billing host>/api/field/pay/webhook,
- * events payment.authorized and payment.captured, secret = RAZORPAY_WEBHOOK_SECRET.
+ * events payment.authorized, payment.captured and payment.failed, secret = RAZORPAY_WEBHOOK_SECRET.
  * Sales are unique by field order id, so this and the app saving the same order never
  * create two sales.
  */
@@ -53,13 +54,18 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  if (event.event !== "payment.authorized" && event.event !== "payment.captured") {
-    return NextResponse.json({ ok: true, ignored: event.event });
-  }
-
   const payment = event.payload?.payment?.entity;
   const notes = (payment?.notes && !Array.isArray(payment.notes) ? payment.notes : {}) as Record<string, string>;
   const orderId = String(notes.fieldOrder || "");
+
+  // A failed payment gives its held stock back at once instead of after the hold expires.
+  if (event.event === "payment.failed") {
+    if (orderId) await releaseHolds(orderId);
+    return NextResponse.json({ ok: true, released: !!orderId });
+  }
+  if (event.event !== "payment.authorized" && event.event !== "payment.captured") {
+    return NextResponse.json({ ok: true, ignored: event.event });
+  }
   if (!payment?.id || !payment.order_id || !orderId) {
     return NextResponse.json({ ok: true, ignored: "not a field order" });
   }
@@ -99,6 +105,18 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ ok: true, saleId: result.saleId, duplicate: result.duplicate });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (STOCK_UNAVAILABLE.test(msg)) {
+      // Paid but the stock is gone: refund once (shared with the app's save), don't retry.
+      const refund = await refundUnfillableOrder({
+        orderId,
+        paymentId: payment.id,
+        phone: String(notes.phone || "").replace(/\D/g, "").slice(-10) || null,
+        reason: msg,
+      });
+      console.warn("[field/pay/webhook] paid order out of stock", { orderId, refunded: refund.refunded });
+      if (refund.refunded || refund.alreadyHandled) return NextResponse.json({ ok: true, refunded: refund.refunded });
+    }
     // A non-2xx makes Razorpay retry for up to 24 hours.
     console.error("[field/pay/webhook] could not save paid order", { orderId, paymentId: payment.id, err });
     return NextResponse.json({ error: "Could not save order" }, { status: 500 });

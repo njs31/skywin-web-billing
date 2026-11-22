@@ -1039,6 +1039,48 @@ export const pushTokens = pgTable(
 );
 
 /** Order push notifications history for mobile app */
+/**
+ * Stock set aside while a Field app customer pays (lib/stock-holds.ts). Every sale (POS,
+ * Field app, Qwicks) treats active holds of other orders as unavailable, so a unit someone
+ * is paying for cannot be sold at the counter, and vice versa.
+ */
+export const stockHolds = pgTable(
+  "stock_holds",
+  {
+    id: serial("id").primaryKey(),
+    /** The field order id (SW-...), also the sale's external_order_id once billed. */
+    holdKey: text("hold_key").notNull(),
+    /** Signed-in phone that started the payment; a new checkout releases its older holds. */
+    ownerPhone: text("owner_phone"),
+    productId: integer("product_id")
+      .references(() => products.id, { onDelete: "cascade" })
+      .notNull(),
+    batchId: integer("batch_id"),
+    qty: numeric("qty", { precision: 14, scale: 2 }).notNull(),
+    status: text("status").notNull().default("active"), // active | consumed | released
+    // With time zone: compared with now() in SQL whatever the server's time zone is.
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    productStatusIdx: index("stock_holds_product_status_idx").on(table.productId, table.status),
+    keyIdx: index("stock_holds_key_idx").on(table.holdKey),
+    ownerIdx: index("stock_holds_owner_idx").on(table.ownerPhone),
+  })
+);
+
+/** Paid field orders that could not be billed (stock gone) and were refunded automatically. */
+export const fieldUnfilledOrders = pgTable("field_unfilled_orders", {
+  orderId: text("order_id").primaryKey(),
+  paymentId: text("payment_id").notNull(),
+  phone: text("phone"),
+  amount: numeric("amount", { precision: 14, scale: 2 }),
+  refundId: text("refund_id"),
+  reason: text("reason"),
+  status: text("status").notNull().default("refunding"), // refunding | refunded | voided | failed
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 /** Account deletions farmers ask for in the Field app; an admin approves before anything is erased. */
 export const fieldDeletionRequests = pgTable(
   "field_deletion_requests",

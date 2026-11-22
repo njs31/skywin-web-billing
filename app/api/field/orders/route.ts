@@ -7,6 +7,7 @@ import { fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-auth";
 import { priceFieldLines, rewardPointsFor } from "@/lib/field-order-pricing";
 import { getRazorpayPayment } from "@/lib/payments/razorpay";
 import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
+import { refundUnfillableOrder, STOCK_UNAVAILABLE } from "@/lib/stock-holds";
 
 /** The farmer hears about an order someone placed for them; their officer hears about every new order. */
 async function notifyNewOrder(saleId: number, amount: number, placedBy: string | undefined) {
@@ -79,6 +80,8 @@ export async function POST(req: NextRequest) {
   }
 
   const who = fieldIdentity(req);
+  // Known once the payment is checked: a paid order that can't be billed is refunded.
+  let paid: { orderId: string; paymentId: string; phone: string } | null = null;
   try {
     const body = await req.json();
     const items = Array.isArray(body.items) ? body.items : [];
@@ -110,6 +113,11 @@ export async function POST(req: NextRequest) {
         return fieldJson({ success: false, error: "Payment is not complete." }, 402);
       }
       paidAmount = (Number(payment.amount) || 0) / 100;
+      paid = {
+        orderId: String(body.orderId || body.id || ""),
+        paymentId,
+        phone: farmerPhone.replace(/\D/g, "").slice(-10),
+      };
       const rewards = Math.min(await rewardPointsFor(farmerPhone.replace(/\D/g, "").slice(-10)), priced.minimumTotal);
       if (paidAmount + 1 < priced.minimumTotal - rewards) {
         console.error("[field/orders] underpaid", { orderId: body.orderId, paymentId, paidAmount, minimum: priced.minimumTotal - rewards });
@@ -140,7 +148,21 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const msg = fieldOrderErrorMessage(err);
     console.error("[field/orders]", msg);
-    const unavailable = /out of stock|insufficient qty|does not belong to this product|requested quantity exceeds/i.test(msg);
+    const unavailable = STOCK_UNAVAILABLE.test(msg);
+    if (unavailable && paid?.orderId) {
+      // Paid, but the stock is gone (the hold ran out and it sold): never keep the money.
+      const refund = await refundUnfillableOrder({ ...paid, reason: msg });
+      return fieldJson(
+        {
+          success: false,
+          refunded: refund.refunded,
+          error: refund.refunded
+            ? "Sorry, an item sold out while you were paying. Your full payment is being refunded (5–7 days). You have not been charged for this order."
+            : "An item sold out while you were paying. SkyWin will refund your payment; please call us if you don't get it.",
+        },
+        409
+      );
+    }
     return fieldJson(
       {
         success: false,

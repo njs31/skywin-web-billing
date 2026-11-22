@@ -8,6 +8,7 @@ import { getBatchBillingRate, inclusiveSalePrice } from "@/lib/gst";
 import { catalogProductIdsForQuery } from "@/lib/field-catalog-match";
 import { getFieldCatalogTree } from "@/lib/queries/field-catalog";
 import { fieldImageUrl } from "@/lib/queries/field-product-details";
+import { heldTotals } from "@/lib/stock-holds";
 import { listDiscountedOffers, listProductBatchesByIds, searchProductBatches, type ProductBatchSearchResult } from "@/lib/queries/products";
 
 export const runtime = "nodejs";
@@ -46,8 +47,12 @@ export async function GET(req: NextRequest) {
         : await searchProductBatches(q, limit, { onlyInStock: false, listedOnly: true });
     const images = await productImages(rows.map((row) => row.productId));
     const shipping = await productShipping(rows.map((row) => row.productId));
+    // Units other customers are paying for right now are not on offer.
+    const held = await heldTotals([...new Set(rows.map((row) => row.productId))]);
     return fieldJson({
-      products: rows.map((row) => toFieldBatch(row, images.get(row.productId) ?? null, shipping.get(row.productId), offers)),
+      products: rows.map((row) =>
+        lessHeld(toFieldBatch(row, images.get(row.productId) ?? null, shipping.get(row.productId), offers), row, held)
+      ),
     });
   } catch (err) {
     return fieldJson(
@@ -130,4 +135,18 @@ function toFieldBatch(
     heightCm: ship?.heightCm ?? null,
     lineKey: `${row.productId}-${row.batchId ?? "none"}`,
   };
+}
+
+/** Stock a buyer can still take: the row's stock less what checkouts in progress hold. */
+function lessHeld<T extends { stock: number }>(
+  batch: T,
+  row: ProductBatchSearchResult,
+  held: { byProduct: Map<number, number>; byBatch: Map<number, number> }
+): T {
+  const onProduct = held.byProduct.get(row.productId) ?? 0;
+  if (!onProduct) return batch;
+  const productLeft = (Number(row.productStockQty) || 0) - onProduct;
+  const batchLeft = row.batchId != null ? (Number(row.batchQty) || 0) - (held.byBatch.get(row.batchId) ?? 0) : productLeft;
+  const stock = Math.max(0, Math.min(batch.stock, productLeft, batchLeft));
+  return { ...batch, stock };
 }

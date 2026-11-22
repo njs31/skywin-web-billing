@@ -140,38 +140,51 @@ export async function placeFieldOrder(input: FieldOrderIn) {
     .filter(Boolean)
     .join(" · ");
 
-  const sale = await createSale({
-    billType: "retail",
-    customerId: farmer.id,
-    customerName: farmer.name,
-    customerPhone: farmer.phone || phone || undefined,
-    paymentMode: "upi",
-    operatorName: `Field · ${input.officerName.trim() || "Officer"}`,
-    notes,
-    deliveryNote: input.deliveryDate || undefined,
-    destination: input.placedGps || undefined,
-    externalOrderId: orderId,
-    items: input.items.map((item) => {
-      const p = byId.get(item.productId);
-      if (!p) throw new Error(`Product ${item.productId} not found`);
-      const rate =
-        item.rate && item.rate > 0
-          ? item.rate
-          : getBatchBillingRate(
-              { saleRate: p.saleRate, batchSaleRate: null },
-              "retail"
-            );
-      return {
-        productId: item.productId,
-        qty: item.qty,
-        rate,
-        gstRate: item.gstRate ?? toNumber(p.gstRate),
-        discountType: "percent" as const,
-        discountValue: 0,
-        batchId: item.batchId ?? null,
-      };
-    }),
-  });
+  let sale: { id: number; invoiceNo: string };
+  try {
+    sale = await createSale({
+      billType: "retail",
+      customerId: farmer.id,
+      customerName: farmer.name,
+      customerPhone: farmer.phone || phone || undefined,
+      paymentMode: "upi",
+      operatorName: `Field · ${input.officerName.trim() || "Officer"}`,
+      notes,
+      deliveryNote: input.deliveryDate || undefined,
+      destination: input.placedGps || undefined,
+      externalOrderId: orderId,
+      items: input.items.map((item) => {
+        const p = byId.get(item.productId);
+        if (!p) throw new Error(`Product ${item.productId} not found`);
+        const rate =
+          item.rate && item.rate > 0
+            ? item.rate
+            : getBatchBillingRate(
+                { saleRate: p.saleRate, batchSaleRate: null },
+                "retail"
+              );
+        return {
+          productId: item.productId,
+          qty: item.qty,
+          rate,
+          gstRate: item.gstRate ?? toNumber(p.gstRate),
+          discountType: "percent" as const,
+          discountValue: 0,
+          batchId: item.batchId ?? null,
+        };
+      }),
+    });
+  } catch (err) {
+    // The app's save and the Razorpay webhook can bill the same order at once; the unique
+    // order id lets only one through. The other is a duplicate, not a failure.
+    const [existing] = await db
+      .select({ id: sales.id, invoiceNo: sales.invoiceNo })
+      .from(sales)
+      .where(eq(sales.externalOrderId, orderId))
+      .limit(1);
+    if (!existing) throw err;
+    return { success: true as const, duplicate: true, orderId, saleId: existing.id, invoiceNo: existing.invoiceNo };
+  }
 
   return {
     success: true as const,

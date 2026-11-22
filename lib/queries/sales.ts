@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { activeHolds, applyHolds, consumeHolds, heldNote } from "@/lib/stock-holds-core";
 import {
   sales,
   saleItems,
@@ -344,12 +345,19 @@ export type ProductStockInfo = {
   name: string;
   hsnCode: string | null;
   batches: BatchStockRow[];
+  /** Quantity other orders hold while their customers pay (already taken out of batches). */
+  held?: number;
 };
 
-/** Locked product + in-stock batch snapshot (FOR UPDATE serializes sellers). */
+/**
+ * Locked product + in-stock batch snapshot (FOR UPDATE serializes sellers), less the stock
+ * other orders hold while their customers pay. `ownHoldKey` is the order being billed, whose
+ * own holds stay available to it.
+ */
 export async function lockProductsWithBatches(
   tx: SaleTx,
-  productIds: number[]
+  productIds: number[],
+  opts: { ownHoldKey?: string | null } = {}
 ): Promise<Map<number, ProductStockInfo>> {
   const productInfo = new Map<number, ProductStockInfo>();
   if (productIds.length === 0) return productInfo;
@@ -357,6 +365,10 @@ export async function lockProductsWithBatches(
     productIds.map((id) => sql`${id}`),
     sql`, `
   );
+  // Take the row locks first (in id order, so two sellers never deadlock), then read stock in a
+  // separate statement. Under READ COMMITTED that read gets a fresh snapshot taken after the lock
+  // is ours, so it sees every batch change the previous holder committed.
+  await tx.execute(sql`select id from products where id in (${idList}) order by id for update`);
   const rows = (await tx.execute(sql`
     select
       p.id as product_id,
@@ -396,7 +408,9 @@ export async function lockProductsWithBatches(
       });
     }
   }
-  return productInfo;
+  // Read after the product rows are locked, so a hold placed by a concurrent checkout either
+  // committed before this (and is counted) or waits for this sale to finish.
+  return applyHolds(productInfo, await activeHolds(tx, productIds, opts.ownHoldKey));
 }
 
 /** Stock sufficiency + HSN presence, against the locked snapshot. */
@@ -410,11 +424,11 @@ export function checkStockAndHsn(
     if (!info) throw new Error(`Product ${productId} not found`);
     const available = info.batches.reduce((s, b) => s + b.qty, 0);
     if (available <= 0) {
-      throw new Error(`${info.name} is out of stock and cannot be sold.`);
+      throw new Error(`${info.name} is out of stock and cannot be sold.${heldNote(info.held)}`);
     }
     if (available < totalQty) {
       throw new Error(
-        `Insufficient stock for ${info.name}. Available: ${available}, requested: ${totalQty}`
+        `Insufficient stock for ${info.name}. Available: ${available}, requested: ${totalQty}${heldNote(info.held)}`
       );
     }
   }
@@ -1001,7 +1015,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
 
   const executeSale = () =>
     db.transaction(async (tx) => {
-      const productInfo = await lockProductsWithBatches(tx, productIds);
+      // A Field app order bills against the stock it held at payment (its key is the order id).
+      const productInfo = await lockProductsWithBatches(tx, productIds, { ownHoldKey: externalOrderId });
       const deductStock = data.deductStock !== false;
       checkStockAndHsn(
         productInfo,
@@ -1183,6 +1198,8 @@ export async function createSale(input: z.infer<typeof createSaleSchema>) {
       if (deductStock) {
         await applyBatchDeductions(tx, itemDeductions, productIds);
       }
+      // The held stock is now sold: the hold is used up with the same commit.
+      if (externalOrderId) await consumeHolds(tx, externalOrderId);
 
       return created;
     });
