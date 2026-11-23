@@ -61,6 +61,7 @@ export default function UserManagementPage() {
   const [customersList, setCustomersList] = useState<Customer[]>([]);
   const [reportingLines, setReportingLines] = useState<ReportingLineView[]>([]);
   const [dealerMappings, setDealerMappings] = useState<DealerMappingView[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -95,6 +96,8 @@ export default function UserManagementPage() {
     } catch (e) {
       console.error(e);
       setError("Failed to fetch user management data.");
+    } finally {
+      setLoaded(true);
     }
   };
 
@@ -427,7 +430,9 @@ export default function UserManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {userPages.rows.length === 0 ? (
+                  {!loaded ? (
+                    <LoadingRow colSpan={5} />
+                  ) : userPages.rows.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">
                         {usersList.length === 0 ? "No registered users found." : "No users match this search."}
@@ -541,6 +546,7 @@ export default function UserManagementPage() {
               right="Sales officer"
               rows={linePages.rows.map((l) => ({ id: l.id, left: l.managerName, right: l.officerName }))}
               empty={reportingLines.length === 0 ? "No reporting mappings configured." : "No reporting lines match this search."}
+              loading={!loaded}
               disabled={isPending}
               onDelete={handleDeleteReportingLine}
             />
@@ -586,6 +592,7 @@ export default function UserManagementPage() {
               right="Dealer"
               rows={mapPages.rows.map((m) => ({ id: m.id, left: m.officerName, right: m.dealerName }))}
               empty={dealerMappings.length === 0 ? "No dealer mappings configured." : "No dealer mappings match this search."}
+              loading={!loaded}
               disabled={isPending}
               onDelete={handleDeleteDealerMapping}
             />
@@ -865,6 +872,7 @@ function PairTable({
   right,
   rows,
   empty,
+  loading,
   disabled,
   onDelete,
 }: {
@@ -872,6 +880,7 @@ function PairTable({
   right: string;
   rows: { id: number; left: string; right: string }[];
   empty: string;
+  loading: boolean;
   disabled: boolean;
   onDelete: (id: number) => void;
 }) {
@@ -887,7 +896,9 @@ function PairTable({
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? (
+          {loading ? (
+            <LoadingRow colSpan={4} />
+          ) : rows.length === 0 ? (
             <tr>
               <td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">
                 {empty}
@@ -922,5 +933,33 @@ function PairTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Table row with an iOS-style spinner, shown while the page's data loads. */
+function LoadingRow({ colSpan }: { colSpan: number }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="px-5 py-12">
+        <div role="status" className="flex flex-col items-center gap-3 text-sm text-slate-400">
+          <span className="relative block h-7 w-7" aria-hidden>
+            {Array.from({ length: 12 }, (_, i) => (
+              <span
+                key={i}
+                className="absolute left-[45.5%] top-0 h-[30%] w-[9%] rounded-full bg-slate-500"
+                style={{
+                  transform: `rotate(${i * 30}deg)`,
+                  transformOrigin: "50% 166%",
+                  animation: "ios-spin-fade 1s linear infinite",
+                  animationDelay: `${(i - 12) / 12}s`,
+                }}
+              />
+            ))}
+          </span>
+          Loading…
+          <style>{`@keyframes ios-spin-fade { from { opacity: 1 } to { opacity: 0.15 } }`}</style>
+        </div>
+      </td>
+    </tr>
   );
 }
