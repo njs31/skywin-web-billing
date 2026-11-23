@@ -3,7 +3,7 @@
  *
  * - Sends to every device registered for a phone, in batches of 100.
  * - Removes tokens Expo reports as DeviceNotRegistered (app uninstalled or signed out).
- * - Farmers get Tamil or English from their saved language.
+ * - Each phone gets Tamil or English: the app's language on that phone, else the farmer's saved one.
  * - Every message is also saved to the phone's in-app notification feed (unless feed: false).
  * - Never throws: a failed push must not fail the order, refund or save that triggered it.
  */
@@ -97,12 +97,17 @@ export async function notifyPhones(phones: Array<string | null | undefined>, mes
     const unique = [...new Set(phones.map(mobile10).filter((p) => p.length === 10))];
     if (!unique.length) return;
     const rows = await db
-      .select({ phone: pushTokens.phone, token: pushTokens.token })
+      .select({ phone: pushTokens.phone, token: pushTokens.token, language: pushTokens.language, updatedAt: pushTokens.updatedAt })
       .from(pushTokens)
       .where(inArray(pushTokens.phone, unique));
 
     for (const phone of unique) {
-      const msg = message.ta && (await farmerLanguage(phone)) === "ta" ? message.ta : message.en;
+      // The app's language on the phone (sent with its push token) wins; else the farmer's saved one.
+      const appLanguage = rows
+        .filter((r) => r.phone === phone && (r.language === "en" || r.language === "ta"))
+        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]?.language;
+      const lang = appLanguage ?? (message.ta ? await farmerLanguage(phone) : "en");
+      const msg = message.ta && lang === "ta" ? message.ta : message.en;
       if (msg.feed !== false) {
         await db
           .insert(orderNotifications)

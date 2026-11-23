@@ -12,12 +12,15 @@ import {
   saveFieldCategory,
   saveFieldSubcategory,
   searchBillingProducts,
+  setFieldCategoryIcon,
+  setFieldSubcategoryIcon,
   unpinProductFromSub,
 } from "@/lib/actions/field";
 import { cn, formatCurrency } from "@/lib/utils";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Badge, Notice, PageHeader, buttonClass, inputClass, labelClass, tableClass, tdClass, thClass, theadClass, trClass } from "@/components/field/kit";
 import { useFieldText } from "@/components/field/lang";
+import { IconPicker } from "@/components/field/icon-picker";
 import { fmt, plural } from "@/lib/field-i18n";
 
 type SearchHit = {
@@ -160,6 +163,23 @@ export function CategoryEditor({
       {error ? <Notice tone="red">{error}</Notice> : null}
       {notice && !error ? <Notice>{notice}</Notice> : null}
 
+      <section className="flex flex-col gap-2 rounded-2xl border border-[#1E3317]/10 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-[#1E3317]">{c.categoryIcon}</h2>
+          <p className="text-xs text-[#5E6B62]">{c.iconHelp}</p>
+        </div>
+        <IconPicker
+          label={category.title}
+          iconUri={category.iconUri}
+          fallback={category.title}
+          onSave={async (uri) => {
+            await setFieldCategoryIcon(category.id, uri);
+            setNotice(uri ? c.iconSaved : c.iconRemoved);
+            router.refresh();
+          }}
+        />
+      </section>
+
       {confirmDelete ? (
         <div className="rounded-2xl border border-[#8E3B34]/25 bg-[#FFF8F7] px-5 py-4" role="alert">
           <p className="text-sm font-medium text-[#1E3317]">{fmt(c.deleteConfirm, { name: category.title })}</p>
@@ -280,7 +300,13 @@ export function CategoryEditor({
                         : "text-[#29332C] hover:bg-[#F4F8EF]"
                     )}
                   >
-                    <span className="truncate">{sub.title}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      {sub.iconUri ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={sub.iconUri} alt="" className="h-5 w-5 shrink-0 rounded object-contain" />
+                      ) : null}
+                      <span className="truncate">{sub.title}</span>
+                    </span>
                     <span className={cn("rounded-full px-2 text-xs tabular-nums", on ? "bg-[#C6E26A] text-[#1E3317]" : "bg-[#EDF2E7] text-[#3E5E2F]")}>
                       {sub.productIds.length}
                     </span>
@@ -370,9 +396,23 @@ export function CategoryEditor({
           {active ? (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1E3317]/8 px-5 py-4">
-                <div>
-                  <h2 className="text-base font-bold text-[#1E3317]">{active.title}</h2>
-                  <p className="text-xs text-[#5E6B62]">{plural(products.length, c.product, c.products)}</p>
+                <div className="space-y-2">
+                  <div>
+                    <h2 className="text-base font-bold text-[#1E3317]">{active.title}</h2>
+                    <p className="text-xs text-[#5E6B62]">{plural(products.length, c.product, c.products)}</p>
+                  </div>
+                  <IconPicker
+                    key={active.id}
+                    size="sm"
+                    label={active.title}
+                    iconUri={active.iconUri ?? null}
+                    fallback={active.title}
+                    onSave={async (uri) => {
+                      await setFieldSubcategoryIcon(active.id, uri);
+                      setNotice(uri ? c.iconSaved : c.iconRemoved);
+                      router.refresh();
+                    }}
+                  />
                 </div>
                 {confirmRemoveSub ? (
                   <div className="flex items-center gap-2">

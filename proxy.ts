@@ -198,7 +198,9 @@ async function route(request: NextRequest, session: SessionPayload | null) {
     pathname === "/privacy" ||
     pathname === "/delete-account" ||
     pathname === "/pay" ||
-    pathname.startsWith("/pay/")
+    pathname.startsWith("/pay/") ||
+    // Messages SkyWin sends to app users; the app opens them in its in-app browser, signed out.
+    pathname.startsWith("/news/")
   ) {
     return NextResponse.next();
   }

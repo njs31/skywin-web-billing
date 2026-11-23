@@ -18,6 +18,7 @@ import {
   UserX,
   Users,
   X,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FieldText } from "@/lib/field-i18n";
@@ -33,6 +34,7 @@ const NAV: NavItem[] = [
   { href: "/field/recommendations", key: "recommendations", icon: Sparkles },
   { href: "/field/officers", key: "officers", icon: Users },
   { href: "/field/orders", key: "orders", icon: ClipboardList },
+  { href: "/field/notifications", key: "notifications", icon: Megaphone },
   { href: "/field/deletions", key: "deletions", icon: UserX },
 ];
 const TEAM_NAV: NavItem[] = [{ href: "/field/team", key: "team", icon: Users }];

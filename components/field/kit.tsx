@@ -331,3 +331,37 @@ export function Pager({
     </div>
   );
 }
+
+/** On/off switch. The label is read by screen readers and shown when showLabel is set. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled = false,
+  showLabel = false,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  disabled?: boolean;
+  showLabel?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={showLabel ? undefined : label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full text-xs font-semibold text-[#1E3317] outline-none focus-visible:ring-2 focus-visible:ring-[#B8D94A]/60 disabled:cursor-not-allowed disabled:opacity-60"
+      )}
+    >
+      {showLabel ? <span>{label}</span> : null}
+      <span className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors", checked ? "bg-[#245B3E]" : "bg-[#C9D1C4]")}>
+        <span className={cn("inline-block h-5 w-5 rounded-full bg-white shadow transition-transform", checked ? "translate-x-[22px]" : "translate-x-0.5")} />
+      </span>
+    </button>
+  );
+}

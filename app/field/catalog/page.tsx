@@ -7,6 +7,7 @@ export default async function FieldCatalogPage() {
     id: category.id,
     slug: category.slug,
     title: category.title,
+    iconUri: category.iconUri,
     subcategories: category.subs.length,
     skus: category.subs.reduce((inner, sub) => inner + sub.productIds.length, 0),
     subNames: category.subs.slice(0, 4).map((sub) => sub.title),

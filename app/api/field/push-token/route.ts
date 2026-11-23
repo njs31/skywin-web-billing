@@ -17,7 +17,7 @@ export function OPTIONS() {
 export async function POST(req: NextRequest) {
   if (!(await verifyFieldApiKey(req))) return fieldJson({ error: "Unauthorized" }, 401);
   try {
-    const body = (await req.json()) as { phone?: string; token?: string; platform?: string; remove?: boolean };
+    const body = (await req.json()) as { phone?: string; token?: string; platform?: string; remove?: boolean; language?: string };
     const who = fieldIdentity(req);
     const phone = who ? who.phone : String(body.phone || "");
     const token = String(body.token || "");
@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
       return fieldJson({ error: "phone and token are required" }, 400);
     }
 
-    const res = await registerPushToken(phone, token, platform);
+    const language = body.language === "ta" ? "ta" : body.language === "en" ? "en" : null;
+    const res = await registerPushToken(phone, token, platform, language);
     return fieldJson(res);
   } catch (err) {
     return fieldJson({ error: err instanceof Error ? err.message : "Failed to save push token" }, 400);

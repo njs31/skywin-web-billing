@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import {
   createFieldOfficer,
   deleteFieldOfficer,
+  exportFieldOfficers,
   setFieldOfficerAccess,
   updateFieldOfficer,
 } from "@/lib/actions/field";
 import { Ban, CheckCircle2, Leaf, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { roleLabel } from "@/lib/user-roles";
+import { ExportButton } from "@/components/field/export-button";
+import { OFFICER_EXPORT_COLUMNS } from "@/lib/field-export-columns";
 import { Badge, EmptyState, MobileCard, Notice, PageHeader, SearchBox, StatCard, StatGrid, buttonClass, inputClass, labelClass, tableClass, tdClass, thClass, theadClass, trClass } from "@/components/field/kit";
 import { useFieldLang, useFieldText } from "@/components/field/lang";
 import { fieldLocale, fmt } from "@/lib/field-i18n";
@@ -191,7 +194,11 @@ export function OfficersPanel({ officers }: { officers: OfficerRow[] }) {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <PageHeader title={o.title} description={o.subtitle} />
+      <PageHeader
+        title={o.title}
+        description={o.subtitle}
+        actions={<ExportButton fileName="skywin-officers" sheetName="Officers" columns={OFFICER_EXPORT_COLUMNS} rows={() => exportFieldOfficers()} />}
+      />
 
       <StatGrid>
         <StatCard icon={<Users />} label={o.statTotal} value={officers.length.toLocaleString("en-IN")} />

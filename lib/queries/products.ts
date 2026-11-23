@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { db } from "@/db";
 import { products, categories, productBatches, stockMovements, sales, saleItems, productChangeLogs } from "@/db/schema";
-import { listedProductIds } from "@/lib/field-listed";
+import { appVisibleProductIds, listedProductIds } from "@/lib/field-listed";
 import { ilike, like, or, sql, asc, desc, eq, and, gt, inArray, gte, lte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { parseSkuFromName } from "@/lib/gst";
@@ -212,7 +212,7 @@ export async function searchProductBatches(
 
   const productMatch = and(
     eq(products.isActive, true),
-    options?.listedOnly ? inArray(products.id, listedProductIds()) : undefined,
+    options?.listedOnly ? inArray(products.id, appVisibleProductIds()) : undefined,
     options?.skuPrefix ? like(products.sku, `${options.skuPrefix}%`) : undefined,
     or(
       ilike(products.name, `%${q}%`),
@@ -226,14 +226,22 @@ export async function searchProductBatches(
   return queryProductBatchRows(productMatch, limit, onlyInStock);
 }
 
-/** Listed field products for a category, one row per batch. */
-export async function listProductBatchesByIds(ids: number[]): Promise<ProductBatchSearchResult[]> {
+/**
+ * Listed field products by id, one row per batch.
+ * The app's lists pass visibleOnly; pricing a cart does not, so an order that was already paid
+ * still bills if its product is switched off in the app meanwhile (new payments are refused
+ * earlier, in /api/field/pay/create).
+ */
+export async function listProductBatchesByIds(
+  ids: number[],
+  options?: { visibleOnly?: boolean }
+): Promise<ProductBatchSearchResult[]> {
   const unique = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))].slice(0, 400);
   if (unique.length === 0) return [];
   const productMatch = and(
     eq(products.isActive, true),
     inArray(products.id, unique),
-    inArray(products.id, listedProductIds())
+    inArray(products.id, options?.visibleOnly ? appVisibleProductIds() : listedProductIds())
   );
   return queryProductBatchRows(productMatch, 2000, false);
 }
@@ -246,7 +254,7 @@ export async function listDiscountedOffers(
   const inStockOnly = options?.inStockOnly !== false;
   const productMatch = and(
     eq(products.isActive, true),
-    options?.listedOnly ? inArray(products.id, listedProductIds()) : undefined,
+    options?.listedOnly ? inArray(products.id, appVisibleProductIds()) : undefined,
     gt(products.discountPercent, "0"),
     inStockOnly ? gt(products.stockQty, "0") : undefined
   );

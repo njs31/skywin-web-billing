@@ -7,6 +7,7 @@ import { officerMayServeFarmer } from "@/lib/field-order-access";
 import { createRazorpayOrder } from "@/lib/payments/razorpay";
 import { placeStockHolds, releaseHolds } from "@/lib/stock-holds";
 import { quoteOrderShipping } from "@/lib/field-shipping";
+import { productsHiddenInApp } from "@/lib/field-listed";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,27 @@ export async function POST(req: NextRequest) {
     let holdExpiresAt: string | null = null;
     let shipping: { amount: number; pin: string } | null = null;
     if (items.length) {
+      // Products switched off in the app (Product details → In app) can't be bought any more,
+      // even from a cart filled before the switch.
+      const hidden = await productsHiddenInApp(items.map((item) => Number(item.productId)));
+      if (hidden.length) {
+        return fieldJson(
+          {
+            error: `${hidden.map((h) => h.name).join(", ")} ${hidden.length === 1 ? "is" : "are"} no longer available. Remove ${hidden.length === 1 ? "it" : "them"} from your cart and try again.`,
+            // Same shape as a stock shortage, so the app lists these lines the same way.
+            unavailable: items
+              .filter((item) => hidden.some((h) => h.productId === Number(item.productId)))
+              .map((item) => ({
+                productId: Number(item.productId),
+                batchId: item.batchId == null || (item.batchId as unknown) === "" ? null : Number(item.batchId),
+                name: hidden.find((h) => h.productId === Number(item.productId))?.name ?? "Item",
+                requested: Math.max(1, Math.floor(Number(item.qty) || 1)),
+                available: 0,
+              })),
+          },
+          409
+        );
+      }
       const priced = await priceFieldLines(items);
       const shipPin = String(body.shipPin || "").replace(/\D/g, "").slice(0, 6);
       if (shipPin.length === 6) {

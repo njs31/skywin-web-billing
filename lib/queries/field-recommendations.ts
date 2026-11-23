@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, getTableColumns, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, fieldRecommendations, products, users } from "@/db/schema";
-import { listedProductIds } from "@/lib/field-listed";
+import { appVisibleProductIds } from "@/lib/field-listed";
 import { cleanRecommendation, type RecommendationDraft } from "@/lib/field-recommendation-rules";
 import { canSignInAsFieldOfficer } from "@/lib/user-roles";
 import { notifyLater, pushCopy } from "@/lib/field-push";
@@ -110,11 +110,11 @@ async function assertListedProducts(ids: number[]) {
       and(
         inArray(products.id, ids),
         eq(products.isActive, true),
-        inArray(products.id, listedProductIds())
+        inArray(products.id, appVisibleProductIds())
       )
     );
   if (rows.length !== ids.length) {
-    throw new RecommendationError("Choose products from the field catalogue.");
+    throw new RecommendationError("Choose products from the field catalogue that are switched on in the app.");
   }
 }
 
@@ -282,7 +282,7 @@ export async function searchRecommendationProducts(query: string): Promise<Recom
     .where(
       and(
         eq(products.isActive, true),
-        inArray(products.id, listedProductIds()),
+        inArray(products.id, appVisibleProductIds()),
         or(ilike(products.name, `%${q}%`), ilike(products.sku, `%${q}%`))
       )
     )

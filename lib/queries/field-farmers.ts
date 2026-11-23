@@ -60,7 +60,7 @@ function titleCaseApproval(value: string | null | undefined): "Approved" | "Pend
   return "Pending";
 }
 
-function farmerConditions(filter?: {
+export function farmerConditions(filter?: {
   q?: string;
   approval?: FieldFarmerApproval | "all";
   officerId?: number;

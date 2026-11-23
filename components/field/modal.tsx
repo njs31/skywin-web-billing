@@ -11,7 +11,9 @@ export function Modal({
   busy = false,
   children,
   closeLabel,
+  wide = false,
 }: {
+  wide?: boolean;
   title: React.ReactNode;
   description?: React.ReactNode;
   onClose: () => void;
@@ -34,7 +36,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-2xl sm:p-6"
+        className={`relative max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-2xl sm:p-6 ${wide ? "sm:max-w-3xl" : "sm:max-w-lg"}`}
       >
         <div className="flex items-start justify-between gap-4">
           <div>

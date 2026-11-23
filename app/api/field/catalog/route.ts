@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { fieldListedProducts } from "@/db/schema";
 import { verifyFieldApiKey } from "@/lib/api-auth";
@@ -18,7 +19,11 @@ export async function GET(req: NextRequest) {
   }
   try {
     const categories = await getFieldCatalogTree();
-    const allowedRows = await db.select({ productId: fieldListedProducts.productId }).from(fieldListedProducts);
+    // Only products switched on for the app (Product details → In app).
+    const allowedRows = await db
+      .select({ productId: fieldListedProducts.productId })
+      .from(fieldListedProducts)
+      .where(eq(fieldListedProducts.appVisible, true));
     const allowed = new Set(allowedRows.map((row) => row.productId));
     return fieldJson({
       categories: categories.map((category) => ({
@@ -26,6 +31,7 @@ export async function GET(req: NextRequest) {
         title: category.title,
         queries: category.queries,
         iconKey: category.iconKey,
+        iconUri: category.iconUri,
         subs: category.subs.map((sub) => ({
           id: sub.slug,
           title: sub.title,

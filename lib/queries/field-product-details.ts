@@ -2,6 +2,7 @@ import { and, asc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
   fieldCategories,
+  fieldListedProducts,
   fieldProductDetails,
   fieldSubcategories,
   fieldSubcategoryProducts,
@@ -174,19 +175,24 @@ export async function listFieldProductsPage(filter?: {
   q?: string;
   category?: string;
   status?: "all" | "needs" | "complete";
+  /** In the app: switched on, switched off, or both. */
+  visible?: "all" | "on" | "off";
   page?: number;
 }) {
   const pageSize = FIELD_PRODUCT_PAGE_SIZE;
   const page = Math.max(1, filter?.page ?? 1);
   const conditions: SQL[] = [eq(products.isActive, true), inArray(products.id, listedProductIds())];
-  const raw = filter?.q?.trim().replace(/[%_]/g, "") ?? "";
-  if (raw) {
-    const pattern = `%${raw}%`;
+  // Every word must match the name, SKU, HSN, barcode or brand ("gear 28mm" finds "28MM GEAR BOX").
+  const words = (filter?.q ?? "").replace(/[%_\\]/g, " ").trim().split(/\s+/).filter(Boolean).slice(0, 8);
+  for (const word of words) {
+    const pattern = `%${word}%`;
     const search = or(
       ilike(products.name, pattern),
       ilike(products.sku, pattern),
       ilike(products.hsnCode, pattern),
-      ilike(fieldProductDetails.brand, pattern)
+      ilike(products.barcode, pattern),
+      ilike(fieldProductDetails.brand, pattern),
+      ilike(fieldProductDetails.displayName, pattern)
     );
     if (search) conditions.push(search);
   }
@@ -194,12 +200,17 @@ export async function listFieldProductsPage(filter?: {
   else if (filter?.category) conditions.push(productInCategory(filter.category));
   if (filter?.status === "complete") conditions.push(productDetailsComplete());
   else if (filter?.status === "needs") conditions.push(sql`not (${productDetailsComplete()})`);
+  if (filter?.visible === "on") conditions.push(eq(fieldListedProducts.appVisible, true));
+  else if (filter?.visible === "off") conditions.push(eq(fieldListedProducts.appVisible, false));
   const where = and(...conditions);
 
   const [countRow, rows] = await Promise.all([
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(products)
+      // The search reads field_product_details.brand, so the count needs the same joins as the rows.
+      .leftJoin(fieldProductDetails, eq(fieldProductDetails.productId, products.id))
+      .leftJoin(fieldListedProducts, eq(fieldListedProducts.productId, products.id))
       .where(where),
     db
       .select({
@@ -220,6 +231,7 @@ export async function listFieldProductsPage(filter?: {
         activeIngredient: fieldProductDetails.activeIngredient,
         usage: fieldProductDetails.usage,
         updatedAt: fieldProductDetails.updatedAt,
+        appVisible: fieldListedProducts.appVisible,
         category: sql<string | null>`(
           select ${fieldCategories.title}
           from ${fieldSubcategoryProducts}
@@ -250,6 +262,7 @@ export async function listFieldProductsPage(filter?: {
       })
       .from(products)
       .leftJoin(fieldProductDetails, eq(fieldProductDetails.productId, products.id))
+      .leftJoin(fieldListedProducts, eq(fieldListedProducts.productId, products.id))
       .where(where)
       .orderBy(asc(products.name), asc(products.id))
       .limit(pageSize)
@@ -271,6 +284,7 @@ export async function listFieldProductsPage(filter?: {
         productId: row.productId,
         name: row.name,
         sku: row.sku,
+        appVisible: row.appVisible !== false,
         brand: row.brand?.trim() || null,
         description: row.description?.trim() || null,
         mrp: row.mrp,

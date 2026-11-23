@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { customers, fieldDeletionRequests, users } from "@/db/schema";
+import { customers, fieldDeletionRequests, sales, users } from "@/db/schema";
 import { getCurrentUser, requireAdmin, requireFieldAdmin } from "@/lib/actions/auth";
 import { refundAmountPaise } from "@/lib/field-order-refund-rules";
 import { refundFieldPayment } from "@/lib/field-order-refunds";
@@ -19,6 +19,8 @@ import {
   getFieldCatalogTree,
   getFieldCategoryBySlug,
   listProductsByIds,
+  setFieldCategoryIconUri,
+  setFieldSubcategoryIconUri,
   unassignProductFromSubcategory,
   updateFieldCategory,
   updateFieldSubcategory,
@@ -34,7 +36,24 @@ import {
   type FieldFarmerApproval,
   type FieldFarmerInput,
 } from "@/lib/queries/field-farmers";
-import { listFieldOrders } from "@/lib/queries/field-orders";
+import { fieldSaleWhere, listFieldOrders, qwicksSaleWhere } from "@/lib/queries/field-orders";
+import { recordOrderCheckpoint } from "@/lib/services/shipping-checkpoints";
+import { isDeliveryStep } from "@/lib/order-status";
+import { officeLocation, pendingDeliveryStops } from "@/lib/queries/field-route";
+import { inIndia, parseLatLng } from "@/lib/route-plan";
+import { updateSettings } from "@/lib/settings";
+import { broadcastAudienceSize, createBroadcast, listBroadcasts } from "@/lib/field-broadcast";
+import type { BroadcastInput } from "@/lib/field-broadcast-rules";
+import { cleanIconUri } from "@/lib/field-icon-url";
+import {
+  applyFieldProductImport,
+  exportFieldProductRows,
+  fieldProductVisibilityCounts,
+  planFieldProductImport,
+  setFieldProductAppVisible,
+} from "@/lib/queries/field-product-excel";
+import type { ProductSheetRow } from "@/lib/field-product-sheet";
+import { exportFieldFarmerRows, exportFieldOfficerRows } from "@/lib/queries/field-exports";
 import {
   deleteFieldRecommendation,
   listRecommendationsForUser,
@@ -159,6 +178,20 @@ export async function saveFieldCategory(input: {
   touchField();
 }
 
+/** Catalog → category icon. Null removes it. */
+export async function setFieldCategoryIcon(id: number, iconUri: string | null) {
+  await requireFieldAdmin();
+  await setFieldCategoryIconUri(id, cleanIconUri(iconUri));
+  touchField();
+}
+
+/** Catalog → subcategory icon. Null removes it. */
+export async function setFieldSubcategoryIcon(id: number, iconUri: string | null) {
+  await requireFieldAdmin();
+  await setFieldSubcategoryIconUri(id, cleanIconUri(iconUri));
+  touchField();
+}
+
 export async function removeFieldCategory(id: number) {
   await requireFieldAdmin();
   await deleteFieldCategory(id);
@@ -264,15 +297,75 @@ export async function fieldProductsPage(filter?: {
   q?: string;
   category?: string;
   status?: "all" | "needs" | "complete";
+  visible?: "all" | "on" | "off";
   page?: number;
 }) {
   await requireFieldAdmin();
-  const [stats, categories, list] = await Promise.all([
+  const [stats, categories, list, visibility] = await Promise.all([
     fieldProductStats(),
     fieldProductCategories(),
     listFieldProductsPage(filter),
+    fieldProductVisibilityCounts(),
   ]);
-  return { stats, categories, ...list };
+  return { stats: { ...stats, hidden: visibility.hidden }, categories, ...list };
+}
+
+/** Product details → In app switch: off hides the product from farmers and officers in the app. */
+export async function setFieldProductVisible(productId: number, visible: boolean) {
+  const user = await requireFieldAdmin();
+  if (!Number.isInteger(productId) || productId <= 0) throw new Error("Unknown product.");
+  await setFieldProductAppVisible(productId, visible);
+  const name = user.name.trim() || user.phone;
+  await recordActivity({
+    action: "product.update",
+    message: `${name} switched product #${productId} ${visible ? "on" : "off"} in the Field app`,
+    entityType: "product",
+    entityId: productId,
+    actor: { id: user.id, name },
+  }).catch(() => undefined);
+  touchField(["/field/products", `/field/products/${productId}`]);
+  return { productId, visible };
+}
+
+/** Farmers → Export to Excel: the farmers matching the page's search. */
+export async function exportFieldFarmers(filter?: { q?: string }) {
+  await requireFieldAdmin();
+  return exportFieldFarmerRows({ q: filter?.q?.slice(0, 120) });
+}
+
+/** Officers → Export to Excel. */
+export async function exportFieldOfficers() {
+  await requireFieldAdmin();
+  return exportFieldOfficerRows();
+}
+
+/** Product details → Export to Excel: every product listed for the app. */
+export async function exportFieldProducts() {
+  await requireFieldAdmin();
+  return exportFieldProductRows();
+}
+
+/** Product details → Import from Excel, step 1: what each row would change. Saves nothing. */
+export async function previewFieldProductImport(rows: ProductSheetRow[]) {
+  await requireFieldAdmin();
+  if (!Array.isArray(rows)) throw new Error("No rows to import.");
+  return planFieldProductImport(rows);
+}
+
+/** Product details → Import from Excel, step 2: saves the rows. */
+export async function applyFieldProductImportAction(rows: ProductSheetRow[]) {
+  const user = await requireFieldAdmin();
+  if (!Array.isArray(rows)) throw new Error("No rows to import.");
+  const name = user.name.trim() || user.phone;
+  const result = await applyFieldProductImport(rows, { userId: user.id, userName: name });
+  await recordActivity({
+    action: "product.import",
+    message: `${name} imported products from Excel: ${result.created} new, ${result.updated} updated, ${result.failed.length} failed`,
+    entityType: "product",
+    actor: { id: user.id, name },
+  }).catch(() => undefined);
+  touchField(["/field/products", "/products", "/stock"]);
+  return result;
 }
 
 export async function fieldProductDetail(productId: number) {
@@ -463,8 +556,83 @@ export async function deleteFieldOfficer(id: number) {
 
 export async function fieldOrdersDashboard() {
   const user = await requireFieldAdmin();
-  const data = await listFieldOrders();
+  const data = await listFieldOrders({ includeQwicks: true });
   return { ...data, canRefund: user.role === "admin" };
+}
+
+/** Notifications page: what was sent, and how many devices a new one would reach. */
+export async function fieldBroadcastsPage() {
+  await requireFieldAdmin();
+  const [sent, audience] = await Promise.all([listBroadcasts(50), broadcastAudienceSize()]);
+  return { sent, audience };
+}
+
+/** Sends a notification to every Field app user (farmers and officers). */
+export async function sendFieldBroadcast(input: BroadcastInput) {
+  const user = await requireFieldAdmin();
+  const name = user.name.trim() || user.phone;
+  const id = await createBroadcast(input, name);
+  await recordActivity({
+    action: "field.broadcast",
+    message: `${name} sent the app notification "${String(input.titleEn ?? "").slice(0, 80)}"`,
+    actor: { id: user.id, name },
+  }).catch(() => undefined);
+  revalidatePath("/field/notifications");
+  return { id };
+}
+
+/** Orders → Delivery route: pending deliveries with their locations, and the office. */
+export async function fieldRoutePage() {
+  await requireFieldAdmin();
+  const [office, stops] = await Promise.all([officeLocation(), pendingDeliveryStops()]);
+  return { office, stops };
+}
+
+/** Saves where routes start and end. Takes "lat, lng" or a Google Maps link. */
+export async function saveFieldOfficeLocation(text: string) {
+  const user = await requireFieldAdmin();
+  const point = parseLatLng(text);
+  if (!point) throw new Error("Enter the office as latitude, longitude (for example 10.9617, 79.3881) or paste a Google Maps link.");
+  if (!inIndia(point)) throw new Error("That point is not in India. Check the latitude and longitude are not swapped.");
+  await updateSettings({ fieldOfficeLocation: `${point.lat}, ${point.lng}` });
+  const name = user.name.trim() || user.phone;
+  await recordActivity({ action: "settings.update", message: `${name} set the SkyWin office location for delivery routes`, actor: { id: user.id, name } }).catch(() => undefined);
+  touchField(["/field/orders/route"]);
+  return point;
+}
+
+/**
+ * Orders → delivery step. Moves a Field app or QwicksApp order to a delivery step; the farmer
+ * gets a push and sees it in the app. Cancel and refund are not steps: they go through the
+ * refund panel so the money goes back.
+ */
+export async function setFieldOrderStage(saleId: number, step: string, note?: string) {
+  const user = await requireFieldAdmin();
+  if (!isDeliveryStep(step)) throw new Error("Choose a delivery step.");
+  if (!Number.isInteger(saleId) || saleId <= 0) throw new Error("Unknown order.");
+  const [sale] = await db
+    .select({
+      id: sales.id,
+      status: sales.status,
+      externalOrderId: sales.externalOrderId,
+      invoiceNo: sales.invoiceNo,
+      operatorName: sales.operatorName,
+    })
+    .from(sales)
+    .where(and(eq(sales.id, saleId), or(fieldSaleWhere(), qwicksSaleWhere())))
+    .limit(1);
+  if (!sale) throw new Error("This order is not a Field app or QwicksApp order.");
+  if (sale.status === "cancelled") throw new Error("This order is cancelled, so it can't move to a delivery step.");
+  const cleanNote = (note ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  await recordOrderCheckpoint({
+    orderId: sale.externalOrderId || sale.invoiceNo,
+    saleId: sale.id,
+    checkpoint: step,
+    note: cleanNote || undefined,
+    updatedBy: user.name.trim() || user.phone,
+  });
+  touchField(["/field/orders", "/shipping"]);
+  return { ok: true as const };
 }
 
 export async function refundFieldOrder(saleId: number, amount: string, reason: string) {

@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, CircleAlert, FolderTree, ImageOff, Package, Pencil } from "lucide-react";
-import { fieldProductsPage } from "@/lib/actions/field";
+import { CheckCircle2, CircleAlert, Download, FolderTree, ImageOff, Package, Pencil, Upload } from "lucide-react";
+import { exportFieldProducts, fieldProductsPage, setFieldProductVisible } from "@/lib/actions/field";
+import { PRODUCT_SHEET_COLUMNS } from "@/lib/field-product-sheet";
+import { downloadExcel, todayStamp } from "@/components/field/excel";
+import { ProductImportDialog } from "./product-import";
 import { formatGst, formatInr, formatQty } from "@/lib/field-product-rules";
-import { Badge, EmptyState, Notice, PageHeader, SearchBox, StatCard, StatGrid, buttonClass, inputClass } from "@/components/field/kit";
+import { Badge, EmptyState, Notice, PageHeader, SearchBox, StatCard, StatGrid, Switch, buttonClass, inputClass } from "@/components/field/kit";
 import { useFieldLang, useFieldText } from "@/components/field/lang";
 import { fieldLocale, fmt } from "@/lib/field-i18n";
 import { cn } from "@/lib/utils";
@@ -14,6 +17,7 @@ type ProductRow = {
   productId: number;
   name: string;
   sku: string | null;
+  appVisible: boolean;
   brand: string | null;
   description: string | null;
   mrp: string | null;
@@ -34,7 +38,7 @@ type ProductRow = {
 };
 
 type PageData = {
-  stats: { total: number; complete: number; needsDetails: number; mapped: number };
+  stats: { total: number; complete: number; needsDetails: number; mapped: number; hidden: number };
   categories: Array<{ slug: string; title: string }>;
   rows: ProductRow[];
   total: number;
@@ -43,6 +47,7 @@ type PageData = {
 };
 
 type Status = "all" | "needs" | "complete";
+type Visible = "all" | "on" | "off";
 
 export function ProductsWorkspace({ initial }: { initial: PageData }) {
   const t = useFieldText();
@@ -51,6 +56,11 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState<Status>("all");
+  const [visible, setVisible] = useState<Visible>("all");
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [switching, setSwitching] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
   const [page, setPage] = useState(initial.page);
   const [rows, setRows] = useState(initial.rows);
   const [total, setTotal] = useState(initial.total);
@@ -64,12 +74,12 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
   const first = useRef(true);
 
   const load = useCallback(
-    async (next: { q: string; category: string; status: Status; page: number }) => {
+    async (next: { q: string; category: string; status: Status; visible: Visible; page: number }) => {
       const token = ++request.current;
       setLoading(true);
       setError("");
       try {
-        const result = await fieldProductsPage({ q: next.q.trim(), category: next.category, status: next.status, page: next.page });
+        const result = await fieldProductsPage({ q: next.q.trim(), category: next.category, status: next.status, visible: next.visible, page: next.page });
         if (token !== request.current) return;
         setRows(result.rows);
         setTotal(result.total);
@@ -91,14 +101,52 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
       first.current = false;
       return;
     }
-    const timer = window.setTimeout(() => void load({ q: query, category, status, page: 1 }), 300);
+    const timer = window.setTimeout(() => void load({ q: query, category, status, visible, page: 1 }), 300);
     return () => window.clearTimeout(timer);
-  }, [query, load, category, status]);
+  }, [query, load, category, status, visible]);
+
+  const reload = () => void load({ q: query, category, status, visible, page });
+
+  async function toggleVisible(row: ProductRow, next: boolean) {
+    setSwitching(row.productId);
+    setError("");
+    setNotice("");
+    // Show the change at once; put it back if saving fails.
+    setRows((list) => list.map((r) => (r.productId === row.productId ? { ...r, appVisible: next } : r)));
+    try {
+      await setFieldProductVisible(row.productId, next);
+      setStats((s) => ({ ...s, hidden: Math.max(0, s.hidden + (next ? -1 : 1)) }));
+      setNotice(fmt(next ? p.shownInApp : p.hiddenInApp, { name: row.name }));
+      if (visible !== "all") {
+        // It no longer matches the In app filter, so it leaves this list.
+        setRows((list) => list.filter((r) => r.productId !== row.productId));
+        setTotal((n) => Math.max(0, n - 1));
+      }
+    } catch (err) {
+      setRows((list) => list.map((r) => (r.productId === row.productId ? { ...r, appVisible: !next } : r)));
+      setError(err instanceof Error ? err.message : p.switchFailed);
+    } finally {
+      setSwitching(null);
+    }
+  }
+
+  async function exportAll() {
+    setExporting(true);
+    setError("");
+    try {
+      const all = await exportFieldProducts();
+      await downloadExcel(`skywin-field-products-${todayStamp()}`, "Products", all, PRODUCT_SHEET_COLUMNS);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : p.exportFailed);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
-  const filtering = query.trim() || category || status !== "all";
+  const filtering = query.trim() || category || status !== "all" || visible !== "all";
   const gapLabel = (gap: string) => (gap === "description" ? p.gapDescription : gap === "ingredient or usage" ? p.gapUsage : gap);
   const savedOn = (iso: string | null) =>
     iso ? new Date(iso).toLocaleDateString(locale, { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }) : "";
@@ -111,7 +159,21 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <PageHeader title={p.title} description={p.subtitle} />
+      <PageHeader
+        title={p.title}
+        description={p.subtitle}
+        actions={
+          <>
+            <button type="button" onClick={() => setImporting(true)} className={buttonClass("secondary", "sm")}>
+              <Upload aria-hidden /> {p.importButton}
+            </button>
+            <button type="button" onClick={() => void exportAll()} disabled={exporting} className={buttonClass("secondary", "sm")}>
+              <Download aria-hidden /> {exporting ? p.exporting : p.exportButton}
+            </button>
+          </>
+        }
+      />
+      {importing ? <ProductImportDialog onClose={() => setImporting(false)} onDone={reload} /> : null}
 
       <StatGrid>
         <StatCard icon={<Package />} label={p.statActive} value={stats.total.toLocaleString("en-IN")} sub={p.statActiveSub} />
@@ -134,6 +196,14 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
                 {item.title}
               </option>
             ))}
+          </select>
+          <label className="sr-only" htmlFor="product-visible">
+            {p.inApp}
+          </label>
+          <select id="product-visible" value={visible} onChange={(e) => setVisible(e.target.value as Visible)} className={cn(inputClass, "h-11 md:w-48")}>
+            <option value="all">{p.visibleAll}</option>
+            <option value="on">{p.visibleOn}</option>
+            <option value="off">{fmt(p.visibleOff, { n: stats.hidden.toLocaleString("en-IN") })}</option>
           </select>
           {loading ? (
             <span role="status" aria-label={t.common.loading} className="h-4 w-4 animate-spin rounded-full border-2 border-[#1E3317]/20 border-t-[#3E5E2F]" />
@@ -166,11 +236,12 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
       {error ? (
         <div className="flex flex-wrap items-center gap-3">
           <Notice tone="red">{error}</Notice>
-          <button type="button" onClick={() => void load({ q: query, category, status, page })} className={buttonClass("secondary", "sm")}>
+          <button type="button" onClick={reload} className={buttonClass("secondary", "sm")}>
             {p.retry}
           </button>
         </div>
       ) : null}
+      {notice && !error ? <Notice tone="green">{notice}</Notice> : null}
 
       <div className={cn("overflow-hidden rounded-2xl border border-[#1E3317]/10 bg-white shadow-sm transition-opacity", loading && "opacity-60")} aria-busy={loading}>
         {rows.length === 0 ? (
@@ -182,7 +253,9 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
                 ? p.emptyQuery
                 : status === "needs" && !category
                   ? p.emptyNeeds
-                  : category
+                  : visible === "off"
+                    ? p.emptyHidden
+                    : category
                     ? p.emptyCategory
                     : status === "complete"
                       ? p.emptyComplete
@@ -268,7 +341,18 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
                       {row.brand ? <Fact label={p.brand}>{row.brand}</Fact> : null}
                     </dl>
 
-                    <div className="flex items-center justify-between gap-3 sm:col-start-2 lg:col-start-auto lg:flex-col lg:items-end">
+                    <div className="flex flex-wrap items-center justify-between gap-3 sm:col-start-2 lg:col-start-auto lg:flex-col lg:items-end">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xs font-semibold", row.appVisible ? "text-[#245B3E]" : "text-[#8E3B34]")}>
+                          {row.appVisible ? p.inAppOn : p.inAppOff}
+                        </span>
+                        <Switch
+                          checked={row.appVisible}
+                          disabled={switching === row.productId}
+                          label={fmt(p.inAppSwitch, { name: row.name })}
+                          onChange={(next) => void toggleVisible(row, next)}
+                        />
+                      </div>
                       <a href={`/field/products/${row.productId}`} className={buttonClass("secondary", "sm")}>
                         <Pencil aria-hidden /> {p.editDetails}
                       </a>
@@ -284,10 +368,10 @@ export function ProductsWorkspace({ initial }: { initial: PageData }) {
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#1E3317]/8 bg-[#FAFBF7] px-4 py-3 text-xs text-[#5E6B62]">
             <span>{fmt(t.common.page, { n: page.toLocaleString("en-IN"), total: pages.toLocaleString("en-IN") })}</span>
             <div className="flex gap-2">
-              <button type="button" disabled={page <= 1 || loading} onClick={() => void load({ q: query, category, status, page: page - 1 })} className={buttonClass("secondary", "sm")}>
+              <button type="button" disabled={page <= 1 || loading} onClick={() => void load({ q: query, category, status, visible, page: page - 1 })} className={buttonClass("secondary", "sm")}>
                 {t.common.previous}
               </button>
-              <button type="button" disabled={page >= pages || loading} onClick={() => void load({ q: query, category, status, page: page + 1 })} className={buttonClass("secondary", "sm")}>
+              <button type="button" disabled={page >= pages || loading} onClick={() => void load({ q: query, category, status, visible, page: page + 1 })} className={buttonClass("secondary", "sm")}>
                 {t.common.next}
               </button>
             </div>

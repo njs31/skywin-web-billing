@@ -22,6 +22,14 @@ export function fieldSaleWhere() {
   );
 }
 
+/** Operator name billing gives orders that come in from QwicksApp (lib/queries/qwicks.ts). */
+export const QWICKS_OPERATOR = "QwicksApp API";
+
+/** Orders placed in QwicksApp. The Field dashboard lists them beside Field app orders. */
+export function qwicksSaleWhere() {
+  return eq(sales.operatorName, QWICKS_OPERATOR);
+}
+
 function digitsPhone(phone: string) {
   const d = phone.replace(/\D/g, "");
   return d.length > 10 ? d.slice(-10) : d;
@@ -207,12 +215,19 @@ export async function placeFieldOrder(input: FieldOrderIn) {
   };
 }
 
-export async function listFieldOrders(scope?: { officerId?: number }) {
+/**
+ * Field app orders, newest first, with their lines and delivery steps.
+ * `includeQwicks` (Field dashboard only) adds QwicksApp orders, marked source "qwicks".
+ * The app's own order list never includes them.
+ */
+export async function listFieldOrders(scope?: { officerId?: number; includeQwicks?: boolean }) {
+  const ordersWhere = scope?.includeQwicks && !scope?.officerId ? or(fieldSaleWhere(), qwicksSaleWhere()) : fieldSaleWhere();
   const rows = await db
     .select({
       id: sales.id,
       invoiceNo: sales.invoiceNo,
       date: sales.date,
+      customerId: sales.customerId,
       externalOrderId: sales.externalOrderId,
       operatorName: sales.operatorName,
       customerName: sales.customerName,
@@ -230,11 +245,7 @@ export async function listFieldOrders(scope?: { officerId?: number }) {
     })
     .from(sales)
     .leftJoin(customers, eq(customers.id, sales.customerId))
-    .where(
-      scope?.officerId
-        ? and(fieldSaleWhere(), eq(customers.assignedOfficerId, scope.officerId))
-        : fieldSaleWhere()
-    )
+    .where(scope?.officerId ? and(ordersWhere, eq(customers.assignedOfficerId, scope.officerId)) : ordersWhere)
     .orderBy(desc(sales.date));
 
   const ids = rows.map((r) => r.id);
@@ -257,17 +268,25 @@ export async function listFieldOrders(scope?: { officerId?: number }) {
           .leftJoin(productBatches, eq(productBatches.id, saleItems.batchId))
           .where(inArray(saleItems.saleId, ids));
 
-  // Latest delivery stage per order (Order Received, Dispatched, Delivered, ...).
-  const orderIds = rows.map((r) => r.externalOrderId).filter((id): id is string => !!id);
+  // Delivery steps per order (Order Received, Dispatched, Delivered, ...), newest first.
+  // Orders without an external id (old ones) are tracked under their invoice number.
+  const trackingId = (r: { externalOrderId: string | null; invoiceNo: string }) => r.externalOrderId || r.invoiceNo;
+  const orderIds = [...new Set(rows.map(trackingId).filter(Boolean))];
   const stages = orderIds.length
     ? await db
-        .select({ orderId: orderCheckpoints.orderId, checkpoint: orderCheckpoints.checkpoint, at: orderCheckpoints.createdAt })
+        .select({
+          orderId: orderCheckpoints.orderId,
+          checkpoint: orderCheckpoints.checkpoint,
+          at: orderCheckpoints.createdAt,
+          note: orderCheckpoints.note,
+          by: orderCheckpoints.updatedBy,
+        })
         .from(orderCheckpoints)
         .where(inArray(orderCheckpoints.orderId, orderIds))
-        .orderBy(desc(orderCheckpoints.createdAt))
+        .orderBy(desc(orderCheckpoints.createdAt), desc(orderCheckpoints.id))
     : [];
-  const latestStage = new Map<string, { checkpoint: string; at: Date }>();
-  for (const s of stages) if (!latestStage.has(s.orderId)) latestStage.set(s.orderId, { checkpoint: s.checkpoint, at: s.at });
+  const historyById = new Map<string, typeof stages>();
+  for (const s of stages) historyById.set(s.orderId, [...(historyById.get(s.orderId) ?? []), s]);
 
   const bySale = new Map<number, typeof items>();
   for (const it of items) {
@@ -290,7 +309,7 @@ export async function listFieldOrders(scope?: { officerId?: number }) {
       total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
     })
     .from(sales)
-    .where(and(activeSale, fieldSaleWhere(), gte(sales.date, startOfToday), ownedByOfficer));
+    .where(and(activeSale, ordersWhere, gte(sales.date, startOfToday), ownedByOfficer));
 
   const [monthAgg] = await db
     .select({
@@ -298,7 +317,7 @@ export async function listFieldOrders(scope?: { officerId?: number }) {
       total: sql<string>`coalesce(sum(${sales.grandTotal}::numeric), 0)`,
     })
     .from(sales)
-    .where(and(activeSale, fieldSaleWhere(), gte(sales.date, startOfMonth), ownedByOfficer));
+    .where(and(activeSale, ordersWhere, gte(sales.date, startOfMonth), ownedByOfficer));
 
   return {
     todayCount: Number(todayAgg?.count ?? 0),
@@ -315,7 +334,15 @@ export async function listFieldOrders(scope?: { officerId?: number }) {
         razorpayPaymentId: razorpayPaymentIdFromNotes(r.notes),
         waybill: waybillFromNotes(r.notes),
         placedGps: placedGpsFromSale(r.destination, r.notes),
-        stage: r.externalOrderId ? latestStage.get(r.externalOrderId)?.checkpoint ?? null : null,
+        trackingId: trackingId(r),
+        source: (r.operatorName === QWICKS_OPERATOR ? "qwicks" : "field") as "qwicks" | "field",
+        stage: historyById.get(trackingId(r))?.[0]?.checkpoint ?? null,
+        history: (historyById.get(trackingId(r)) ?? []).map((h) => ({
+          checkpoint: h.checkpoint,
+          at: h.at.toISOString(),
+          note: h.note,
+          by: h.by,
+        })),
         lines: (bySale.get(r.id) ?? []).map((it) => ({
           name: it.customName || it.name || "Item",
           productId: it.productId,

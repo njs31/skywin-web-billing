@@ -9,6 +9,7 @@ import {
   Copy,
   CreditCard,
   ExternalLink,
+  Route,
   IndianRupee,
   MapPin,
   Package,
@@ -20,6 +21,10 @@ import {
   Wallet,
 } from "lucide-react";
 import { OrderRefundPanel } from "@/components/field/order-refund-panel";
+import { OrderSteps } from "@/components/field/order-steps";
+import { ExportButton } from "@/components/field/export-button";
+import { ORDER_EXPORT_COLUMNS } from "@/lib/field-export-columns";
+import { orderMatches } from "@/lib/field-order-search";
 import { formatCurrency } from "@/lib/utils";
 import { useFieldLang, useFieldText } from "@/components/field/lang";
 import { fieldLocale, fmt, type FieldText } from "@/lib/field-i18n";
@@ -28,6 +33,7 @@ export type { OrderView } from "@/lib/field-order-view";
 import type { OrderView } from "@/lib/field-order-view";
 
 type Filter = "all" | "open" | "delivered" | "refunded" | "cancelled";
+type Source = "all" | "field" | "qwicks";
 
 /** One status for the order, most important first. */
 function orderState(o: OrderView, t?: FieldText) {
@@ -77,27 +83,27 @@ export function OrdersBoard({
     { key: "cancelled", label: x.filterCancelled },
   ];
   const [filter, setFilter] = useState<Filter>("all");
+  const [source, setSource] = useState<Source>("all");
   const [query, setQuery] = useState("");
+  const qwicksCount = useMemo(() => orders.filter((o) => o.source === "qwicks").length, [orders]);
 
+
+  const matching = useMemo(
+    () => orders.filter((o) => (source === "all" || o.source === source) && orderMatches(o, query)),
+    [orders, query, source]
+  );
+
+  const shown = useMemo(
+    () => (filter === "all" ? matching : matching.filter((o) => orderState(o).key === filter)),
+    [matching, filter]
+  );
+
+  // Filter counts follow the search, so each chip says how many results it would show.
   const counts = useMemo(() => {
-    const c: Record<Filter, number> = { all: orders.length, open: 0, delivered: 0, refunded: 0, cancelled: 0 };
-    for (const o of orders) c[orderState(o).key] += 1;
+    const c: Record<Filter, number> = { all: matching.length, open: 0, delivered: 0, refunded: 0, cancelled: 0 };
+    for (const o of matching) c[orderState(o).key] += 1;
     return c;
-  }, [orders]);
-
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const digits = q.replace(/\D/g, "");
-    return orders.filter((o) => {
-      if (filter !== "all" && orderState(o).key !== filter) return false;
-      if (!q) return true;
-      const text = [o.orderId, o.invoiceNo, o.farmerName, o.placedBy, o.paymentId, o.waybill, ...o.goods.map((g) => g.name)]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return text.includes(q) || (digits.length >= 4 && o.farmerPhone.replace(/\D/g, "").includes(digits));
-    });
-  }, [orders, filter, query]);
+  }, [matching]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -106,6 +112,18 @@ export function OrdersBoard({
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#3E5E2F]">{x.eyebrow}</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-[#1E3317] sm:text-[28px]">{x.title}</h1>
           <p className="mt-1 max-w-xl text-sm text-[#5E6B62]">{x.subtitle}</p>
+        </div>
+        <div className="flex w-full flex-col gap-2 md:w-auto md:items-end">
+        <div className="flex flex-wrap gap-2 md:justify-end">
+          <Link href="/field/orders/route" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#1E3317]/10 bg-white px-3 text-sm font-semibold text-[#245B3E] hover:border-[#245B3E]/30">
+            <Route className="h-4 w-4" aria-hidden /> {x.routeButton}
+          </Link>
+          <ExportButton
+            fileName="skywin-field-orders"
+            sheetName="Orders"
+            columns={ORDER_EXPORT_COLUMNS}
+            rows={() => shown.map((o) => orderExportRow(o, t))}
+          />
         </div>
         <label className="relative block w-full md:w-80">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5E6B62]" aria-hidden />
@@ -117,6 +135,7 @@ export function OrdersBoard({
             className="h-11 w-full rounded-xl border border-[#1E3317]/10 bg-white pl-9 pr-3 text-sm text-[#1E3317] shadow-sm outline-none placeholder:text-[#5E6B62]/70 focus:border-[#3E5E2F]/40 focus:ring-2 focus:ring-[#B8D94A]/40"
           />
         </label>
+        </div>
       </header>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -126,6 +145,7 @@ export function OrdersBoard({
         <Stat icon={<IndianRupee className="h-4 w-4" />} label={x.statMonthValue} value={formatCurrency(stats.monthTotal)} sub={x.invoiceValue} highlight />
       </section>
 
+      <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
       <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" aria-label={x.title}>
         {FILTERS.map((f) => {
           const active = filter === f.key;
@@ -153,6 +173,26 @@ export function OrdersBoard({
           );
         })}
       </nav>
+      <div className="flex w-fit shrink-0 gap-1 rounded-full border border-[#1E3317]/10 bg-white p-1" role="group" aria-label={x.sourceLabel}>
+        {(
+          [
+            ["all", x.sourceAll],
+            ["field", x.sourceField],
+            ["qwicks", `${x.sourceQwicks} · ${qwicksCount}`],
+          ] as Array<[Source, string]>
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={source === key}
+            onClick={() => setSource(key)}
+            className={`h-7 rounded-full px-3 text-xs font-semibold ${source === key ? "bg-[#1E3317] text-white" : "text-[#3E5E2F] hover:bg-[#EDF2E7]"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      </div>
 
       {shown.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[#1E3317]/15 bg-white px-6 py-14 text-center">
@@ -229,6 +269,11 @@ function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean 
             <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${TONES[state.tone]}`}>
               {state.label}
             </span>
+            {order.source === "qwicks" ? (
+              <span className="inline-flex items-center rounded-full bg-[#F1E8FB] px-2.5 py-0.5 text-xs font-semibold text-[#5B2E8C] ring-1 ring-[#5B2E8C]/15">
+                {x.qwicksTag}
+              </span>
+            ) : null}
           </div>
           <p className="mt-0.5 text-xs text-[#5E6B62]">{dateFmt(locale).format(new Date(order.date))}</p>
         </div>
@@ -307,12 +352,16 @@ function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean 
               </a>
             ) : null}
             <p className="mt-0.5 text-xs text-[#5E6B62]">
-              {order.placedBy ? fmt(x.byOfficer, { name: order.placedBy }) : x.byFarmer}
+              {order.source === "qwicks" ? x.byQwicks : order.placedBy ? fmt(x.byOfficer, { name: order.placedBy }) : x.byFarmer}
             </p>
           </Info>
 
           <Info icon={<CreditCard className="h-4 w-4" />} label={x.payment}>
-            {order.paymentId ? <CopyText text={order.paymentId} /> : <p className="text-sm text-[#5E6B62]">{x.noPayment}</p>}
+            {order.paymentId ? (
+              <CopyText text={order.paymentId} />
+            ) : (
+              <p className="text-sm text-[#5E6B62]">{order.source === "qwicks" ? x.paidInQwicks : x.noPayment}</p>
+            )}
           </Info>
 
           <Info icon={<Truck className="h-4 w-4" />} label={x.deliveryInfo}>
@@ -340,7 +389,16 @@ function OrderCard({ order, canRefund }: { order: OrderView; canRefund: boolean 
         </section>
       </div>
 
-      {canRefund ? (
+      <section className="border-t border-[#1E3317]/8 px-5 py-4">
+        <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#5E6B62]">
+          <Truck className="h-3.5 w-3.5" aria-hidden /> {x.deliverySteps}
+        </p>
+        <OrderSteps saleId={order.id} stage={order.stage} history={order.history} cancelled={cancelled} />
+      </section>
+
+      {order.source === "qwicks" ? (
+        <footer className="border-t border-[#1E3317]/8 bg-[#FAFBF7] px-5 py-3 text-xs text-[#5E6B62]">{x.qwicksRefundNote}</footer>
+      ) : canRefund ? (
         <footer className="border-t border-[#1E3317]/8 bg-[#FAFBF7] px-5 py-3">
           <OrderRefundPanel
             saleId={order.id}
@@ -388,4 +446,31 @@ function CopyText({ text }: { text: string }) {
       <span className="sr-only">{copied ? t.common.copied : t.common.copy}</span>
     </button>
   );
+}
+
+/** One spreadsheet row per order, in ORDER_EXPORT_COLUMNS order. */
+function orderExportRow(o: OrderView, t: FieldText) {
+  const stages = t.stages as Record<string, string>;
+  const goods = o.goods.reduce((sum, g) => sum + g.amount, 0);
+  return {
+    "Order ID": o.orderId,
+    Invoice: o.invoiceNo,
+    Date: new Date(o.date).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }),
+    Source: o.source === "qwicks" ? "QwicksApp Order" : "Field app",
+    Status: orderState(o, t).label,
+    "Delivery step": o.stage ? stages[o.stage] ?? o.stage : "",
+    Farmer: o.farmerName,
+    Phone: o.farmerPhone,
+    "Placed by": o.source === "qwicks" ? "QwicksApp" : o.placedBy || "Farmer",
+    Items: o.goods.map((g) => `${g.name} × ${g.qty}`).join("; "),
+    Quantity: o.goods.reduce((sum, g) => sum + g.qty, 0),
+    "Goods value": Math.round(goods * 100) / 100,
+    "Delivery charge": Math.round(o.deliveryCharge * 100) / 100,
+    "Invoice total": Math.round(o.total * 100) / 100,
+    Paid: Math.round(o.paid * 100) / 100,
+    Refunded: Math.round(o.refunded * 100) / 100,
+    "Payment ID": o.paymentId ?? "",
+    Waybill: o.waybill ?? "",
+    Location: o.gps ?? "",
+  };
 }

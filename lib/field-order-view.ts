@@ -24,6 +24,12 @@ export type OrderView = {
   trackUrl: string | null;
   goods: Array<{ name: string; qty: number; batch: string | null; expiry: string | null; amount: number }>;
   deliveryCharge: number;
+  /** "qwicks" for orders placed in QwicksApp; "field" for the SkyWin Field app. */
+  source: "field" | "qwicks";
+  /** Id the delivery steps are saved under (the order id, or the invoice for old orders). */
+  trackingId: string;
+  /** Delivery steps, newest first. */
+  history: Array<{ checkpoint: string; at: string; note: string | null; by: string | null }>;
 };
 
 type ListedOrder = Awaited<ReturnType<typeof listFieldOrders>>["orders"][number];
@@ -58,5 +64,8 @@ export function toOrderView(order: ListedOrder): OrderView {
       amount: l.amount,
     })),
     deliveryCharge: delivery.reduce((sum, l) => sum + l.amount, 0),
+    source: order.source,
+    trackingId: order.trackingId,
+    history: order.history,
   };
 }

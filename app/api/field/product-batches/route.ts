@@ -39,9 +39,9 @@ export async function GET(req: NextRequest) {
   try {
     const categoryIds = !ids.length && !offers && q ? catalogProductIdsForQuery(await getFieldCatalogTree(), q) : null;
     const rows = ids.length
-      ? await listProductBatchesByIds(ids)
+      ? await listProductBatchesByIds(ids, { visibleOnly: true })
       : categoryIds
-        ? (await listProductBatchesByIds(categoryIds)).slice(0, Math.max(limit, 40))
+        ? (await listProductBatchesByIds(categoryIds, { visibleOnly: true })).slice(0, Math.max(limit, 40))
       : offers
         ? await listDiscountedOffers(limit, { inStockOnly: !allOffers, listedOnly: true })
         : await searchProductBatches(q, limit, { onlyInStock: false, listedOnly: true });

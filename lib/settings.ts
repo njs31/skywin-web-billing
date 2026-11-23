@@ -39,6 +39,8 @@ export const DEFAULT_SETTINGS = {
    * label geometry. See DEFAULT_PRESENT_DOTS in lib/escpos-print.ts.
    */
   labelTearOffMm: "12",
+  /** SkyWin office as "lat, lng": where delivery routes start and end (Field → Orders → Delivery route). */
+  fieldOfficeLocation: "",
   qwicksMerchantId: "SkywinKmu",
   qwicksHost: "qwicks.app",
   seedLicense: "4300/TNJ/2026",

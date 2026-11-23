@@ -14,6 +14,7 @@ export type CatalogSummary = {
   id: number;
   slug: string;
   title: string;
+  iconUri: string | null;
   subcategories: number;
   skus: number;
   subNames: string[];
@@ -85,8 +86,13 @@ export function CatalogIndex({ categories }: { categories: CatalogSummary[] }) {
                 className="group flex h-full flex-col rounded-2xl border border-[#1E3317]/10 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#1E3317]/25 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C6E26A]"
               >
                 <div className="mb-3 flex items-start gap-3">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#EDF2E7] text-base font-bold text-[#3E5E2F]">
-                    {category.title.trim().charAt(0).toUpperCase() || "•"}
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#EDF2E7] text-base font-bold text-[#3E5E2F]">
+                    {category.iconUri ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={category.iconUri} alt="" className="h-full w-full object-contain p-1" />
+                    ) : (
+                      category.title.trim().charAt(0).toUpperCase() || "•"
+                    )}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[15px] font-bold text-[#1E3317]">{category.title}</p>

@@ -65,7 +65,12 @@ export async function sendExpoPushNotification({
 /**
  * Register or update an Expo push token for a user/farmer phone number.
  */
-export async function registerPushToken(phone: string, token: string, platform: string = "android") {
+export async function registerPushToken(
+  phone: string,
+  token: string,
+  platform: string = "android",
+  language: "en" | "ta" | null = null
+) {
   const cleanPhone = phone.replace(/\D/g, "").slice(-10);
   const cleanToken = token.trim();
   if (!cleanPhone || !cleanToken) {
@@ -79,6 +84,7 @@ export async function registerPushToken(phone: string, token: string, platform: 
         phone: cleanPhone,
         token: cleanToken,
         platform,
+        language,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
@@ -86,6 +92,8 @@ export async function registerPushToken(phone: string, token: string, platform: 
         set: {
           phone: cleanPhone,
           platform,
+          // Older apps don't send their language; keep what is known instead of clearing it.
+          ...(language ? { language } : {}),
           updatedAt: new Date(),
         },
       });
@@ -179,7 +187,8 @@ export async function recordOrderCheckpoint(input: {
       status: sales.status,
     })
     .from(sales)
-    .where(eq(sales.externalOrderId, orderId))
+    // Old orders have no external id and are tracked by invoice; the caller then passes saleId.
+    .where(input.saleId ? eq(sales.id, input.saleId) : eq(sales.externalOrderId, orderId))
     .limit(1);
 
   const saleId = input.saleId || sale?.id;

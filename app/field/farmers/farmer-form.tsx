@@ -4,7 +4,9 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Leaf, MapPin, Phone, Plus, Trash2, UserPlus, X } from "lucide-react";
-import { fieldFarmersList, saveFieldFarmer } from "@/lib/actions/field";
+import { exportFieldFarmers, fieldFarmersList, saveFieldFarmer } from "@/lib/actions/field";
+import { ExportButton } from "@/components/field/export-button";
+import { FARMER_EXPORT_COLUMNS } from "@/lib/field-export-columns";
 import { farmerFieldErrors, type FarmerFieldErrors } from "@/lib/field-farmer-rules";
 import {
   Badge,
@@ -198,16 +200,24 @@ export function FarmersWorkspace({ initial, officers }: { initial: ListResult; o
         title={f.title}
         description={f.subtitle}
         actions={
-          <button
-            type="button"
-            onClick={() => {
-              setNotice("");
-              setEditor("new");
-            }}
-            className={buttonClass("primary")}
-          >
-            <UserPlus aria-hidden /> {f.add}
-          </button>
+          <>
+            <ExportButton
+              fileName={query.trim() ? "skywin-farmers-search" : "skywin-farmers"}
+              sheetName="Farmers"
+              columns={FARMER_EXPORT_COLUMNS}
+              rows={() => exportFieldFarmers({ q: query.trim() })}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setNotice("");
+                setEditor("new");
+              }}
+              className={buttonClass("primary")}
+            >
+              <UserPlus aria-hidden /> {f.add}
+            </button>
+          </>
         }
       />
 

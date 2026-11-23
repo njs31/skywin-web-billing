@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, farms, fieldListedProducts, fieldProductDetails, products, saleItems, sales } from "@/db/schema";
-import { listedProductIds } from "@/lib/field-listed";
+import { appVisibleProductIds } from "@/lib/field-listed";
 import {
   cropSuggestionIds,
   HOME_SUGGESTION_MIN,
@@ -61,7 +61,7 @@ function remember(farmerId: number, value: HomeSuggestionResult) {
 }
 
 function sellable() {
-  return and(eq(products.isActive, true), gt(products.stockQty, "0"), inArray(products.id, listedProductIds()));
+  return and(eq(products.isActive, true), gt(products.stockQty, "0"), inArray(products.id, appVisibleProductIds()));
 }
 
 async function buyAgain(farmerId: number) {
@@ -178,7 +178,7 @@ async function nearby(farmerId: number) {
 
 async function present(ids: number[]): Promise<HomeSuggestionItem[]> {
   if (ids.length === 0) return [];
-  const rows = await listProductBatchesByIds(ids);
+  const rows = await listProductBatchesByIds(ids, { visibleOnly: true });
   const chosen = new Map<number, ProductBatchSearchResult>();
   for (const row of rows) {
     const stock = Number(row.batchQty) || 0;

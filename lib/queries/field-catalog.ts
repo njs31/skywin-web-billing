@@ -28,6 +28,7 @@ export type FieldCatalogTreeCategory = {
   sortOrder: number;
   queries: string[];
   iconKey: string;
+  iconUri: string | null;
   subs: FieldCatalogTreeSub[];
 };
 
@@ -127,6 +128,7 @@ export async function getFieldCatalogTree(): Promise<FieldCatalogTreeCategory[]>
     sortOrder: category.sortOrder,
     queries: asStringArray(category.queries),
     iconKey: category.iconKey,
+    iconUri: category.iconUri ? category.iconUri.replace(/:3000(?=\/)/g, "") : null,
     subs: subs
       .filter((sub) => sub.categoryId === category.id)
       .map((sub) => ({
@@ -137,7 +139,7 @@ export async function getFieldCatalogTree(): Promise<FieldCatalogTreeCategory[]>
         queries: asStringArray(sub.queries),
         matchTerms: asStringArray(sub.matchTerms),
         iconKey: sub.iconKey,
-        iconUri: sub.iconUri,
+        iconUri: sub.iconUri ? sub.iconUri.replace(/:3000(?=\/)/g, "") : null,
         iconTint: sub.iconTint,
         productIds: productsBySub.get(sub.id) ?? [],
       })),
@@ -205,6 +207,22 @@ export async function updateFieldCategory(
     .where(eq(fieldCategories.id, id))
     .returning();
   return row;
+}
+
+/** Uploaded icon for a category (null removes it; the app goes back to the built-in icon). */
+export async function setFieldCategoryIconUri(id: number, iconUri: string | null) {
+  const [row] = await db.update(fieldCategories).set({ iconUri }).where(eq(fieldCategories.id, id)).returning({ id: fieldCategories.id });
+  if (!row) throw new Error("This category no longer exists.");
+}
+
+/** Uploaded icon for a subcategory. Uploaded artwork keeps its colours (no tint). */
+export async function setFieldSubcategoryIconUri(id: number, iconUri: string | null) {
+  const [row] = await db
+    .update(fieldSubcategories)
+    .set({ iconUri, iconTint: iconUri ? false : true })
+    .where(eq(fieldSubcategories.id, id))
+    .returning({ id: fieldSubcategories.id });
+  if (!row) throw new Error("This subcategory no longer exists.");
 }
 
 export async function deleteFieldCategory(id: number) {

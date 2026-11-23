@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    // Field dashboard Excel imports send every row at once (the full catalogue is about 2 MB; nginx allows 10 MB).
+    serverActions: { bodySizeLimit: "10mb" },
+  },
   async headers() {
     return [
       {

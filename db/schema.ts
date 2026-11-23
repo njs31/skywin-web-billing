@@ -824,6 +824,8 @@ export const fieldCategories = pgTable("field_categories", {
   sortOrder: integer("sort_order").default(0).notNull(),
   queries: text("queries").array().notNull(),
   iconKey: text("icon_key").notNull(),
+  /** Uploaded icon; when set the app shows it instead of the built-in iconKey. */
+  iconUri: text("icon_uri"),
 });
 
 export const fieldSubcategories = pgTable(
@@ -963,6 +965,8 @@ export const fieldListedProducts = pgTable("field_listed_products", {
   widthCm: numeric("width_cm", { precision: 8, scale: 2 }),
   heightCm: numeric("height_cm", { precision: 8, scale: 2 }),
   sourceCode: text("source_code").notNull(),
+  /** Off: the product stays listed on the dashboard but farmers and officers don't see it in the app. */
+  appVisible: boolean("app_visible").default(true).notNull(),
 });
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -1039,6 +1043,8 @@ export const pushTokens = pgTable(
     phone: text("phone").notNull(),
     token: text("token").notNull().unique(),
     platform: text("platform").default("android"),
+    /** The app's language on this phone ("en" | "ta"); null for apps that don't send it. */
+    language: text("language"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1046,6 +1052,34 @@ export const pushTokens = pgTable(
     phoneIdx: index("push_tokens_phone_idx").on(table.phone),
   })
 );
+
+/** Notifications a manager sends to every app user from the Field dashboard (/field/notifications). */
+export const fieldBroadcasts = pgTable(
+  "field_broadcasts",
+  {
+    id: text("id").primaryKey(),
+    titleEn: text("title_en").notNull(),
+    titleTa: text("title_ta"),
+    bodyEn: text("body_en").default("").notNull(),
+    bodyTa: text("body_ta"),
+    imageUrl: text("image_url"),
+    linkUrl: text("link_url"),
+    videoUrl: text("video_url"),
+    audience: text("audience").default("all").notNull(),
+    /** sending | sent | failed */
+    status: text("status").default("sending").notNull(),
+    devices: integer("devices").default(0).notNull(),
+    delivered: integer("delivered").default(0).notNull(),
+    failed: integer("failed").default(0).notNull(),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    sentAt: timestamp("sent_at"),
+  },
+  (table) => ({
+    createdAtIdx: index("field_broadcasts_created_at_idx").on(table.createdAt),
+  })
+);
+export type FieldBroadcast = typeof fieldBroadcasts.$inferSelect;
 
 /** Order push notifications history for mobile app */
 /**
