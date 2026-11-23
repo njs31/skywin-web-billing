@@ -24,28 +24,8 @@ import { formatCurrency } from "@/lib/utils";
 import { useFieldLang, useFieldText } from "@/components/field/lang";
 import { fieldLocale, fmt, type FieldText } from "@/lib/field-i18n";
 
-export type OrderView = {
-  id: number;
-  orderId: string;
-  invoiceNo: string;
-  date: string;
-  status: string;
-  stage: string | null;
-  farmerName: string;
-  farmerPhone: string;
-  /** Officer who placed it for the farmer; empty when the farmer ordered in the app. */
-  placedBy: string;
-  paid: number;
-  refunded: number;
-  total: number;
-  paymentId: string | null;
-  gps: string | null;
-  mapsUrl: string | null;
-  waybill: string | null;
-  trackUrl: string | null;
-  goods: Array<{ name: string; qty: number; batch: string | null; expiry: string | null; amount: number }>;
-  deliveryCharge: number;
-};
+export type { OrderView } from "@/lib/field-order-view";
+import type { OrderView } from "@/lib/field-order-view";
 
 type Filter = "all" | "open" | "delivered" | "refunded" | "cancelled";
 

@@ -2,282 +2,138 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { PUBLIC_SHIPPING_HOST } from "@/lib/site-hosts";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import {
-  Truck,
-  Package,
-  Layers,
-  Calculator,
-  LogOut,
-  ExternalLink,
-  CheckCircle2,
-  AlertCircle,
-  RefreshCw,
-  Sparkles,
-} from "lucide-react";
-import { signOutEverywhere } from "@/lib/sso-client";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ExternalLink } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { ShippingProviderMode } from "@/lib/delivery/shipping-constants";
+import { PageHeader, buttonClass } from "@/components/shipping/ui";
+
+const TABS = [
+  { key: "orders", label: "Dispatch" },
+  { key: "rates", label: "Rate card" },
+  { key: "simulator", label: "Price check" },
+] as const;
 
 export function ShippingShell({
   children,
-  userName,
-  userRole,
   initialProvider,
   billingHref,
 }: {
   children: React.ReactNode;
-  userName?: string | null;
-  userRole?: string | null;
   initialProvider: ShippingProviderMode;
   billingHref: string;
 }) {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentTab = searchParams.get("tab") || "orders";
 
   const [provider, setProvider] = useState<ShippingProviderMode>(initialProvider);
   const [switching, startSwitching] = useTransition();
-  const [switchSuccess, setSwitchSuccess] = useState(false);
-  const [switchError, setSwitchError] = useState("");
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const handleToggleProvider = (newProvider: ShippingProviderMode) => {
-    if (newProvider === provider || switching) return;
-    setSwitchError("");
-    setSwitchSuccess(false);
-
+  const switchTo = (next: ShippingProviderMode) => {
+    if (next === provider || switching) return;
+    setNotice(null);
     startSwitching(async () => {
       try {
         const res = await fetch("/api/shipping/rates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "switch_provider",
-            provider: newProvider,
-          }),
+          body: JSON.stringify({ action: "switch_provider", provider: next }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to switch provider");
-
-        setProvider(newProvider);
-        setSwitchSuccess(true);
-        setTimeout(() => setSwitchSuccess(false), 3000);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Could not change the delivery method.");
+        setProvider(next);
+        setNotice({
+          ok: true,
+          text:
+            next === "delhivery"
+              ? "Saved. Checkout now charges Delhivery fees at Delhivery's live price."
+              : "Saved. Checkout now charges Delivery fees from your rate card.",
+        });
         router.refresh();
       } catch (err) {
-        setSwitchError(err instanceof Error ? err.message : "Failed to switch");
+        setNotice({ ok: false, text: err instanceof Error ? err.message : "Could not change the delivery method." });
       }
     });
   };
 
-  const setTab = (tab: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", tab);
-    router.push(`${pathname}?${params.toString()}`);
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
-      {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex min-h-16 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2">
-            {/* Brand */}
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-600 to-green-800 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
-                <Truck className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-lg tracking-tight text-slate-900">
-                    SkyWin Shipping
-                  </span>
-                  <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
-                    {PUBLIC_SHIPPING_HOST}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 font-medium">Logistics & Delivery Dispatch</p>
-              </div>
+    <div className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+      <PageHeader
+        title="Shipping & Dispatch"
+        description="Move paid orders through delivery. Farmers see every step in the app and get a notification."
+        actions={
+          <>
+            <div
+              role="group"
+              aria-label="Delivery method"
+              className={cn("flex items-center gap-1 rounded-lg border border-slate-200 bg-white py-1 pl-3 pr-1", switching && "opacity-70")}
+            >
+              <span className="mr-1 whitespace-nowrap text-[13px] text-slate-500">Delivery method</span>
+              <MethodSwitch label="Delhivery" on={provider === "delhivery"} busy={switching} onTurnOn={() => switchTo("delhivery")} />
+              <MethodSwitch label="Delivery" on={provider === "manual"} busy={switching} onTurnOn={() => switchTo("manual")} />
             </div>
+            <a href={billingHref} className={buttonClass("ghost")}>
+              POS & Billing
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            </a>
+          </>
+        }
+      />
 
-            {/* Right: delivery method, links, user (moves under the brand when there is no room) */}
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-              {/* Delivery method switches (exactly one is on) */}
-              <div className="flex shrink-0 items-center gap-1.5 rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1.5 sm:gap-2 sm:px-3">
-                <span className="hidden whitespace-nowrap text-xs font-semibold text-slate-500 sm:inline">Delivery method:</span>
-                <ProviderSwitch
-                  label="Delhivery"
-                  hint="Customers pay Delhivery's live rate"
-                  on={provider === "delhivery"}
-                  busy={switching}
-                  tone="blue"
-                  onChange={(next) => handleToggleProvider(next ? "delhivery" : "manual")}
-                />
-                <ProviderSwitch
-                  label="Delivery"
-                  hint="Customers pay the Rates tab prices"
-                  on={provider === "manual"}
-                  busy={switching}
-                  tone="emerald"
-                  onChange={(next) => handleToggleProvider(next ? "manual" : "delhivery")}
-                />
-                {switching && <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-              </div>
-
-              <Link
-                href={billingHref}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 hover:text-slate-900 transition-colors"
-                title="Go to SkyWin Billing"
-              >
-                <span>POS & Billing</span>
-                <ExternalLink className="h-3.5 w-3.5" />
-              </Link>
-
-              <div className="h-8 w-px bg-slate-200 mx-1 hidden sm:block" />
-
-              <div className="text-right hidden md:block">
-                <p className="text-xs font-semibold text-slate-800 leading-tight">{userName || "Officer"}</p>
-                <p className="text-[10px] text-slate-500 capitalize">{userRole?.replace("_", " ") || "Admin"}</p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void signOutEverywhere()}
-                title="Sign out"
-                className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Live switch alert banner */}
-        {switchSuccess && (
-          <div className="bg-emerald-600 text-white text-xs py-1.5 px-4 text-center font-medium flex items-center justify-center gap-1.5 transition-all">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            <span>
-              Shipping provider switched to <strong>{provider === "manual" ? "Manual Rate Sheet (SkyWin Delivery)" : "Delhivery API"}</strong>! It is immediately live on the mobile app via OTA.
-            </span>
-          </div>
-        )}
-
-        {switchError && (
-          <div className="bg-rose-600 text-white text-xs py-1.5 px-4 text-center font-medium flex items-center justify-center gap-1.5">
-            <AlertCircle className="h-3.5 w-3.5" />
-            <span>{switchError}</span>
-          </div>
-        )}
-
-        {/* Tabs Bar */}
-        <div className="border-t border-slate-100 bg-slate-50/50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-            <nav className="flex space-x-1 sm:space-x-4 py-2" aria-label="Tabs">
-              <button
-                type="button"
-                onClick={() => setTab("orders")}
-                className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors ${
-                  currentTab === "orders"
-                    ? "bg-emerald-600 text-white shadow-sm"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
-                }`}
-              >
-                <Package className="h-4 w-4" />
-                <span>Orders & Checkpoints</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTab("rates")}
-                className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors ${
-                  currentTab === "rates"
-                    ? "bg-emerald-600 text-white shadow-sm"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
-                }`}
-              >
-                <Layers className="h-4 w-4" />
-                <span>Weight & Destination Rates</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTab("simulator")}
-                className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors ${
-                  currentTab === "simulator"
-                    ? "bg-emerald-600 text-white shadow-sm"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
-                }`}
-              >
-                <Calculator className="h-4 w-4" />
-                <span>Rate Simulator</span>
-              </button>
-            </nav>
-
-            <div className="hidden lg:flex items-center gap-2 text-xs text-slate-500">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-              <span>
-                Current App Method: <strong className="text-slate-700">{provider === "manual" ? "SkyWin Manual Rates" : "Delhivery Surface"}</strong>
-              </span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        {children}
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-400">
-        <p>
-          SkyWin Biotech · Shipping Dispatch & Rate Matrix · {PUBLIC_SHIPPING_HOST}
+      {notice ? (
+        <p role="status" className={cn("rounded-lg px-3 py-2 text-sm", notice.ok ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-700")}>
+          {notice.text}
         </p>
-      </footer>
+      ) : null}
+
+      <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <nav aria-label="Shipping sections" className="flex min-w-max gap-6 border-b border-slate-200">
+          {TABS.map((t) => {
+            const on = currentTab === t.key;
+            return (
+              <Link
+                key={t.key}
+                href={`/shipping?tab=${t.key}`}
+                scroll={false}
+                aria-current={on ? "page" : undefined}
+                className={cn(
+                  "-mb-px border-b-2 pb-2.5 pt-1 text-sm transition-colors",
+                  on ? "border-emerald-700 font-medium text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"
+                )}
+              >
+                {t.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+
+      {children}
     </div>
   );
 }
 
-/** One on/off switch; turning it on turns the other method off. */
-function ProviderSwitch({
-  label,
-  hint,
-  on,
-  busy,
-  tone,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  on: boolean;
-  busy: boolean;
-  tone: "blue" | "emerald";
-  onChange: (next: boolean) => void;
-}) {
-  const track = on ? (tone === "blue" ? "bg-blue-600" : "bg-emerald-600") : "bg-slate-300";
+/** One of the two method switches; turning one on turns the other off. */
+function MethodSwitch({ label, on, busy, onTurnOn }: { label: string; on: boolean; busy: boolean; onTurnOn: () => void }) {
   return (
-    <label
-      title={hint}
-      className={`flex cursor-pointer select-none items-center gap-2 rounded-xl px-2.5 py-1.5 transition-colors ${
-        on ? "bg-white shadow-sm ring-1 ring-slate-200" : "hover:bg-white/70"
-      } ${busy ? "pointer-events-none opacity-60" : ""}`}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={busy || on}
+      onClick={onTurnOn}
+      title={on ? `${label} is on` : `Turn on ${label}`}
+      className={cn(
+        "flex h-8 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/40 disabled:cursor-default",
+        on ? "bg-slate-100 font-medium text-slate-900" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+      )}
     >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        aria-label={label}
-        disabled={busy || on}
-        onClick={() => onChange(!on)}
-        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-slate-400 disabled:cursor-default ${track}`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-            on ? "translate-x-[18px]" : "translate-x-0.5"
-          }`}
-        />
-      </button>
-      <span className={`text-xs font-semibold ${on ? "text-slate-900" : "text-slate-500"}`}>{label}</span>
-    </label>
+      {label}
+      <span className={cn("relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors", on ? "bg-emerald-600" : "bg-slate-300")}>
+        <span className={cn("inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform", on ? "translate-x-[14px]" : "translate-x-0.5")} />
+      </span>
+    </button>
   );
 }

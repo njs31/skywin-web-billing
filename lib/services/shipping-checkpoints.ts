@@ -202,7 +202,8 @@ export async function recordOrderCheckpoint(input: {
   if (saleId) {
     const updates: Record<string, unknown> = {
       deliveryNote: checkpoint,
-      transporterName: "SkyWin Delivery",
+      // Keep the courier already on the invoice (e.g. Delhivery); SkyWin Delivery otherwise.
+      transporterName: sql`coalesce(nullif(${sales.transporterName}, ''), 'SkyWin Delivery')`,
     };
 
     if (checkpoint === "Order Cancelled") {
@@ -210,10 +211,6 @@ export async function recordOrderCheckpoint(input: {
       updates.cancelledAt = new Date();
       updates.cancelledBy = input.updatedBy || "Shipping Office";
       updates.cancelReason = input.note || "Cancelled from Shipping Portal";
-    }
-
-    if (input.location) {
-      updates.destination = input.location;
     }
 
     await db.update(sales).set(updates).where(eq(sales.id, saleId));
@@ -302,7 +299,7 @@ export async function getOrderTrackingDetails(orderId: string) {
     invoiceNo: sale?.invoiceNo || null,
     currentStatus: latestCp,
     courier: sale?.transporterName || "SkyWin Delivery",
-    location: sale?.destination || "",
+    location: checkpoints.find((cp) => cp.location)?.location || sale?.destination || "",
     lastUpdated: checkpoints[0]?.createdAt?.toISOString() || sale?.date?.toISOString() || new Date().toISOString(),
     history: checkpoints.map((cp) => ({
       id: cp.id,

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentShippingUser } from "@/lib/shipping-guard";
 import { recordOrderCheckpoint, getOrderTrackingDetails } from "@/lib/services/shipping-checkpoints";
 import { type ShippingCheckpoint } from "@/lib/delivery/manual-rates";
+import { isDeliveryStep } from "@/lib/order-status";
+import { db } from "@/db";
+import { sales } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +47,20 @@ export async function POST(req: NextRequest) {
         { error: "orderId and checkpoint are required" },
         { status: 400 }
       );
+    }
+    // Only delivery steps are set here. Cancelling or refunding must go through Orders, which
+    // sends the money back through Razorpay and returns the stock; a label alone would not.
+    if (!isDeliveryStep(checkpoint)) {
+      return NextResponse.json(
+        { error: "Cancel or refund this order from Orders, so the farmer gets the money back." },
+        { status: 400 }
+      );
+    }
+    if (body.saleId) {
+      const [sale] = await db.select({ status: sales.status }).from(sales).where(eq(sales.id, Number(body.saleId))).limit(1);
+      if (sale?.status === "cancelled") {
+        return NextResponse.json({ error: "This order is cancelled, so it cannot be shipped." }, { status: 400 });
+      }
     }
 
     const result = await recordOrderCheckpoint({

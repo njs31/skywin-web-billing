@@ -1,21 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import {
-  Layers,
-  Plus,
-  RotateCcw,
-  Edit2,
-  Trash2,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  MapPin,
-  Tag,
-  Info,
-  DollarSign,
-  Save,
-} from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { Plus } from "lucide-react";
+import { cn, formatCurrency } from "@/lib/utils";
+import { Dialog, buttonClass, inputClass, labelClass } from "@/components/shipping/ui";
 
 export type RateItem = {
   id: number;
@@ -32,497 +20,657 @@ export type RateItem = {
   isActive: boolean;
 };
 
+type Band = { min: number; max: number; slab: string };
+type ZoneFields = Pick<RateItem, "zoneName" | "regions" | "transitDays" | "pincodes" | "districts" | "states">;
+type Zone = ZoneFields & { rules: RateItem[]; level: number };
+
+const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+const title = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+function grams(g: number) {
+  if (g >= 1000) return `${Number((g / 1000).toFixed(2))} kg`;
+  return `${g} g`;
+}
+function bandLabel(b: { min: number; max: number }) {
+  return b.min <= 1 ? `Up to ${grams(b.max)}` : `${grams(b.min)} – ${grams(b.max)}`;
+}
+/** Matching order: PIN code, district, state or region, then everywhere else. */
+function levelOf(z: ZoneFields) {
+  if (list(z.pincodes).length) return 0;
+  if (list(z.districts).length) return 1;
+  if (list(z.states).length) return 2;
+  return 3;
+}
+function whereText(z: ZoneFields) {
+  const parts: string[] = [];
+  const pins = list(z.pincodes);
+  const districts = list(z.districts);
+  const states = list(z.states);
+  if (pins.length) parts.push(`${pins.length} PIN code${pins.length === 1 ? "" : "s"}`);
+  if (districts.length) parts.push(`${districts.slice(0, 3).map(title).join(", ")}${districts.length > 3 ? ` +${districts.length - 3} districts` : ""}`);
+  if (states.length) parts.push(states.map(title).join(", "));
+  return parts.length ? parts.join(" · ") : "Everywhere else in India";
+}
+
+async function post(body: unknown) {
+  const res = await fetch("/api/shipping/rates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Could not save. Try again.");
+  return data as { rate?: { id: number } };
+}
+
+type Editing =
+  | { kind: "cell"; zone: Zone; band: Band; rule: RateItem | null }
+  | { kind: "zone"; zone: Zone | null }
+  | { kind: "band" };
+
 export function RatesConfigTab({ initialRates }: { initialRates: RateItem[] }) {
-  const [rates, setRates] = useState<RateItem[]>(initialRates);
-  const [editingRate, setEditingRate] = useState<RateItem | null>(null);
-  const [isNew, setIsNew] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const [statusMessage, setStatusMessage] = useState<{
-    success: boolean;
-    text: string;
-  } | null>(null);
+  const [rates, setRates] = useState(initialRates);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [saved, setSaved] = useState("");
 
-  // Group rates by weight slab
-  const slabs = Array.from(new Set(rates.map((r) => r.slab)));
+  const bands = useMemo<Band[]>(() => {
+    const seen = new Map<string, Band>();
+    for (const r of rates) {
+      const key = `${r.minWeightGrams}-${r.maxWeightGrams}`;
+      if (!seen.has(key)) seen.set(key, { min: r.minWeightGrams, max: r.maxWeightGrams, slab: r.slab });
+    }
+    return [...seen.values()].sort((a, b) => a.min - b.min || a.max - b.max);
+  }, [rates]);
 
-  const handleToggle = (id: number) => {
-    startTransition(async () => {
-      try {
-        const res = await fetch("/api/shipping/rates", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "toggle", rateId: id }),
+  const zones = useMemo<Zone[]>(() => {
+    const byName = new Map<string, Zone>();
+    for (const r of rates) {
+      const z = byName.get(r.zoneName);
+      if (z) z.rules.push(r);
+      else
+        byName.set(r.zoneName, {
+          zoneName: r.zoneName,
+          regions: r.regions,
+          transitDays: r.transitDays,
+          pincodes: r.pincodes,
+          districts: r.districts,
+          states: r.states,
+          rules: [r],
+          level: levelOf(r),
         });
-        if (!res.ok) throw new Error("Failed to toggle status");
-        setRates((prev) =>
-          prev.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r))
-        );
-      } catch (err) {
-        alert(err instanceof Error ? err.message : "Toggle failed");
-      }
-    });
-  };
+    }
+    return [...byName.values()].sort((a, b) => a.level - b.level || a.zoneName.localeCompare(b.zoneName));
+  }, [rates]);
 
-  const handleDelete = (id: number) => {
-    if (!confirm("Are you sure you want to remove this rate rule?")) return;
-    startTransition(async () => {
-      try {
-        const res = await fetch("/api/shipping/rates", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "delete", rateId: id }),
-        });
-        if (!res.ok) throw new Error("Failed to delete rule");
-        setRates((prev) => prev.filter((r) => r.id !== id));
-      } catch (err) {
-        alert(err instanceof Error ? err.message : "Delete failed");
-      }
-    });
-  };
-
-  const handleSaveRate = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingRate || pending) return;
-
-    startTransition(async () => {
-      try {
-        const action = isNew ? "create" : "update";
-        const res = await fetch("/api/shipping/rates", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, rate: editingRate }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to save rate");
-
-        if (isNew && data.rate) {
-          setRates((prev) => [...prev, { ...editingRate, id: data.rate.id }]);
-        } else {
-          setRates((prev) =>
-            prev.map((r) => (r.id === editingRate.id ? editingRate : r))
-          );
-        }
-
-        setStatusMessage({
-          success: true,
-          text: `Rate rule "${editingRate.zoneName}" saved successfully.`,
-        });
-        setTimeout(() => setStatusMessage(null), 3000);
-        setEditingRate(null);
-        setIsNew(false);
-      } catch (err) {
-        setStatusMessage({
-          success: false,
-          text: err instanceof Error ? err.message : "Save failed",
-        });
-      }
-    });
-  };
-
-  const handleAddNew = () => {
-    setIsNew(true);
-    setEditingRate({
-      id: 0,
-      slab: "500 to 1kg",
-      minWeightGrams: 501,
-      maxWeightGrams: 1000,
-      zoneName: "",
-      regions: "",
-      transitDays: "3 - 5 Days",
-      shippingFee: 85.0,
-      pincodes: "",
-      districts: "",
-      states: "",
-      isActive: true,
-    });
+  const heaviest = bands.at(-1);
+  const done = (text: string) => {
+    setEditing(null);
+    setSaved(text);
+    setTimeout(() => setSaved(""), 4000);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner / Actions */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <Layers className="h-5 w-5 text-emerald-600" />
-            <h2 className="text-base font-bold text-slate-800">
-              Weight & Destination Rate Matrix
-            </h2>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            The app charges these rates for the whole order&apos;s weight. The most specific match wins:
-            PIN code, then district, then state or region (e.g. north-east), then a rule with no
-            destination (rest of India). Changes apply to the next checkout, no app update needed.
+          <h2 className="text-base font-semibold text-slate-900">Prices by zone and weight</h2>
+          <p className="mt-0.5 max-w-2xl text-sm text-slate-500">
+            Used when the delivery method is <span className="font-medium text-slate-700">Delivery</span>. The price is for the whole order&apos;s
+            weight. Changes apply to the next checkout.
           </p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleAddNew}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Add New Rate Rule</span>
+        <div className="flex gap-2">
+          <button type="button" className={buttonClass("secondary")} onClick={() => setEditing({ kind: "band" })} disabled={zones.length === 0}>
+            <Plus className="h-4 w-4" aria-hidden /> Weight band
+          </button>
+          <button type="button" className={buttonClass("primary")} onClick={() => setEditing({ kind: "zone", zone: null })}>
+            <Plus className="h-4 w-4" aria-hidden /> Zone
           </button>
         </div>
       </div>
 
-      {/* GST Note Callout from PDF */}
-      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-        <Info className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
-        <div className="text-xs text-amber-900 leading-relaxed">
-          <strong>Tax Note from Rate Specification:</strong> On invoices, shipping
-          prices follow the same GST % as the base product (e.g. shipping fertilizer with 5% GST has
-          5% shipping GST; machinery with 18% GST has 18% shipping GST).
-        </div>
-      </div>
+      {saved ? (
+        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {saved}
+        </p>
+      ) : null}
 
-      {statusMessage && (
-        <div
-          className={`p-3.5 rounded-xl text-xs font-medium flex items-center gap-2 ${
-            statusMessage.success
-              ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-              : "bg-rose-50 text-rose-800 border border-rose-200"
-          }`}
-        >
-          {statusMessage.success ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <AlertCircle className="h-4 w-4" />
-          )}
-          <span>{statusMessage.text}</span>
+      {zones.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+          <p className="text-sm font-medium text-slate-800">No rates yet</p>
+          <p className="mt-1 text-sm text-slate-500">Add a zone to start charging delivery from your own rate card.</p>
         </div>
+      ) : (
+        <>
+          {/* Desktop and tablet: zones down, weight bands across */}
+          <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/70 text-left text-xs text-slate-500">
+                  <th className="px-4 py-2.5 font-medium">Zone</th>
+                  <th className="px-4 py-2.5 font-medium">Transit</th>
+                  {bands.map((b) => (
+                    <th key={`${b.min}-${b.max}`} className="px-4 py-2.5 text-right font-medium" title={b.slab}>
+                      {bandLabel(b)}
+                    </th>
+                  ))}
+                  <th className="w-16 px-2 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {zones.map((z) => (
+                  <tr key={z.zoneName} className="border-t border-slate-100 align-top">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-900">{z.zoneName}</p>
+                      <p className="mt-0.5 max-w-md text-xs text-slate-500">{whereText(z)}</p>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{z.transitDays || "—"}</td>
+                    {bands.map((b) => {
+                      const rule = z.rules.find((r) => r.minWeightGrams === b.min && r.maxWeightGrams === b.max) ?? null;
+                      return (
+                        <td key={`${b.min}-${b.max}`} className="px-2 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setEditing({ kind: "cell", zone: z, band: b, rule })}
+                            className={cn(
+                              "inline-flex h-8 min-w-20 items-center justify-end rounded-md px-2 tabular-nums transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/40",
+                              !rule && "text-slate-300 hover:text-slate-500",
+                              rule && !rule.isActive && "text-slate-400 line-through",
+                              rule?.isActive && "font-medium text-slate-900"
+                            )}
+                            aria-label={`${z.zoneName}, ${bandLabel(b)}: ${rule ? formatCurrency(rule.shippingFee) : "no price"}. Edit`}
+                          >
+                            {rule ? formatCurrency(rule.shippingFee) : "Add"}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="px-2 py-2 text-right">
+                      <button type="button" className={buttonClass("ghost", "sm")} onClick={() => setEditing({ kind: "zone", zone: z })}>
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Phones: one card per zone */}
+          <div className="space-y-3 md:hidden">
+            {zones.map((z) => (
+              <div key={z.zoneName} className="rounded-xl border border-slate-200 bg-white">
+                <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-900">{z.zoneName}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {whereText(z)} · {z.transitDays}
+                    </p>
+                  </div>
+                  <button type="button" className={buttonClass("ghost", "sm")} onClick={() => setEditing({ kind: "zone", zone: z })}>
+                    Edit
+                  </button>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {bands.map((b) => {
+                    const rule = z.rules.find((r) => r.minWeightGrams === b.min && r.maxWeightGrams === b.max) ?? null;
+                    return (
+                      <li key={`${b.min}-${b.max}`}>
+                        <button
+                          type="button"
+                          onClick={() => setEditing({ kind: "cell", zone: z, band: b, rule })}
+                          className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-slate-50"
+                        >
+                          <span className="text-slate-600">{bandLabel(b)}</span>
+                          <span className={cn("tabular-nums", !rule && "text-slate-400", rule && !rule.isActive && "text-slate-400 line-through", rule?.isActive && "font-medium text-slate-900")}>
+                            {rule ? formatCurrency(rule.shippingFee) : "Add"}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
-      {/* Slabs Tables */}
-      <div className="space-y-8">
-        {slabs.map((slabName) => {
-          const slabRows = rates.filter((r) => r.slab === slabName);
-          return (
-            <div
-              key={slabName}
-              className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
-            >
-              <div className="bg-slate-50 px-6 py-3.5 border-b border-slate-200 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-                    Weight Slab: {slabName}
-                  </h3>
-                  <span className="text-xs text-slate-400 font-mono">
-                    ({slabRows[0]?.minWeightGrams || 0}g - {slabRows[0]?.maxWeightGrams || 1000}g)
-                  </span>
-                </div>
-                <span className="text-xs font-semibold text-slate-500">
-                  {slabRows.length} Zones Configured
-                </span>
-              </div>
+      <ul className="space-y-1 text-[13px] text-slate-500">
+        <li>The most specific zone wins: PIN code, then district, then state or region, then everywhere else.</li>
+        {zones.some((z) => bands.some((b) => !z.rules.some((r) => r.isActive && r.minWeightGrams === b.min && r.maxWeightGrams === b.max))) ? (
+          <li>Where a zone has no price for a weight, that order uses the next matching zone that has one.</li>
+        ) : null}
+        {heaviest ? (
+          <li>
+            Orders heavier than {grams(heaviest.max)} pay the {bandLabel(heaviest).toLowerCase()} price for every {grams(heaviest.max)} (for example, {grams(heaviest.max * 2.5)} pays it 3 times).
+          </li>
+        ) : null}
+        <li>On the invoice, delivery carries the same GST rate as the products in the order.</li>
+      </ul>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="text-slate-400 uppercase font-semibold border-b border-slate-100 bg-white">
-                    <tr>
-                      <th className="px-6 py-3">Zone & Destinations</th>
-                      <th className="px-6 py-3">Transit Time</th>
-                      <th className="px-6 py-3">Shipping Fee</th>
-                      <th className="px-6 py-3">Status</th>
-                      <th className="px-6 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {slabRows.map((rate) => (
-                      <tr
-                        key={rate.id}
-                        className={`hover:bg-slate-50/70 transition-colors ${
-                          !rate.isActive ? "opacity-50 bg-slate-50/30" : ""
-                        }`}
-                      >
-                        <td className="px-6 py-4 align-top max-w-md">
-                          <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                            <MapPin className="h-3.5 w-3.5 text-emerald-600" />
-                            <span>{rate.zoneName}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-1 line-clamp-3 leading-relaxed">
-                            {rate.regions}
-                          </p>
-                          {!rate.pincodes?.trim() && !rate.districts?.trim() && !rate.states?.trim() && (
-                            <span className="inline-block mt-1 mr-1 text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
-                              Default · everywhere not matched above
-                            </span>
-                          )}
-                          {rate.pincodes && (
-                            <span className="inline-block mt-1 text-[10px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-mono">
-                              {rate.pincodes.split(",").length} specific PINs included
-                            </span>
-                          )}
-                        </td>
+      {editing?.kind === "cell" ? (
+        <CellDialog
+          zone={editing.zone}
+          band={editing.band}
+          rule={editing.rule}
+          onClose={() => setEditing(null)}
+          onSaved={(next, removedId, text) => {
+            setRates((prev) => {
+              let out = removedId ? prev.filter((r) => r.id !== removedId) : prev;
+              if (next) out = out.some((r) => r.id === next.id) ? out.map((r) => (r.id === next.id ? next : r)) : [...out, next];
+              return out;
+            });
+            done(text);
+          }}
+        />
+      ) : null}
+      {editing?.kind === "zone" ? (
+        <ZoneDialog
+          zone={editing.zone}
+          bands={bands}
+          takenNames={zones.filter((z) => z !== editing.zone).map((z) => z.zoneName.toLowerCase())}
+          onClose={() => setEditing(null)}
+          onSaved={(updated, removedIds, text) => {
+            setRates((prev) => {
+              const out = prev.filter((r) => !removedIds.includes(r.id));
+              for (const u of updated) {
+                const at = out.findIndex((r) => r.id === u.id);
+                if (at >= 0) out[at] = u;
+                else out.push(u);
+              }
+              return out;
+            });
+            done(text);
+          }}
+        />
+      ) : null}
+      {editing?.kind === "band" ? (
+        <BandDialog
+          zones={zones}
+          bands={bands}
+          onClose={() => setEditing(null)}
+          onSaved={(created, text) => {
+            setRates((prev) => [...prev, ...created]);
+            done(text);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
 
-                        <td className="px-6 py-4 align-top font-medium text-slate-600">
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <Clock className="h-3.5 w-3.5 text-slate-400" />
-                            <span>{rate.transitDays}</span>
-                          </div>
-                        </td>
+function CellDialog({
+  zone,
+  band,
+  rule,
+  onClose,
+  onSaved,
+}: {
+  zone: Zone;
+  band: Band;
+  rule: RateItem | null;
+  onClose: () => void;
+  onSaved: (next: RateItem | null, removedId: number | null, text: string) => void;
+}) {
+  const [fee, setFee] = useState(rule ? String(rule.shippingFee) : "");
+  const [active, setActive] = useState(rule?.isActive ?? true);
+  const [error, setError] = useState("");
+  const [pending, start] = useTransition();
+  const feeNum = Number(fee);
+  const valid = fee.trim() !== "" && Number.isFinite(feeNum) && feeNum >= 0;
 
-                        <td className="px-6 py-4 align-top">
-                          <div className="text-sm font-bold text-slate-900">
-                            ₹{Number(rate.shippingFee).toFixed(2)}
-                          </div>
-                          <span className="text-[10px] text-slate-400">per order</span>
-                        </td>
+  const save = () =>
+    start(async () => {
+      setError("");
+      try {
+        if (rule) {
+          const next = { ...rule, shippingFee: feeNum, isActive: active };
+          await post({ action: "update", rate: next });
+          onSaved(next, null, `${zone.zoneName}, ${bandLabel(band).toLowerCase()}: ${formatCurrency(feeNum)}${active ? "" : " (off)"}.`);
+        } else {
+          const draft: RateItem = {
+            id: 0,
+            slab: band.slab,
+            minWeightGrams: band.min,
+            maxWeightGrams: band.max,
+            zoneName: zone.zoneName,
+            regions: zone.regions,
+            transitDays: zone.transitDays,
+            shippingFee: feeNum,
+            pincodes: zone.pincodes,
+            districts: zone.districts,
+            states: zone.states,
+            isActive: true,
+          };
+          const data = await post({ action: "create", rate: draft });
+          onSaved({ ...draft, id: data.rate?.id ?? Date.now() }, null, `Added ${formatCurrency(feeNum)} for ${zone.zoneName}, ${bandLabel(band).toLowerCase()}.`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save.");
+      }
+    });
 
-                        <td className="px-6 py-4 align-top">
-                          <button
-                            type="button"
-                            onClick={() => handleToggle(rate.id)}
-                            className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
-                              rate.isActive
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : "bg-slate-100 text-slate-500 border-slate-200"
-                            }`}
-                          >
-                            {rate.isActive ? "Active" : "Disabled"}
-                          </button>
-                        </td>
+  const remove = () => {
+    if (!rule || !window.confirm(`Remove the ${bandLabel(band).toLowerCase()} price for ${zone.zoneName}?`)) return;
+    start(async () => {
+      setError("");
+      try {
+        await post({ action: "delete", rateId: rule.id });
+        onSaved(null, rule.id, `Removed the ${bandLabel(band).toLowerCase()} price for ${zone.zoneName}.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not remove.");
+      }
+    });
+  };
 
-                        <td className="px-6 py-4 align-top text-right space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsNew(false);
-                              setEditingRate(rate);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-emerald-700 rounded-lg hover:bg-emerald-50 transition-colors"
-                            title="Edit Rate"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(rate.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
-                            title="Delete Rule"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Edit / Add Modal */}
-      {editingRate && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">
-                {isNew ? "Add New Shipping Rate Rule" : `Edit Rate: ${editingRate.zoneName}`}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setEditingRate(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-semibold p-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveRate} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Weight Slab Label
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editingRate.slab}
-                    onChange={(e) =>
-                      setEditingRate({ ...editingRate, slab: e.target.value })
-                    }
-                    placeholder="e.g. 250gm-500gm or 1kg to 2kg"
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Shipping Fee (₹)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={editingRate.shippingFee}
-                    onChange={(e) =>
-                      setEditingRate({
-                        ...editingRate,
-                        shippingFee: Number(e.target.value),
-                      })
-                    }
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Min Weight (grams)
-                  </label>
-                  <input
-                    type="number"
-                    value={editingRate.minWeightGrams}
-                    onChange={(e) =>
-                      setEditingRate({
-                        ...editingRate,
-                        minWeightGrams: Number(e.target.value),
-                      })
-                    }
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Max Weight (grams)
-                  </label>
-                  <input
-                    type="number"
-                    value={editingRate.maxWeightGrams}
-                    onChange={(e) =>
-                      setEditingRate({
-                        ...editingRate,
-                        maxWeightGrams: Number(e.target.value),
-                      })
-                    }
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Zone / Destination Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingRate.zoneName}
-                  onChange={(e) =>
-                    setEditingRate({ ...editingRate, zoneName: e.target.value })
-                  }
-                  placeholder="e.g. Chennai & Suburbs, South Tamil Nadu"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Transit Time
-                </label>
-                <input
-                  type="text"
-                  value={editingRate.transitDays}
-                  onChange={(e) =>
-                    setEditingRate({ ...editingRate, transitDays: e.target.value })
-                  }
-                  placeholder="e.g. 1 - 3 Days or 3 - 5 Days"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Regions Description (readable text)
-                </label>
-                <textarea
-                  rows={2}
-                  value={editingRate.regions}
-                  onChange={(e) =>
-                    setEditingRate({ ...editingRate, regions: e.target.value })
-                  }
-                  placeholder="e.g. Tamil Nadu (Coimbatore, Madurai, Tuticorin...)"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Matched Districts (comma-separated, lowercase)
-                </label>
-                <input
-                  type="text"
-                  value={editingRate.districts}
-                  onChange={(e) =>
-                    setEditingRate({ ...editingRate, districts: e.target.value })
-                  }
-                  placeholder="e.g. coimbatore,madurai,tuticorin"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-mono text-[11px]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  States or regions (comma-separated)
-                </label>
-                <input
-                  type="text"
-                  value={editingRate.states}
-                  onChange={(e) =>
-                    setEditingRate({ ...editingRate, states: e.target.value })
-                  }
-                  placeholder="e.g. tamil nadu, kerala, north-east"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-mono text-[11px]"
-                />
-                <p className="mt-1 text-[10px] text-slate-500">
-                  Regions: north-east (7 states), south india, north india. Leave PINs, districts and
-                  states all empty to make this the default for the rest of India.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Explicit PIN Codes (comma-separated, optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={editingRate.pincodes}
-                  onChange={(e) =>
-                    setEditingRate({ ...editingRate, pincodes: e.target.value })
-                  }
-                  placeholder="e.g. 600016, 600043, 600044..."
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-mono text-[11px]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setEditingRate(null)}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl text-slate-600 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={pending}
-                  className="px-5 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  <span>{pending ? "Saving Rate…" : "Save Rate Rule"}</span>
-                </button>
-              </div>
-            </form>
+  return (
+    <Dialog open onClose={onClose} title={`${zone.zoneName} · ${bandLabel(band)}`}>
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid && !pending) save();
+        }}
+      >
+        <label className="block">
+          <span className={labelClass}>Delivery price (₹, including GST)</span>
+          <input inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} className={inputClass + " tabular-nums"} autoFocus />
+        </label>
+        {rule ? (
+          <label className="flex items-center gap-2.5 text-sm text-slate-700">
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 rounded border-slate-300 accent-emerald-700" />
+            Use this price at checkout
+          </label>
+        ) : null}
+        {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+        <div className="flex items-center justify-between gap-2 pt-1">
+          {rule ? (
+            <button type="button" className={buttonClass("ghost") + " text-rose-700 hover:bg-rose-50 hover:text-rose-800"} onClick={remove} disabled={pending}>
+              Remove
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <button type="button" className={buttonClass("ghost")} onClick={onClose} disabled={pending}>
+              Cancel
+            </button>
+            <button type="submit" className={buttonClass("primary")} disabled={!valid || pending}>
+              {pending ? "Saving…" : "Save"}
+            </button>
           </div>
         </div>
-      )}
-    </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function ZoneDialog({
+  zone,
+  bands,
+  takenNames,
+  onClose,
+  onSaved,
+}: {
+  zone: Zone | null;
+  bands: Band[];
+  takenNames: string[];
+  onClose: () => void;
+  onSaved: (updated: RateItem[], removedIds: number[], text: string) => void;
+}) {
+  const [f, setF] = useState<ZoneFields>(
+    zone
+      ? { zoneName: zone.zoneName, regions: zone.regions, transitDays: zone.transitDays, pincodes: zone.pincodes, districts: zone.districts, states: zone.states }
+      : { zoneName: "", regions: "", transitDays: "3 - 5 Days", pincodes: "", districts: "", states: "" }
+  );
+  // New zone: a price for each existing weight band (or a first band if there are none).
+  const startBands = bands.length ? bands : [{ min: 0, max: 500, slab: "0-500g" }];
+  const [fees, setFees] = useState<string[]>(startBands.map(() => ""));
+  const [error, setError] = useState("");
+  const [pending, start] = useTransition();
+  const set = (k: keyof ZoneFields) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
+
+  const clean: ZoneFields = {
+    ...f,
+    zoneName: f.zoneName.trim(),
+    pincodes: list(f.pincodes).join(","),
+    districts: list(f.districts).map((d) => d.toLowerCase()).join(","),
+    states: list(f.states).map((s) => s.toLowerCase()).join(","),
+  };
+  const feesOk = !!zone || fees.every((x) => x.trim() === "" || (Number.isFinite(Number(x)) && Number(x) >= 0));
+  const nameTaken = takenNames.includes(clean.zoneName.toLowerCase());
+  const valid = clean.zoneName.length > 1 && !nameTaken && feesOk && (!!zone || fees.some((x) => x.trim() !== ""));
+
+  const save = () =>
+    start(async () => {
+      setError("");
+      try {
+        if (zone) {
+          const updated = zone.rules.map((r) => ({ ...r, ...clean }));
+          for (const r of updated) await post({ action: "update", rate: r });
+          onSaved(updated, [], `Saved ${clean.zoneName}.`);
+        } else {
+          const created: RateItem[] = [];
+          for (const [i, b] of startBands.entries()) {
+            if (fees[i].trim() === "") continue;
+            const draft: RateItem = { id: 0, slab: b.slab, minWeightGrams: b.min, maxWeightGrams: b.max, ...clean, shippingFee: Number(fees[i]), isActive: true };
+            const data = await post({ action: "create", rate: draft });
+            created.push({ ...draft, id: data.rate?.id ?? Date.now() + i });
+          }
+          onSaved(created, [], `Added ${clean.zoneName}.`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save.");
+      }
+    });
+
+  const removeZone = () => {
+    if (!zone || !window.confirm(`Remove ${zone.zoneName} and all its prices? Orders to these places will use the next matching zone.`)) return;
+    start(async () => {
+      setError("");
+      try {
+        for (const r of zone.rules) await post({ action: "delete", rateId: r.id });
+        onSaved([], zone.rules.map((r) => r.id), `Removed ${zone.zoneName}.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not remove.");
+      }
+    });
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={zone ? `Edit ${zone.zoneName}` : "New zone"} wide>
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid && !pending) save();
+        }}
+      >
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
+          <label className="block">
+            <span className={labelClass}>Zone name</span>
+            <input value={f.zoneName} onChange={set("zoneName")} placeholder="e.g. Chennai & Suburbs" className={inputClass} autoFocus={!zone} />
+            {nameTaken ? <span className="mt-1 block text-xs text-amber-700">Another zone already has this name.</span> : null}
+          </label>
+          <label className="block">
+            <span className={labelClass}>Transit time</span>
+            <input value={f.transitDays} onChange={set("transitDays")} placeholder="e.g. 1 - 3 Days" className={inputClass} />
+          </label>
+        </div>
+        <fieldset className="space-y-3 rounded-lg border border-slate-200 p-3.5">
+          <legend className="px-1 text-[13px] font-medium text-slate-700">Where it applies</legend>
+          <p className="text-xs text-slate-500">Fill one or more. Leave all three empty to cover everywhere no other zone matches.</p>
+          <label className="block">
+            <span className={labelClass}>PIN codes</span>
+            <textarea value={f.pincodes} onChange={set("pincodes")} rows={2} placeholder="600016, 600043, 600044" className={inputClass + " h-auto py-2 font-mono text-[13px]"} />
+          </label>
+          <label className="block">
+            <span className={labelClass}>Districts</span>
+            <input value={f.districts} onChange={set("districts")} placeholder="coimbatore, madurai, tuticorin" className={inputClass} />
+          </label>
+          <label className="block">
+            <span className={labelClass}>States or regions</span>
+            <input value={f.states} onChange={set("states")} placeholder="kerala, north-east, south india" className={inputClass} />
+          </label>
+        </fieldset>
+        <label className="block">
+          <span className={labelClass}>Description (optional)</span>
+          <input value={f.regions} onChange={set("regions")} placeholder="e.g. Tamil Nadu: Coimbatore, Madurai, Tuticorin…" className={inputClass} />
+        </label>
+
+        {!zone ? (
+          <div>
+            <p className={labelClass}>Prices (₹, including GST)</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {startBands.map((b, i) => (
+                <label key={`${b.min}-${b.max}`} className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-sm text-slate-600">{bandLabel(b)}</span>
+                  <input
+                    inputMode="decimal"
+                    value={fees[i]}
+                    onChange={(e) => setFees(fees.map((x, j) => (j === i ? e.target.value : x)))}
+                    placeholder="—"
+                    className={inputClass + " tabular-nums"}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">Prices are edited in the rate card: click a price.</p>
+        )}
+
+        {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+        <div className="flex items-center justify-between gap-2 pt-1">
+          {zone ? (
+            <button type="button" className={buttonClass("ghost") + " text-rose-700 hover:bg-rose-50 hover:text-rose-800"} onClick={removeZone} disabled={pending}>
+              Remove zone
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <button type="button" className={buttonClass("ghost")} onClick={onClose} disabled={pending}>
+              Cancel
+            </button>
+            <button type="submit" className={buttonClass("primary")} disabled={!valid || pending}>
+              {pending ? "Saving…" : zone ? "Save zone" : "Add zone"}
+            </button>
+          </div>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function BandDialog({
+  zones,
+  bands,
+  onClose,
+  onSaved,
+}: {
+  zones: Zone[];
+  bands: Band[];
+  onClose: () => void;
+  onSaved: (created: RateItem[], text: string) => void;
+}) {
+  const top = bands.at(-1);
+  const [min, setMin] = useState(String(top ? top.max + 1 : 0));
+  const [max, setMax] = useState(String(top ? top.max * 2 : 500));
+  const [fees, setFees] = useState<string[]>(zones.map(() => ""));
+  const [error, setError] = useState("");
+  const [pending, start] = useTransition();
+  const lo = Math.round(Number(min));
+  const hi = Math.round(Number(max));
+  const overlaps = bands.some((b) => lo <= b.max && hi >= b.min);
+  const valid =
+    Number.isFinite(lo) && Number.isFinite(hi) && lo >= 0 && hi > lo && !overlaps &&
+    fees.some((x) => x.trim() !== "") &&
+    fees.every((x) => x.trim() === "" || (Number.isFinite(Number(x)) && Number(x) >= 0));
+
+  const save = () =>
+    start(async () => {
+      setError("");
+      try {
+        const slab = `${grams(lo)}-${grams(hi)}`.replace(/\s/g, "");
+        const created: RateItem[] = [];
+        for (const [i, z] of zones.entries()) {
+          if (fees[i].trim() === "") continue;
+          const draft: RateItem = {
+            id: 0,
+            slab,
+            minWeightGrams: lo,
+            maxWeightGrams: hi,
+            zoneName: z.zoneName,
+            regions: z.regions,
+            transitDays: z.transitDays,
+            pincodes: z.pincodes,
+            districts: z.districts,
+            states: z.states,
+            shippingFee: Number(fees[i]),
+            isActive: true,
+          };
+          const data = await post({ action: "create", rate: draft });
+          created.push({ ...draft, id: data.rate?.id ?? Date.now() + i });
+        }
+        onSaved(created, `Added the ${bandLabel({ min: lo, max: hi }).toLowerCase()} band.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not save.");
+      }
+    });
+
+  return (
+    <Dialog open onClose={onClose} title="New weight band" wide>
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid && !pending) save();
+        }}
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className={labelClass}>From (grams)</span>
+            <input inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value.replace(/\D/g, ""))} className={inputClass + " tabular-nums"} />
+          </label>
+          <label className="block">
+            <span className={labelClass}>To (grams)</span>
+            <input inputMode="numeric" value={max} onChange={(e) => setMax(e.target.value.replace(/\D/g, ""))} className={inputClass + " tabular-nums"} autoFocus />
+          </label>
+        </div>
+        {overlaps ? <p className="text-xs text-amber-700">This overlaps a band you already have. Start after {top ? grams(top.max) : "it"}.</p> : null}
+        <div>
+          <p className={labelClass}>Price for each zone (₹, including GST)</p>
+          <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {zones.map((z, i) => (
+              <label key={z.zoneName} className="flex items-center gap-3 px-3 py-2">
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{z.zoneName}</span>
+                <span className="w-28 shrink-0">
+                  <input
+                    inputMode="decimal"
+                    value={fees[i]}
+                    onChange={(e) => setFees(fees.map((x, j) => (j === i ? e.target.value : x)))}
+                    placeholder="—"
+                    aria-label={`${z.zoneName} price`}
+                    className={inputClass + " tabular-nums"}
+                  />
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-slate-500">Leave a zone empty to skip it.</p>
+        </div>
+        {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" className={buttonClass("ghost")} onClick={onClose} disabled={pending}>
+            Cancel
+          </button>
+          <button type="submit" className={buttonClass("primary")} disabled={!valid || pending}>
+            {pending ? "Saving…" : "Add band"}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

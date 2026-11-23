@@ -26,8 +26,6 @@ export default async function ShippingLayout({ children }: { children: React.Rea
 
   return (
     <ShippingShell
-      userName={user.name}
-      userRole={user.role}
       initialProvider={currentProvider}
       billingHref={isShippingSubdomain ? BILLING_ORIGIN : "/"}
     >
