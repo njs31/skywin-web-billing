@@ -1,3 +1,5 @@
+import { BILLING_ORIGIN } from "@/lib/site-hosts";
+
 /**
  * Rules for notifications managers send to every Field app user (Field → Notifications).
  * Pure: shared by the dashboard form, the server and tests (lib/field-broadcast-rules.test.ts).
@@ -133,4 +135,35 @@ export function pushPreview(body: string, hasMedia: boolean, lang: "en" | "ta") 
 /** In-app route a broadcast opens. */
 export function broadcastRoute(id: string) {
   return `/news/${encodeURIComponent(id)}`;
+}
+
+/** Public page that shows a broadcast (opened in the app's in-app browser). */
+export function broadcastPageUrl(id: string, lang: "en" | "ta") {
+  return `${BILLING_ORIGIN}/news/${encodeURIComponent(id)}${lang === "ta" ? "?lang=ta" : ""}`;
+}
+
+/**
+ * Expo push message for one device. Exported for tests.
+ * `opensNews`: the app on that phone has the /news screen (it reports its language with its
+ * token). Older apps open their Notifications page instead of an unknown screen.
+ */
+export function broadcastPayload(
+  token: string,
+  b: { id: string; titleEn: string; titleTa: string | null; bodyEn: string; bodyTa: string | null; imageUrl: string | null; linkUrl: string | null; videoUrl: string | null },
+  lang: string | null,
+  opensNews = true
+) {
+  const text = broadcastText(b, lang);
+  const hasMedia = !!(b.imageUrl || b.linkUrl || b.videoUrl);
+  return {
+    to: token,
+    title: text.title.slice(0, 120),
+    body: pushPreview(text.body, hasMedia, text.lang),
+    sound: "default",
+    priority: "high",
+    // The "advice" channel exists in every published build; a new channel would be silent on old ones.
+    channelId: "advice",
+    data: { url: opensNews ? broadcastRoute(b.id) : "/notifications", broadcastId: b.id, page: broadcastPageUrl(b.id, text.lang) },
+    ...(b.imageUrl ? { richContent: { image: b.imageUrl }, mutableContent: true } : {}),
+  };
 }

@@ -11,37 +11,14 @@
 import { randomUUID } from "node:crypto";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { customers, fieldBroadcasts, pushTokens, type FieldBroadcast } from "@/db/schema";
-import { broadcastRoute, broadcastText, checkBroadcast, pushPreview, type BroadcastInput } from "@/lib/field-broadcast-rules";
-import { BILLING_ORIGIN } from "@/lib/site-hosts";
+import { customers, fieldBroadcasts, pushTokens } from "@/db/schema";
+import { broadcastPayload, checkBroadcast, type BroadcastInput } from "@/lib/field-broadcast-rules";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const BATCH = 100;
 
 function isExpoToken(token: string) {
   return token.startsWith("ExponentPushToken[") || token.startsWith("ExpoPushToken[");
-}
-
-/** Public page that shows a broadcast (opened in the app's in-app browser). */
-export function broadcastPageUrl(id: string, lang: "en" | "ta") {
-  return `${BILLING_ORIGIN}/news/${encodeURIComponent(id)}${lang === "ta" ? "?lang=ta" : ""}`;
-}
-
-/** Expo push message for one device. Exported for tests. */
-export function broadcastPayload(token: string, b: Pick<FieldBroadcast, "id" | "titleEn" | "titleTa" | "bodyEn" | "bodyTa" | "imageUrl" | "linkUrl" | "videoUrl">, lang: string | null) {
-  const text = broadcastText(b, lang);
-  const hasMedia = !!(b.imageUrl || b.linkUrl || b.videoUrl);
-  return {
-    to: token,
-    title: text.title.slice(0, 120),
-    body: pushPreview(text.body, hasMedia, text.lang),
-    sound: "default",
-    priority: "high",
-    // The "advice" channel exists in every published build; a new channel would be silent on old ones.
-    channelId: "advice",
-    data: { url: broadcastRoute(b.id), broadcastId: b.id, page: broadcastPageUrl(b.id, text.lang) },
-    ...(b.imageUrl ? { richContent: { image: b.imageUrl }, mutableContent: true } : {}),
-  };
 }
 
 async function deviceLanguages() {
@@ -62,6 +39,8 @@ async function deviceLanguages() {
   return live.map((t) => ({
     token: t.token,
     language: t.language === "en" || t.language === "ta" ? t.language : saved.get(t.phone) ?? "en",
+    // Apps that send their language also have the screen that opens SkyWin's messages.
+    opensNews: t.language === "en" || t.language === "ta",
   }));
 }
 
@@ -77,7 +56,7 @@ export async function deliverBroadcast(id: string) {
     let failed = 0;
     const dead: string[] = [];
     for (let i = 0; i < devices.length; i += BATCH) {
-      const batch = devices.slice(i, i + BATCH).map((d) => broadcastPayload(d.token, b, d.language));
+      const batch = devices.slice(i, i + BATCH).map((d) => broadcastPayload(d.token, b, d.language, d.opensNews));
       try {
         const res = await fetch(EXPO_PUSH_URL, {
           method: "POST",

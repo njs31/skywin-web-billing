@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { broadcastRoute, broadcastText, checkBroadcast, pushPreview, safeWebUrl, youtubeVideoId } from "./field-broadcast-rules";
+import { broadcastPayload, broadcastRoute, broadcastText, checkBroadcast, pushPreview, safeWebUrl, youtubeVideoId } from "./field-broadcast-rules";
 
 test("YouTube links of every shape give the video id", () => {
   for (const url of [
@@ -55,4 +55,16 @@ test("push text is short, or asks to open media", () => {
   assert.equal(pushPreview("", true, "ta"), "திறந்து பார்க்கவும்");
   assert.equal(pushPreview("", false, "en"), "");
   assert.equal(broadcastRoute("1642f3fb-09c2-4403-a59b-c409ddc2ecc6"), "/news/1642f3fb-09c2-4403-a59b-c409ddc2ecc6");
+});
+
+test("old apps open Notifications, new apps open the message", () => {
+  const b = { id: "1642f3fb-09c2-4403-a59b-c409ddc2ecc6", titleEn: "New stock", titleTa: "புதிய சரக்கு", bodyEn: "Come today", bodyTa: null, imageUrl: "https://skywin.qwicksapp.com/api/field/media/x", linkUrl: null, videoUrl: null };
+  const fresh = broadcastPayload("ExponentPushToken[a]", b, "ta", true);
+  assert.equal(fresh.title, "புதிய சரக்கு");
+  assert.equal(fresh.data.url, "/news/1642f3fb-09c2-4403-a59b-c409ddc2ecc6");
+  assert.equal(fresh.channelId, "advice");
+  assert.deepEqual(fresh.richContent, { image: b.imageUrl });
+  const old = broadcastPayload("ExponentPushToken[b]", b, "en", false);
+  assert.equal(old.title, "New stock");
+  assert.equal(old.data.url, "/notifications");
 });
