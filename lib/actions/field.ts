@@ -46,13 +46,10 @@ import { broadcastAudienceSize, createBroadcast, listBroadcasts } from "@/lib/fi
 import type { BroadcastInput } from "@/lib/field-broadcast-rules";
 import { cleanIconUri } from "@/lib/field-icon-url";
 import {
-  applyFieldProductImport,
   exportFieldProductRows,
   fieldProductVisibilityCounts,
-  planFieldProductImport,
   setFieldProductAppVisible,
 } from "@/lib/queries/field-product-excel";
-import type { ProductSheetRow } from "@/lib/field-product-sheet";
 import { exportFieldFarmerRows, exportFieldOfficerRows } from "@/lib/queries/field-exports";
 import {
   deleteFieldRecommendation,
@@ -345,28 +342,6 @@ export async function exportFieldProducts() {
   return exportFieldProductRows();
 }
 
-/** Product details → Import from Excel, step 1: what each row would change. Saves nothing. */
-export async function previewFieldProductImport(rows: ProductSheetRow[]) {
-  await requireFieldAdmin();
-  if (!Array.isArray(rows)) throw new Error("No rows to import.");
-  return planFieldProductImport(rows);
-}
-
-/** Product details → Import from Excel, step 2: saves the rows. */
-export async function applyFieldProductImportAction(rows: ProductSheetRow[]) {
-  const user = await requireFieldAdmin();
-  if (!Array.isArray(rows)) throw new Error("No rows to import.");
-  const name = user.name.trim() || user.phone;
-  const result = await applyFieldProductImport(rows, { userId: user.id, userName: name });
-  await recordActivity({
-    action: "product.import",
-    message: `${name} imported products from Excel: ${result.created} new, ${result.updated} updated, ${result.failed.length} failed`,
-    entityType: "product",
-    actor: { id: user.id, name },
-  }).catch(() => undefined);
-  touchField(["/field/products", "/products", "/stock"]);
-  return result;
-}
 
 export async function fieldProductDetail(productId: number) {
   await requireFieldAdmin();

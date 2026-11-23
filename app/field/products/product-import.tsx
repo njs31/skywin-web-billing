@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { CheckCircle2, CircleAlert, Download, FileSpreadsheet, Upload } from "lucide-react";
-import { applyFieldProductImportAction, previewFieldProductImport } from "@/lib/actions/field";
+import type { ImportRowPlan } from "@/lib/queries/field-product-excel";
 import { PRODUCT_SHEET_COLUMNS, normalizeSheetRows, type ProductSheetRow } from "@/lib/field-product-sheet";
 import { Modal } from "@/components/field/modal";
 import { Badge, Notice, buttonClass } from "@/components/field/kit";
@@ -11,8 +11,20 @@ import { useFieldText } from "@/components/field/lang";
 import { fmt } from "@/lib/field-i18n";
 import { cn } from "@/lib/utils";
 
-type Plan = Awaited<ReturnType<typeof previewFieldProductImport>>;
-type Result = Awaited<ReturnType<typeof applyFieldProductImportAction>>;
+type Plan = { rows: ImportRowPlan[]; counts: { update: number; create: number; unchanged: number; error: number } };
+type Result = { updated: number; created: number; unchanged: number; failed: Array<{ row: number; name: string; reason: string }> };
+
+/** Sends the rows to /api/field/products-import (a route: big files exceed the server-action limit). */
+async function importRequest<T>(mode: "preview" | "apply", rows: ProductSheetRow[], fallback: string): Promise<T> {
+  const res = await fetch("/api/field/products-import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, rows }),
+  });
+  const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new Error(json.error || (res.status === 413 ? "This file is too large. Split it into smaller files." : fallback));
+  return json;
+}
 
 /** Import from Excel: choose a file, see what each row changes, then save. */
 export function ProductImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -39,7 +51,7 @@ export function ProductImportDialog({ onClose, onDone }: { onClose: () => void; 
       const normalized = normalizeSheetRows(raw);
       if (!normalized.length) throw new Error(p.importEmpty);
       setRows(normalized);
-      const preview = await previewFieldProductImport(normalized);
+      const preview = await importRequest<Plan>("preview", normalized, p.importFailed);
       setPlan(preview);
       setShow(preview.counts.update + preview.counts.create > 0 ? "changes" : preview.counts.error ? "error" : "all");
     } catch (err) {
@@ -55,7 +67,7 @@ export function ProductImportDialog({ onClose, onDone }: { onClose: () => void; 
     setBusy(true);
     setError("");
     try {
-      const done = await applyFieldProductImportAction(rows);
+      const done = await importRequest<Result>("apply", rows, p.importFailed);
       setResult(done);
       setPlan(null);
       onDone();
