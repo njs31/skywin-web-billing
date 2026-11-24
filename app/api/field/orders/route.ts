@@ -55,8 +55,15 @@ export async function GET(req: NextRequest) {
     return fieldJson({ error: "Unauthorized" }, 401);
   }
   const who = fieldIdentity(req);
-  // A signed-in farmer has no order list here; signed-in staff are scoped by their own phone.
-  if (who?.role === "farmer") return fieldJson({ orders: [], todayCount: 0, todayTotal: 0, monthCount: 0, monthTotal: 0 });
+  // A signed-in farmer gets only their own orders (matched on their signed-in phone), so
+  // every order they pay for shows on My orders. Signed-in staff are scoped by their own phone.
+  if (who?.role === "farmer") {
+    try {
+      return fieldJson(await listFieldOrders({ farmerPhone: who.phone }));
+    } catch (err) {
+      return fieldJson({ error: err instanceof Error ? err.message : "Failed to list field orders" }, 500);
+    }
+  }
   const viewerPhone = who ? who.phone : req.nextUrl.searchParams.get("viewer") || "";
   try {
     let officerId: number | undefined;

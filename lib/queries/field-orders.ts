@@ -220,8 +220,20 @@ export async function placeFieldOrder(input: FieldOrderIn) {
  * `includeQwicks` (Field dashboard only) adds QwicksApp orders, marked source "qwicks".
  * The app's own order list never includes them.
  */
-export async function listFieldOrders(scope?: { officerId?: number; includeQwicks?: boolean }) {
-  const ordersWhere = scope?.includeQwicks && !scope?.officerId ? or(fieldSaleWhere(), qwicksSaleWhere()) : fieldSaleWhere();
+export async function listFieldOrders(scope?: { officerId?: number; farmerPhone?: string; includeQwicks?: boolean }) {
+  const farmerTail = scope?.farmerPhone !== undefined ? digitsPhone(scope.farmerPhone) : undefined;
+  const narrowed = scope?.officerId !== undefined || farmerTail !== undefined;
+  const ordersWhere = scope?.includeQwicks && !narrowed ? or(fieldSaleWhere(), qwicksSaleWhere()) : fieldSaleWhere();
+  // Whose orders these are: an officer's assigned farmers, or one farmer (matched on the
+  // last 10 digits of the phone, however the number was saved).
+  const owner =
+    farmerTail !== undefined
+      ? farmerTail.length === 10
+        ? sql`${sales.customerId} in (select ${customers.id} from ${customers} where right(regexp_replace(coalesce(${customers.phone}, ''), '\\D', '', 'g'), 10) = ${farmerTail})`
+        : sql`false`
+      : scope?.officerId !== undefined
+        ? sql`${sales.customerId} in (select ${customers.id} from ${customers} where ${customers.assignedOfficerId} = ${scope.officerId})`
+        : undefined;
   const rows = await db
     .select({
       id: sales.id,
@@ -245,7 +257,7 @@ export async function listFieldOrders(scope?: { officerId?: number; includeQwick
     })
     .from(sales)
     .leftJoin(customers, eq(customers.id, sales.customerId))
-    .where(scope?.officerId ? and(ordersWhere, eq(customers.assignedOfficerId, scope.officerId)) : ordersWhere)
+    .where(and(ordersWhere, owner))
     .orderBy(desc(sales.date));
 
   const ids = rows.map((r) => r.id);
@@ -299,9 +311,7 @@ export async function listFieldOrders(scope?: { officerId?: number; includeQwick
   const startOfToday = istDayRange(todayKey)?.from ?? new Date();
   const startOfMonth = istDayRange(`${todayKey.slice(0, 8)}01`)?.from ?? startOfToday;
 
-  const ownedByOfficer = scope?.officerId
-    ? sql`${sales.customerId} in (select ${customers.id} from ${customers} where ${customers.assignedOfficerId} = ${scope.officerId})`
-    : undefined;
+  const ownedByOfficer = owner;
 
   const [todayAgg] = await db
     .select({
