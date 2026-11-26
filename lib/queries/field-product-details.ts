@@ -1,1 +1,474 @@
-$file:/workspace/skywin-1126/billing/lib/queries/field-product-details.ts
+import { and, asc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { db } from "@/db";
+import {
+  fieldCategories,
+  fieldListedProducts,
+  fieldProductDetails,
+  fieldSubcategories,
+  fieldSubcategoryProducts,
+  products,
+  type FieldUsageRow,
+  type FieldVideo,
+} from "@/db/schema";
+import { listedProductIds } from "@/lib/field-listed";
+import {
+  applicableCrops,
+  fieldDetailGaps,
+  orderQtyPairError,
+  parseOrderQty,
+  qtyInput,
+  usageInstructionLines,
+} from "@/lib/field-product-rules";
+
+export const FIELD_PRODUCT_PAGE_SIZE = 40;
+
+export type FieldProductDetailInput = {
+  displayName: string;
+  images: string[];
+  brochureUrl: string;
+  activeIngredient: string;
+  packSizes: string;
+  headline: string;
+  description: string;
+  antidote: string;
+  brand: string;
+  instructions: string;
+  crops: string;
+  minOrderQty: string;
+  maxOrderQty: string;
+  usage: FieldUsageRow[];
+  videos: FieldVideo[];
+  /** Tamil text for the app (Raja, 24 Nov 2026). Left out (e.g. by the Excel import): Tamil text is kept. */
+  ta?: FieldProductTamil;
+};
+
+/** Tamil versions of the product page text; blank fields show the English text in the app. */
+export type FieldProductTamil = {
+  displayName: string;
+  activeIngredient: string;
+  packSizes: string;
+  headline: string;
+  description: string;
+  antidote: string;
+  instructions: string;
+};
+
+export function youtubeId(url: string) {
+  const m = url.match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+export function videoThumbnail(video: FieldVideo) {
+  if (video.thumbnail) return video.thumbnail;
+  const id = youtubeId(video.url);
+  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : "";
+}
+
+const clean = (s: string | null | undefined) => (s ?? "").trim();
+
+/** Uploads behind the billing container were saved with the internal :3000 port. */
+export function fieldImageUrl(src: string) {
+  return src.trim().replace(/:3000(?=\/)/g, "");
+}
+
+function fieldImages(images: string[] | null | undefined) {
+  return (images ?? []).map(fieldImageUrl).filter(Boolean);
+}
+
+export async function listFieldCatalogProducts() {
+  const rows = await db
+    .select({
+      productId: products.id,
+      name: products.name,
+      sku: products.sku,
+      category: fieldCategories.title,
+      categorySlug: fieldCategories.slug,
+      sub: fieldSubcategories.title,
+    })
+    .from(products)
+    .leftJoin(fieldSubcategoryProducts, eq(fieldSubcategoryProducts.productId, products.id))
+    .leftJoin(fieldSubcategories, eq(fieldSubcategories.id, fieldSubcategoryProducts.subcategoryId))
+    .leftJoin(fieldCategories, eq(fieldCategories.id, fieldSubcategories.categoryId))
+    .where(and(eq(products.isActive, true), inArray(products.id, listedProductIds())))
+    .orderBy(asc(products.name), asc(fieldCategories.title), asc(fieldSubcategories.title));
+
+  const ids = [...new Set(rows.map((r) => r.productId))];
+  const details = ids.length
+    ? await db
+        .select({
+          productId: fieldProductDetails.productId,
+          description: fieldProductDetails.description,
+          images: fieldProductDetails.images,
+          activeIngredient: fieldProductDetails.activeIngredient,
+          usage: fieldProductDetails.usage,
+          videos: fieldProductDetails.videos,
+          updatedAt: fieldProductDetails.updatedAt,
+        })
+        .from(fieldProductDetails)
+        .where(inArray(fieldProductDetails.productId, ids))
+    : [];
+  const byId = new Map(details.map((d) => [d.productId, d]));
+
+  const seen = new Set<number>();
+  return rows
+    .filter((r) => (seen.has(r.productId) ? false : (seen.add(r.productId), true)))
+    .map((r) => {
+      const d = byId.get(r.productId);
+      const images = fieldImages(d?.images);
+      const gaps = fieldDetailGaps({
+        description: d?.description,
+        activeIngredient: d?.activeIngredient,
+        usage: d?.usage,
+      });
+      return {
+        ...r,
+        category: r.category ?? "Not in catalogue",
+        categorySlug: r.categorySlug ?? "unassigned",
+        sub: r.sub ?? "—",
+        image: images[0] ?? null,
+        gaps,
+        hasDetails: gaps.length === 0,
+        updatedAt: d?.updatedAt?.toISOString() ?? null,
+      };
+    });
+}
+
+function productIsMapped() {
+  return sql`exists (
+    select 1 from ${fieldSubcategoryProducts}
+    where ${fieldSubcategoryProducts.productId} = ${products.id}
+  )`;
+}
+
+function productDetailsComplete() {
+  return sql`exists (
+    select 1 from ${fieldProductDetails}
+    where ${fieldProductDetails.productId} = ${products.id}
+      and btrim(coalesce(${fieldProductDetails.description}, '')) <> ''
+      and (
+        btrim(coalesce(${fieldProductDetails.activeIngredient}, '')) <> ''
+        or jsonb_array_length(coalesce(${fieldProductDetails.usage}, '[]'::jsonb)) > 0
+      )
+  )`;
+}
+
+function productInCategory(slug: string) {
+  return sql`exists (
+    select 1 from ${fieldSubcategoryProducts}
+    inner join ${fieldSubcategories} on ${fieldSubcategories.id} = ${fieldSubcategoryProducts.subcategoryId}
+    inner join ${fieldCategories} on ${fieldCategories.id} = ${fieldSubcategories.categoryId}
+    where ${fieldSubcategoryProducts.productId} = ${products.id}
+      and ${fieldCategories.slug} = ${slug}
+  )`;
+}
+
+export async function fieldProductStats() {
+  const [row] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      mapped: sql<number>`count(*) filter (where ${productIsMapped()})::int`,
+      complete: sql<number>`count(*) filter (where ${productDetailsComplete()})::int`,
+    })
+    .from(products)
+    .where(and(eq(products.isActive, true), inArray(products.id, listedProductIds())));
+  const total = Number(row?.total ?? 0);
+  const complete = Number(row?.complete ?? 0);
+  const mapped = Number(row?.mapped ?? 0);
+  return { total, complete, needsDetails: total - complete, mapped };
+}
+
+export async function fieldProductCategories() {
+  return db
+    .select({ slug: fieldCategories.slug, title: fieldCategories.title })
+    .from(fieldCategories)
+    .orderBy(asc(fieldCategories.title), asc(fieldCategories.id));
+}
+
+export async function listFieldProductsPage(filter?: {
+  q?: string;
+  category?: string;
+  status?: "all" | "needs" | "complete";
+  /** In the app: switched on, switched off, or both. */
+  visible?: "all" | "on" | "off";
+  page?: number;
+}) {
+  const pageSize = FIELD_PRODUCT_PAGE_SIZE;
+  const page = Math.max(1, filter?.page ?? 1);
+  const conditions: SQL[] = [eq(products.isActive, true), inArray(products.id, listedProductIds())];
+  // Every word must match the name, SKU, HSN, barcode or brand ("gear 28mm" finds "28MM GEAR BOX").
+  const words = (filter?.q ?? "").replace(/[%_\\]/g, " ").trim().split(/\s+/).filter(Boolean).slice(0, 8);
+  for (const word of words) {
+    const pattern = `%${word}%`;
+    const search = or(
+      ilike(products.name, pattern),
+      ilike(products.sku, pattern),
+      ilike(products.hsnCode, pattern),
+      ilike(products.barcode, pattern),
+      ilike(fieldProductDetails.brand, pattern),
+      ilike(fieldProductDetails.displayName, pattern)
+    );
+    if (search) conditions.push(search);
+  }
+  if (filter?.category === "unassigned") conditions.push(sql`not (${productIsMapped()})`);
+  else if (filter?.category) conditions.push(productInCategory(filter.category));
+  if (filter?.status === "complete") conditions.push(productDetailsComplete());
+  else if (filter?.status === "needs") conditions.push(sql`not (${productDetailsComplete()})`);
+  if (filter?.visible === "on") conditions.push(eq(fieldListedProducts.appVisible, true));
+  else if (filter?.visible === "off") conditions.push(eq(fieldListedProducts.appVisible, false));
+  const where = and(...conditions);
+
+  const [countRow, rows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(products)
+      // The search reads field_product_details.brand, so the count needs the same joins as the rows.
+      .leftJoin(fieldProductDetails, eq(fieldProductDetails.productId, products.id))
+      .leftJoin(fieldListedProducts, eq(fieldListedProducts.productId, products.id))
+      .where(where),
+    db
+      .select({
+        productId: products.id,
+        name: products.name,
+        sku: products.sku,
+        mrp: products.mrp,
+        gstRate: products.gstRate,
+        hsnCode: products.hsnCode,
+        stockQty: products.stockQty,
+        description: fieldProductDetails.description,
+        brand: fieldProductDetails.brand,
+        instructions: fieldProductDetails.instructions,
+        crops: fieldProductDetails.crops,
+        minOrderQty: fieldProductDetails.minOrderQty,
+        maxOrderQty: fieldProductDetails.maxOrderQty,
+        images: fieldProductDetails.images,
+        activeIngredient: fieldProductDetails.activeIngredient,
+        usage: fieldProductDetails.usage,
+        updatedAt: fieldProductDetails.updatedAt,
+        appVisible: fieldListedProducts.appVisible,
+        category: sql<string | null>`(
+          select ${fieldCategories.title}
+          from ${fieldSubcategoryProducts}
+          inner join ${fieldSubcategories} on ${fieldSubcategories.id} = ${fieldSubcategoryProducts.subcategoryId}
+          inner join ${fieldCategories} on ${fieldCategories.id} = ${fieldSubcategories.categoryId}
+          where ${fieldSubcategoryProducts.productId} = ${products.id}
+          order by ${fieldCategories.title}, ${fieldSubcategories.title}
+          limit 1
+        )`,
+        categorySlug: sql<string | null>`(
+          select ${fieldCategories.slug}
+          from ${fieldSubcategoryProducts}
+          inner join ${fieldSubcategories} on ${fieldSubcategories.id} = ${fieldSubcategoryProducts.subcategoryId}
+          inner join ${fieldCategories} on ${fieldCategories.id} = ${fieldSubcategories.categoryId}
+          where ${fieldSubcategoryProducts.productId} = ${products.id}
+          order by ${fieldCategories.title}, ${fieldSubcategories.title}
+          limit 1
+        )`,
+        sub: sql<string | null>`(
+          select ${fieldSubcategories.title}
+          from ${fieldSubcategoryProducts}
+          inner join ${fieldSubcategories} on ${fieldSubcategories.id} = ${fieldSubcategoryProducts.subcategoryId}
+          inner join ${fieldCategories} on ${fieldCategories.id} = ${fieldSubcategories.categoryId}
+          where ${fieldSubcategoryProducts.productId} = ${products.id}
+          order by ${fieldCategories.title}, ${fieldSubcategories.title}
+          limit 1
+        )`,
+      })
+      .from(products)
+      .leftJoin(fieldProductDetails, eq(fieldProductDetails.productId, products.id))
+      .leftJoin(fieldListedProducts, eq(fieldListedProducts.productId, products.id))
+      .where(where)
+      .orderBy(asc(products.name), asc(products.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+  ]);
+
+  return {
+    total: Number(countRow[0]?.count ?? 0),
+    page,
+    pageSize,
+    rows: rows.map((row) => {
+      const images = fieldImages(row.images);
+      const gaps = fieldDetailGaps({
+        description: row.description,
+        activeIngredient: row.activeIngredient,
+        usage: row.usage,
+      });
+      return {
+        productId: row.productId,
+        name: row.name,
+        sku: row.sku,
+        appVisible: row.appVisible !== false,
+        brand: row.brand?.trim() || null,
+        description: row.description?.trim() || null,
+        mrp: row.mrp,
+        gstRate: row.gstRate,
+        hsnCode: row.hsnCode?.trim() || null,
+        stock: Number(row.stockQty) || 0,
+        minOrderQty: row.minOrderQty,
+        maxOrderQty: row.maxOrderQty,
+        instructions: row.instructions?.trim() || null,
+        usageLines: usageInstructionLines(row.usage),
+        crops: applicableCrops(row.crops, row.usage),
+        image: images[0] ?? null,
+        category: row.category ?? "Not in catalogue",
+        categorySlug: row.categorySlug ?? "unassigned",
+        sub: row.sub ?? "—",
+        gaps,
+        updatedAt: row.updatedAt?.toISOString() ?? null,
+      };
+    }),
+  };
+}
+
+export async function getFieldProductDetail(productId: number) {
+  const [product] = await db
+    .select({
+      id: products.id,
+      name: products.name,
+      sku: products.sku,
+      saleRate: products.saleRate,
+      mrp: products.mrp,
+      gstRate: products.gstRate,
+      hsnCode: products.hsnCode,
+      stockQty: products.stockQty,
+    })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1);
+  if (!product) return null;
+  const [detail] = await db
+    .select()
+    .from(fieldProductDetails)
+    .where(eq(fieldProductDetails.productId, productId))
+    .limit(1);
+  const [placement] = await db
+    .select({
+      category: fieldCategories.title,
+      categorySlug: fieldCategories.slug,
+      sub: fieldSubcategories.title,
+    })
+    .from(fieldSubcategoryProducts)
+    .innerJoin(fieldSubcategories, eq(fieldSubcategories.id, fieldSubcategoryProducts.subcategoryId))
+    .innerJoin(fieldCategories, eq(fieldCategories.id, fieldSubcategories.categoryId))
+    .where(eq(fieldSubcategoryProducts.productId, productId))
+    .orderBy(asc(fieldCategories.title), asc(fieldSubcategories.title))
+    .limit(1);
+  return {
+    product,
+    placement: placement ?? null,
+    detail: {
+      displayName: detail?.displayName ?? "",
+      images: fieldImages(detail?.images),
+      brochureUrl: detail?.brochureUrl ?? "",
+      activeIngredient: detail?.activeIngredient ?? "",
+      packSizes: detail?.packSizes ?? "",
+      headline: detail?.headline ?? "",
+      description: detail?.description ?? "",
+      antidote: detail?.antidote ?? "",
+      brand: detail?.brand ?? "",
+      instructions: detail?.instructions ?? "",
+      crops: detail?.crops ?? "",
+      minOrderQty: qtyInput(detail?.minOrderQty),
+      maxOrderQty: qtyInput(detail?.maxOrderQty),
+      usage: detail?.usage ?? [],
+      videos: detail?.videos ?? [],
+      ta: {
+        displayName: detail?.displayNameTa ?? "",
+        activeIngredient: detail?.activeIngredientTa ?? "",
+        packSizes: detail?.packSizesTa ?? "",
+        headline: detail?.headlineTa ?? "",
+        description: detail?.descriptionTa ?? "",
+        antidote: detail?.antidoteTa ?? "",
+        instructions: detail?.instructionsTa ?? "",
+      },
+    } satisfies FieldProductDetailInput,
+    updatedAt: detail?.updatedAt?.toISOString() ?? null,
+  };
+}
+
+export async function upsertFieldProductDetail(productId: number, input: FieldProductDetailInput) {
+  const qtyError = orderQtyPairError(input.minOrderQty ?? "", input.maxOrderQty ?? "");
+  if (qtyError) throw new Error(qtyError);
+  const values = {
+    displayName: clean(input.displayName) || null,
+    images: input.images.map(clean).filter(Boolean),
+    brochureUrl: clean(input.brochureUrl) || null,
+    activeIngredient: clean(input.activeIngredient) || null,
+    packSizes: clean(input.packSizes) || null,
+    headline: clean(input.headline) || null,
+    description: clean(input.description) || null,
+    antidote: clean(input.antidote) || null,
+    brand: clean(input.brand) || null,
+    instructions: clean(input.instructions) || null,
+    crops: clean(input.crops) || null,
+    minOrderQty: parseOrderQty(input.minOrderQty).value,
+    maxOrderQty: parseOrderQty(input.maxOrderQty).value,
+    usage: input.usage
+      .map((u) => ({
+        crop: clean(u.crop),
+        pest: clean(u.pest),
+        perHectare: clean(u.perHectare),
+        perAcre: clean(u.perAcre),
+      }))
+      .filter((u) => u.crop || u.pest),
+    videos: input.videos
+      .map((v) => ({ title: clean(v.title), url: clean(v.url), thumbnail: clean(v.thumbnail) || undefined }))
+      .filter((v) => v.url),
+    ...(input.ta
+      ? {
+          displayNameTa: clean(input.ta.displayName) || null,
+          activeIngredientTa: clean(input.ta.activeIngredient) || null,
+          packSizesTa: clean(input.ta.packSizes) || null,
+          headlineTa: clean(input.ta.headline) || null,
+          descriptionTa: clean(input.ta.description) || null,
+          antidoteTa: clean(input.ta.antidote) || null,
+          instructionsTa: clean(input.ta.instructions) || null,
+        }
+      : {}),
+    updatedAt: new Date(),
+  };
+  await db
+    .insert(fieldProductDetails)
+    .values({ productId, ...values })
+    .onConflictDoUpdate({ target: fieldProductDetails.productId, set: values });
+}
+
+export async function publicFieldProductDetail(productId: number) {
+  const found = await getFieldProductDetail(productId);
+  if (!found) return null;
+  const { product, detail } = found;
+  return {
+    productId: product.id,
+    name: detail.displayName || product.name,
+    sku: product.sku,
+    price: Number(product.saleRate),
+    images: detail.images,
+    brochureUrl: detail.brochureUrl || null,
+    activeIngredient: detail.activeIngredient,
+    packSizes: detail.packSizes,
+    headline: detail.headline,
+    description: detail.description,
+    antidote: detail.antidote,
+    brand: detail.brand || null,
+    mrp: product.mrp != null && product.mrp !== "" ? Number(product.mrp) : null,
+    gstRate: Number(product.gstRate),
+    hsnCode: product.hsnCode,
+    stock: Number(product.stockQty) || 0,
+    minOrderQty: detail.minOrderQty ? Number(detail.minOrderQty) : null,
+    maxOrderQty: detail.maxOrderQty ? Number(detail.maxOrderQty) : null,
+    instructions: detail.instructions || null,
+    crops: applicableCrops(detail.crops, detail.usage),
+    usage: detail.usage,
+    videos: detail.videos.map((v) => ({ ...v, thumbnail: videoThumbnail(v) })),
+    // Tamil text the app shows when its language is Tamil; null fields fall back to English.
+    ta: {
+      name: detail.ta?.displayName || null,
+      activeIngredient: detail.ta?.activeIngredient || null,
+      packSizes: detail.ta?.packSizes || null,
+      headline: detail.ta?.headline || null,
+      description: detail.ta?.description || null,
+      antidote: detail.ta?.antidote || null,
+      instructions: detail.ta?.instructions || null,
+    },
+  };
+}
