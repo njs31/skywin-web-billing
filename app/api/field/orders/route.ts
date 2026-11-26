@@ -5,7 +5,8 @@ import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-off
 import { listFieldOrders, placeFieldOrder } from "@/lib/queries/field-orders";
 import { fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-auth";
 import { priceFieldLines } from "@/lib/field-order-pricing";
-import { getRazorpayPayment } from "@/lib/payments/razorpay";
+import { getPaymentLink, getRazorpayPayment, paidLinkPayment, paymentLinkNotes } from "@/lib/payments/razorpay";
+import { upiQrOwnedBy } from "@/lib/field-upi-qr";
 import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
 import { refundUnfillableOrder, STOCK_UNAVAILABLE } from "@/lib/stock-holds";
 import { shippingOnRazorpayOrder } from "@/lib/field-shipping";
@@ -115,7 +116,21 @@ export async function POST(req: NextRequest) {
     let shippingAmount = 0;
     if (paymentId) {
       const payment = (await getRazorpayPayment(paymentId)) as { amount?: number; status?: string; order_id?: string };
-      if (body.razorpayOrderId && payment.order_id && payment.order_id !== String(body.razorpayOrderId)) {
+      // Paid by scanning the officer's UPI QR: the payment sits on the QR's own Razorpay order,
+      // so it is matched through the QR (same payment, same field order, same person) instead.
+      const linkId = body.paymentLinkId ? String(body.paymentLinkId) : "";
+      let pricedOrderId = payment.order_id;
+      if (linkId) {
+        const link = await getPaymentLink(linkId);
+        const notes = paymentLinkNotes(link);
+        const ok =
+          paidLinkPayment(link)?.payment_id === paymentId &&
+          notes.fieldOrder === String(body.orderId || body.id || "") &&
+          (!body.razorpayOrderId || notes.rzpOrder === String(body.razorpayOrderId)) &&
+          (!who || upiQrOwnedBy(notes, who));
+        if (!ok) return fieldJson({ success: false, error: "Payment does not match this order." }, 400);
+        pricedOrderId = notes.rzpOrder;
+      } else if (body.razorpayOrderId && payment.order_id && payment.order_id !== String(body.razorpayOrderId)) {
         return fieldJson({ success: false, error: "Payment does not match this order." }, 400);
       }
       if (payment.status !== "captured" && payment.status !== "authorized") {
@@ -128,7 +143,7 @@ export async function POST(req: NextRequest) {
         phone: farmerPhone.replace(/\D/g, "").slice(-10),
       };
       // Delivery the server priced at payment start goes on the invoice.
-      shippingAmount = (await shippingOnRazorpayOrder(payment.order_id))?.amount ?? 0;
+      shippingAmount = (await shippingOnRazorpayOrder(pricedOrderId))?.amount ?? 0;
       // Reward points are not redeemed in the app (nothing deducts them), so the full price is due.
       if (paidAmount + 1 < priced.minimumTotal + shippingAmount) {
         console.error("[field/orders] underpaid", { orderId: body.orderId, paymentId, paidAmount, minimum: priced.minimumTotal + shippingAmount });

@@ -22,6 +22,8 @@ type RazorpayEvent = {
         notes?: Record<string, string> | unknown[];
       };
     };
+    /** payment_link.paid: the officer's UPI QR was paid. Its notes carry the field order. */
+    payment_link?: { entity?: { id?: string; notes?: Record<string, string> | unknown[] } };
   };
 };
 
@@ -39,7 +41,8 @@ function signatureOk(raw: string, signature: string | null) {
  * closed, lost signal or crashed between paying and saving.
  *
  * Razorpay dashboard → Webhooks: URL https://<billing host>/api/field/pay/webhook,
- * events payment.authorized, payment.captured and payment.failed, secret = RAZORPAY_WEBHOOK_SECRET.
+ * events payment.authorized, payment.captured, payment.failed and payment_link.paid (UPI QR
+ * payments), secret = RAZORPAY_WEBHOOK_SECRET.
  * Sales are unique by field order id, so this and the app saving the same order never
  * create two sales.
  */
@@ -56,15 +59,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
   const payment = event.payload?.payment?.entity;
-  const notes = (payment?.notes && !Array.isArray(payment.notes) ? payment.notes : {}) as Record<string, string>;
+  const link = event.payload?.payment_link?.entity;
+  const notesFrom = (n: unknown) => (n && !Array.isArray(n) && typeof n === "object" ? (n as Record<string, string>) : {});
+  // A QR payment's own notes may be empty; the paid link's notes always carry the order.
+  const notes = { ...notesFrom(link?.notes), ...notesFrom(payment?.notes) };
   const orderId = String(notes.fieldOrder || "");
+  // The Razorpay order the server priced (delivery charge). A QR payment sits on the link's own order.
+  const pricedOrderId = notes.rzpOrder || payment?.order_id;
 
   // A failed payment gives its held stock back at once instead of after the hold expires.
   if (event.event === "payment.failed") {
     if (orderId) await releaseHolds(orderId);
     return NextResponse.json({ ok: true, released: !!orderId });
   }
-  if (event.event !== "payment.authorized" && event.event !== "payment.captured") {
+  if (event.event !== "payment.authorized" && event.event !== "payment.captured" && event.event !== "payment_link.paid") {
     return NextResponse.json({ ok: true, ignored: event.event });
   }
   if (!payment?.id || !payment.order_id || !orderId) {
@@ -92,9 +100,9 @@ export async function POST(req: NextRequest) {
       note: "Saved from Razorpay webhook",
       paidAmount: (Number(payment.amount) || 0) / 100,
       razorpayPaymentId: payment.id,
-      razorpayOrderId: payment.order_id,
+      razorpayOrderId: pricedOrderId,
       items: priced.lines,
-      shippingAmount: (await shippingOnRazorpayOrder(payment.order_id))?.amount ?? 0,
+      shippingAmount: (await shippingOnRazorpayOrder(pricedOrderId))?.amount ?? 0,
     });
     if (!result.duplicate) {
       console.warn("[field/pay/webhook] created sale the app did not save", { orderId, saleId: result.saleId });
