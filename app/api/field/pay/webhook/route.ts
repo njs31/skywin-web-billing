@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { placeFieldOrder } from "@/lib/queries/field-orders";
 import { priceFieldLines, unpackCart } from "@/lib/field-order-pricing";
-import { captureVerifiedPayment } from "@/lib/payments/razorpay";
+import { captureVerifiedPayment, paidQrCodePayment } from "@/lib/payments/razorpay";
 import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
 import { refundUnfillableOrder, releaseHolds, STOCK_UNAVAILABLE } from "@/lib/stock-holds";
 import { shippingOnRazorpayOrder } from "@/lib/field-shipping";
@@ -22,7 +22,9 @@ type RazorpayEvent = {
         notes?: Record<string, string> | unknown[];
       };
     };
-    /** payment_link.paid: the officer's UPI QR was paid. Its notes carry the field order. */
+    /** qr_code.credited: the officer's UPI QR (QR Codes API) was paid. Its notes carry the field order. */
+    qr_code?: { entity?: { id?: string; notes?: Record<string, string> | unknown[] } };
+    /** payment_link.paid: an older payment-link QR was paid. Its notes carry the field order. */
     payment_link?: { entity?: { id?: string; notes?: Record<string, string> | unknown[] } };
   };
 };
@@ -41,8 +43,8 @@ function signatureOk(raw: string, signature: string | null) {
  * closed, lost signal or crashed between paying and saving.
  *
  * Razorpay dashboard → Webhooks: URL https://<billing host>/api/field/pay/webhook,
- * events payment.authorized, payment.captured, payment.failed and payment_link.paid (UPI QR
- * payments), secret = RAZORPAY_WEBHOOK_SECRET.
+ * events payment.authorized, payment.captured, payment.failed, qr_code.credited (officer's UPI
+ * QR payments) and payment_link.paid (older QRs), secret = RAZORPAY_WEBHOOK_SECRET.
  * Sales are unique by field order id, so this and the app saving the same order never
  * create two sales.
  */
@@ -59,9 +61,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
   const payment = event.payload?.payment?.entity;
-  const link = event.payload?.payment_link?.entity;
+  const link = event.payload?.payment_link?.entity ?? event.payload?.qr_code?.entity;
   const notesFrom = (n: unknown) => (n && !Array.isArray(n) && typeof n === "object" ? (n as Record<string, string>) : {});
-  // A QR payment's own notes may be empty; the paid link's notes always carry the order.
+  // A QR payment's own notes may be empty; the paid QR's notes always carry the order.
   const notes = { ...notesFrom(link?.notes), ...notesFrom(payment?.notes) };
   const orderId = String(notes.fieldOrder || "");
   // The Razorpay order the server priced (delivery charge). A QR payment sits on the link's own order.
@@ -72,10 +74,12 @@ export async function POST(req: NextRequest) {
     if (orderId) await releaseHolds(orderId);
     return NextResponse.json({ ok: true, released: !!orderId });
   }
-  if (event.event !== "payment.authorized" && event.event !== "payment.captured" && event.event !== "payment_link.paid") {
+  const handled = ["payment.authorized", "payment.captured", "payment_link.paid", "qr_code.credited"];
+  if (!handled.includes(String(event.event))) {
     return NextResponse.json({ ok: true, ignored: event.event });
   }
-  if (!payment?.id || !payment.order_id || !orderId) {
+  // A QR Codes payment has no Razorpay order; every other field payment does.
+  if (!payment?.id || !orderId || (!payment.order_id && event.event !== "qr_code.credited")) {
     return NextResponse.json({ ok: true, ignored: "not a field order" });
   }
 
@@ -87,8 +91,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    if (event.event === "payment.authorized") {
+    if (event.event === "payment.authorized" && payment.order_id) {
       await captureVerifiedPayment({ orderId: payment.order_id, paymentId: payment.id });
+    }
+    if (event.event === "qr_code.credited" && payment.status !== "captured") {
+      // Only a captured QR payment is kept as a sale.
+      const qrId = event.payload?.qr_code?.entity?.id;
+      const paid = qrId ? await paidQrCodePayment(qrId) : null;
+      if (paid?.id !== payment.id) return NextResponse.json({ error: "QR payment not captured yet" }, { status: 500 });
     }
     const priced = await priceFieldLines(lines);
     const result = await placeFieldOrder({

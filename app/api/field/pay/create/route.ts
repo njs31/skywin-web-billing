@@ -4,7 +4,7 @@ import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { cleanMobile, clientIp, fieldIdentity, legacyFieldKeyAllowed, rateLimited } from "@/lib/field-auth";
 import { packCart, priceFieldLines, type FieldLineIn } from "@/lib/field-order-pricing";
 import { officerMayServeFarmer } from "@/lib/field-order-access";
-import { cancelPaymentLink, createRazorpayOrder } from "@/lib/payments/razorpay";
+import { closeQrCode, createRazorpayOrder } from "@/lib/payments/razorpay";
 import { makeUpiQr } from "@/lib/field-upi-qr-make";
 import { placeStockHolds, releaseHolds } from "@/lib/stock-holds";
 import { quoteOrderShipping } from "@/lib/field-shipping";
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
       items?: FieldLineIn[];
       /** Delivery PIN: the server prices delivery itself and puts it on the invoice. */
       shipPin?: string;
-      /** Officer collecting in person: also make the UPI QR in this reply. */
-      qr?: boolean;
+      /** Officer collecting in person: also make the UPI QR (Razorpay QR Codes API) in this reply. */
+      upiQr?: boolean;
     };
     const rupees = Number(body.amount);
     if (!Number.isFinite(rupees) || rupees < 1) return fieldJson({ error: "Invalid amount" }, 400);
@@ -128,8 +128,9 @@ export async function POST(req: NextRequest) {
     const startedAt = Date.now();
     // An officer collecting in person also gets the UPI QR in this same reply, made at the same
     // time as the Razorpay order (one trip from the phone instead of two). A QR that fails
-    // doesn't stop the payment: the app can still ask /api/field/pay/qr or pay in Razorpay.
-    const wantQr = !!body.qr && !!who && who.role !== "farmer" && amountPaise >= 100;
+    // doesn't stop the payment: the app can still ask /api/field/pay/upi-qr or pay in Razorpay.
+    // (Older apps sent `qr: true` for the payment-link QR, which is gone; they get no QR here.)
+    const wantQr = !!body.upiQr && !!who && who.role !== "farmer" && amountPaise >= 100;
     const qrPromise = wantQr
       ? makeUpiQr({ amountPaise, fieldOrder: receipt, notes }).then(
           (qr) => ({ qr, error: null as string | null }),
@@ -144,7 +145,7 @@ export async function POST(req: NextRequest) {
       // No payment started: give the stock back and close the QR straight away.
       if (holdExpiresAt) await releaseHolds(receipt);
       const made = await qrPromise;
-      if (made?.qr) await cancelPaymentLink(made.qr.linkId).catch(() => undefined);
+      if (made?.qr) await closeQrCode(made.qr.qrId).catch(() => undefined);
       throw err;
     }
     const orderMs = Date.now() - startedAt;
@@ -166,7 +167,7 @@ export async function POST(req: NextRequest) {
       receipt,
       holdExpiresAt,
       ...(made?.qr
-        ? { qr: { linkId: made.qr.linkId, upi: made.qr.upi, amount: amountPaise, expiresAt: made.qr.expiresAt } }
+        ? { upiQr: { qrId: made.qr.qrId, image: made.qr.image, amount: amountPaise, expiresAt: made.qr.expiresAt } }
         : {}),
       ...(made?.error ? { qrError: made.error } : {}),
     });

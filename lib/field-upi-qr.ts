@@ -16,8 +16,8 @@ export function upiQrOwnedBy(notes: Record<string, string>, who: Pick<FieldIdent
 }
 
 /**
- * When the QR stops taking payments (Unix seconds). Razorpay needs a link to stay open at least
- * 15 minutes; 16 leaves room for clock drift. The app replaces it before then if needed.
+ * When the QR stops taking payments (Unix seconds): the QR Codes API's `close_by`. Just past the
+ * 15-minute stock hold; the app stops showing it 30 s before the hold ends.
  */
 export function upiQrExpiry(nowMs: number) {
   return Math.floor(nowMs / 1000) + 16 * 60;

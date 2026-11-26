@@ -5,7 +5,7 @@ import { fieldAppUserByPhone, fieldOfficerSeesOwnFarmers } from "@/lib/field-off
 import { listFieldOrders, placeFieldOrder } from "@/lib/queries/field-orders";
 import { fieldIdentity, legacyFieldKeyAllowed } from "@/lib/field-auth";
 import { priceFieldLines } from "@/lib/field-order-pricing";
-import { getPaymentLink, getRazorpayPayment, paidLinkPayment, paymentLinkNotes } from "@/lib/payments/razorpay";
+import { getPaymentLink, getQrCode, getRazorpayPayment, paidLinkPayment, paidQrCodePayment, paymentLinkNotes, qrCodeNotes } from "@/lib/payments/razorpay";
 import { upiQrOwnedBy } from "@/lib/field-upi-qr";
 import { notifyLater, peopleForSale, pushCopy } from "@/lib/field-push";
 import { refundUnfillableOrder, STOCK_UNAVAILABLE } from "@/lib/stock-holds";
@@ -116,17 +116,27 @@ export async function POST(req: NextRequest) {
     let shippingAmount = 0;
     if (paymentId) {
       const payment = (await getRazorpayPayment(paymentId)) as { amount?: number; status?: string; order_id?: string };
-      // Paid by scanning the officer's UPI QR: the payment sits on the QR's own Razorpay order,
-      // so it is matched through the QR (same payment, same field order, same person) instead.
+      // Paid by scanning the officer's UPI QR: the payment is not on the Razorpay order the app
+      // started, so it is matched through the QR (same payment, same field order, same person).
+      // `upiQrId` is a Razorpay QR Codes QR; `paymentLinkId` is the older payment-link QR.
+      const qrId = body.upiQrId ? String(body.upiQrId) : "";
       const linkId = body.paymentLinkId ? String(body.paymentLinkId) : "";
       let pricedOrderId = payment.order_id;
       // Delivery charge the server priced, carried on the QR itself (set when the QR was made).
       let qrShipping: number | null = null;
-      if (linkId) {
-        const link = await getPaymentLink(linkId);
-        const notes = paymentLinkNotes(link);
+      if (qrId || linkId) {
+        let notes: Record<string, string>;
+        let paidId: string | undefined;
+        if (qrId) {
+          notes = qrCodeNotes(await getQrCode(qrId));
+          paidId = (await paidQrCodePayment(qrId))?.id;
+        } else {
+          const link = await getPaymentLink(linkId);
+          notes = paymentLinkNotes(link);
+          paidId = paidLinkPayment(link)?.payment_id;
+        }
         const ok =
-          paidLinkPayment(link)?.payment_id === paymentId &&
+          paidId === paymentId &&
           notes.fieldOrder === String(body.orderId || body.id || "") &&
           (!body.razorpayOrderId || !notes.rzpOrder || notes.rzpOrder === String(body.razorpayOrderId)) &&
           (!who || upiQrOwnedBy(notes, who));
