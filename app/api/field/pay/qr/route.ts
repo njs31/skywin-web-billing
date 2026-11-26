@@ -2,16 +2,9 @@ import { NextRequest } from "next/server";
 import { verifyFieldApiKey } from "@/lib/api-auth";
 import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { fieldIdentity, rateLimited, type FieldIdentity } from "@/lib/field-auth";
-import {
-  cancelPaymentLink,
-  createUpiPaymentLink,
-  getPaymentLink,
-  getRazorpayOrder,
-  paidLinkPayment,
-  paymentLinkNotes,
-  upiIntentForLink,
-} from "@/lib/payments/razorpay";
-import { upiQrOwnedBy, upiQrExpiry } from "@/lib/field-upi-qr";
+import { cancelPaymentLink, getPaymentLink, getRazorpayOrder, paidLinkPayment, paymentLinkNotes } from "@/lib/payments/razorpay";
+import { upiQrOwnedBy } from "@/lib/field-upi-qr";
+import { makeUpiQr } from "@/lib/field-upi-qr-make";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +19,7 @@ type OrderNotes = Record<string, string>;
  * Dynamic UPI QR for a field order, so the farmer pays by scanning the officer's screen.
  *
  * POST { razorpayOrderId, replaceLinkId? } → { linkId, upi, expiresAt }
+ *   (A new QR for an order already started. The first QR usually comes with /pay/create.)
  *   Makes a UPI payment link for exactly the Razorpay order's amount, carrying the order's
  *   notes (cart, farmer, delivery) plus `rzpOrder`, so the sale is saved with the same checks
  *   as an in-app payment. `replaceLinkId` cancels the QR it replaces.
@@ -65,20 +59,8 @@ export async function POST(req: NextRequest) {
 
     if (body.replaceLinkId) await cancelOwnLink(String(body.replaceLinkId), who).catch(() => undefined);
 
-    const link = await createUpiPaymentLink({
-      amountPaise,
-      referenceId: `${fieldOrder}-${Date.now().toString(36)}`,
-      description: `SkyWin field order ${fieldOrder}`,
-      expireBy: upiQrExpiry(Date.now()),
-      notes: { ...notes, rzpOrder: razorpayOrderId },
-    });
-    const upi = await upiIntentForLink(String(link.short_url || ""));
-    return fieldJson({
-      linkId: link.id,
-      upi,
-      amount: amountPaise,
-      expiresAt: new Date(Number(link.expire_by) * 1000).toISOString(),
-    });
+    const made = await makeUpiQr({ amountPaise, fieldOrder, notes: { ...notes, rzpOrder: razorpayOrderId } });
+    return fieldJson({ linkId: made.linkId, upi: made.upi, amount: amountPaise, expiresAt: made.expiresAt });
   } catch (err) {
     return fieldJson({ error: err instanceof Error ? err.message : "Could not make the UPI QR." }, 400);
   }

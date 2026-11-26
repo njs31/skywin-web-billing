@@ -4,7 +4,8 @@ import { fieldJson, fieldOptions } from "@/lib/field-cors";
 import { cleanMobile, clientIp, fieldIdentity, legacyFieldKeyAllowed, rateLimited } from "@/lib/field-auth";
 import { packCart, priceFieldLines, type FieldLineIn } from "@/lib/field-order-pricing";
 import { officerMayServeFarmer } from "@/lib/field-order-access";
-import { createRazorpayOrder } from "@/lib/payments/razorpay";
+import { cancelPaymentLink, createRazorpayOrder } from "@/lib/payments/razorpay";
+import { makeUpiQr } from "@/lib/field-upi-qr-make";
 import { placeStockHolds, releaseHolds } from "@/lib/stock-holds";
 import { quoteOrderShipping } from "@/lib/field-shipping";
 import { productsHiddenInApp } from "@/lib/field-listed";
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
       items?: FieldLineIn[];
       /** Delivery PIN: the server prices delivery itself and puts it on the invoice. */
       shipPin?: string;
+      /** Officer collecting in person: also make the UPI QR in this reply. */
+      qr?: boolean;
     };
     const rupees = Number(body.amount);
     if (!Number.isFinite(rupees) || rupees < 1) return fieldJson({ error: "Invalid amount" }, 400);
@@ -113,24 +116,47 @@ export async function POST(req: NextRequest) {
       return fieldJson({ error: "Cart items are required." }, 400);
     }
 
+    const notes: Record<string, string> = {
+      fieldOrder: receipt,
+      farmer: String(body.farmerName || "").slice(0, 120),
+      phone: farmerPhone,
+      ...(who && who.role !== "farmer" ? { officerPhone: who.phone } : {}),
+      ...(cart ? { cart } : {}),
+      ...(shipping ? { ship: String(shipping.amount), pin: shipping.pin } : {}),
+    };
+    const amountPaise = Math.round(rupees * 100);
+    const startedAt = Date.now();
+    // An officer collecting in person also gets the UPI QR in this same reply, made at the same
+    // time as the Razorpay order (one trip from the phone instead of two). A QR that fails
+    // doesn't stop the payment: the app can still ask /api/field/pay/qr or pay in Razorpay.
+    const wantQr = !!body.qr && !!who && who.role !== "farmer" && amountPaise >= 100;
+    const qrPromise = wantQr
+      ? makeUpiQr({ amountPaise, fieldOrder: receipt, notes }).then(
+          (qr) => ({ qr, error: null as string | null }),
+          (err: unknown) => ({ qr: null, error: err instanceof Error ? err.message : "Could not make the UPI QR." })
+        )
+      : null;
+
     let order: Awaited<ReturnType<typeof createRazorpayOrder>>;
     try {
-      order = await createRazorpayOrder({
-        amountPaise: Math.round(rupees * 100),
-        receipt,
-        notes: {
-          fieldOrder: receipt,
-          farmer: String(body.farmerName || "").slice(0, 120),
-          phone: farmerPhone,
-          ...(who && who.role !== "farmer" ? { officerPhone: who.phone } : {}),
-          ...(cart ? { cart } : {}),
-          ...(shipping ? { ship: String(shipping.amount), pin: shipping.pin } : {}),
-        },
-      });
+      order = await createRazorpayOrder({ amountPaise, receipt, notes });
     } catch (err) {
-      // No payment started: give the stock back straight away.
+      // No payment started: give the stock back and close the QR straight away.
       if (holdExpiresAt) await releaseHolds(receipt);
+      const made = await qrPromise;
+      if (made?.qr) await cancelPaymentLink(made.qr.linkId).catch(() => undefined);
       throw err;
+    }
+    const orderMs = Date.now() - startedAt;
+    const made = await qrPromise;
+    if (wantQr) {
+      console.info("[field/pay/create] timings", {
+        receipt,
+        orderMs,
+        qrMs: Date.now() - startedAt,
+        qrSteps: made?.qr?.timings ?? null,
+        qrError: made?.error ?? null,
+      });
     }
     return fieldJson({
       keyId: order.keyId,
@@ -139,6 +165,10 @@ export async function POST(req: NextRequest) {
       currency: order.currency,
       receipt,
       holdExpiresAt,
+      ...(made?.qr
+        ? { qr: { linkId: made.qr.linkId, upi: made.qr.upi, amount: amountPaise, expiresAt: made.qr.expiresAt } }
+        : {}),
+      ...(made?.error ? { qrError: made.error } : {}),
     });
   } catch (err) {
     return fieldJson({ error: err instanceof Error ? err.message : "Could not start payment" }, 400);

@@ -120,16 +120,20 @@ export async function POST(req: NextRequest) {
       // so it is matched through the QR (same payment, same field order, same person) instead.
       const linkId = body.paymentLinkId ? String(body.paymentLinkId) : "";
       let pricedOrderId = payment.order_id;
+      // Delivery charge the server priced, carried on the QR itself (set when the QR was made).
+      let qrShipping: number | null = null;
       if (linkId) {
         const link = await getPaymentLink(linkId);
         const notes = paymentLinkNotes(link);
         const ok =
           paidLinkPayment(link)?.payment_id === paymentId &&
           notes.fieldOrder === String(body.orderId || body.id || "") &&
-          (!body.razorpayOrderId || notes.rzpOrder === String(body.razorpayOrderId)) &&
+          (!body.razorpayOrderId || !notes.rzpOrder || notes.rzpOrder === String(body.razorpayOrderId)) &&
           (!who || upiQrOwnedBy(notes, who));
         if (!ok) return fieldJson({ success: false, error: "Payment does not match this order." }, 400);
         pricedOrderId = notes.rzpOrder;
+        const ship = Number(notes.ship);
+        qrShipping = notes.ship != null && Number.isFinite(ship) && ship >= 0 ? ship : notes.rzpOrder ? null : 0;
       } else if (body.razorpayOrderId && payment.order_id && payment.order_id !== String(body.razorpayOrderId)) {
         return fieldJson({ success: false, error: "Payment does not match this order." }, 400);
       }
@@ -143,7 +147,7 @@ export async function POST(req: NextRequest) {
         phone: farmerPhone.replace(/\D/g, "").slice(-10),
       };
       // Delivery the server priced at payment start goes on the invoice.
-      shippingAmount = (await shippingOnRazorpayOrder(pricedOrderId))?.amount ?? 0;
+      shippingAmount = qrShipping ?? (await shippingOnRazorpayOrder(pricedOrderId))?.amount ?? 0;
       // Reward points are not redeemed in the app (nothing deducts them), so the full price is due.
       if (paidAmount + 1 < priced.minimumTotal + shippingAmount) {
         console.error("[field/orders] underpaid", { orderId: body.orderId, paymentId, paidAmount, minimum: priced.minimumTotal + shippingAmount });

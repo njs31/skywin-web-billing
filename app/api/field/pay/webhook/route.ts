@@ -102,7 +102,11 @@ export async function POST(req: NextRequest) {
       razorpayPaymentId: payment.id,
       razorpayOrderId: pricedOrderId,
       items: priced.lines,
-      shippingAmount: (await shippingOnRazorpayOrder(pricedOrderId))?.amount ?? 0,
+      // The delivery charge the server priced rides on the notes (order, or the QR made with it).
+      shippingAmount:
+        notes.ship != null && notes.ship !== "" && Number.isFinite(Number(notes.ship))
+          ? Number(notes.ship)
+          : (await shippingOnRazorpayOrder(pricedOrderId))?.amount ?? 0,
     });
     if (!result.duplicate) {
       console.warn("[field/pay/webhook] created sale the app did not save", { orderId, saleId: result.saleId });
