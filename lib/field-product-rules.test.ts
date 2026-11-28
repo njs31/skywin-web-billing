@@ -62,6 +62,10 @@ test("usage rows become application lines", () => {
     usageInstructionLines([{ crop: "Paddy", pest: "Stem borer", perAcre: "2 ml", perHectare: "" }]),
     ["Paddy · Stem borer — 2 ml / acre"]
   );
+  assert.deepEqual(
+    usageInstructionLines([{ crop: "Banana", pest: "Growth promoter", stage: "30-45 days", perAcre: "3 kg", perHectare: "7.5 kg" }]),
+    ["Banana · Growth promoter · 30-45 days — 3 kg / acre, 7.5 kg / ha"]
+  );
 });
 
 test("empty catalogue money and quantities stay blank", () => {

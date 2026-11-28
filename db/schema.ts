@@ -900,7 +900,10 @@ export const farms = pgTable(
 
 export type FieldUsageRow = {
   crop: string;
+  /** Shown in the app as "Description / Benefits / Insect". */
   pest: string;
+  /** Crop stage, e.g. "Vegetative" or "30-45 days" (rows saved before Nov 2026 have none). */
+  stage?: string;
   perHectare: string;
   perAcre: string;
 };

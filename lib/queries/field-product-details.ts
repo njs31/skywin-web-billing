@@ -407,6 +407,7 @@ export async function upsertFieldProductDetail(productId: number, input: FieldPr
       .map((u) => ({
         crop: clean(u.crop),
         pest: clean(u.pest),
+        stage: clean(u.stage),
         perHectare: clean(u.perHectare),
         perAcre: clean(u.perAcre),
       }))

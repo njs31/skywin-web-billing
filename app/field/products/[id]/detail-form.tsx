@@ -359,16 +359,17 @@ export function ProductDetailForm({
                 <h2 className={h2}>{d.usageTitle}</h2>
                 <p className="mt-1 text-xs text-[#5E6B62]">{d.usageHelp}</p>
               </div>
-              <button type="button" className={buttonClass("secondary", "sm")} onClick={() => set("usage", [...f.usage, { crop: "", pest: "", perHectare: "", perAcre: "" }])}>
+              <button type="button" className={buttonClass("secondary", "sm")} onClick={() => set("usage", [...f.usage, { crop: "", pest: "", stage: "", perHectare: "", perAcre: "" }])}>
                 <Plus aria-hidden /> {d.addRow}
               </button>
             </div>
             {f.usage.length === 0 ? <p className="rounded-xl bg-[#FAFBF7] px-4 py-6 text-center text-sm text-[#5E6B62]">{d.noUsage}</p> : null}
             <div className="space-y-3">
               {f.usage.map((row, index) => (
-                <div key={index} className="grid gap-3 rounded-xl border border-[#1E3317]/10 bg-[#FAFBF7] p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_0.8fr_0.8fr_auto] lg:items-end">
+                <div key={index} className="grid gap-3 rounded-xl border border-[#1E3317]/10 bg-[#FAFBF7] p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1.3fr_0.9fr_0.8fr_0.8fr_auto] lg:items-end">
                   <Field label={d.crop} value={row.crop} onChange={(v) => updateUsage(index, "crop", v)} />
                   <Field label={d.pest} value={row.pest} onChange={(v) => updateUsage(index, "pest", v)} />
+                  <Field label={d.stage} value={row.stage ?? ""} onChange={(v) => updateUsage(index, "stage", v)} />
                   <Field label={d.perHectare} value={row.perHectare} onChange={(v) => updateUsage(index, "perHectare", v)} />
                   <Field label={d.perAcre} value={row.perAcre} onChange={(v) => updateUsage(index, "perAcre", v)} />
                   <button

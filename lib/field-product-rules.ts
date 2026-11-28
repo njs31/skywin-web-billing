@@ -70,13 +70,14 @@ export function usageInstructionLines(
   usage: Array<{
     crop?: string | null;
     pest?: string | null;
+    stage?: string | null;
     perHectare?: string | null;
     perAcre?: string | null;
   }> | null | undefined
 ) {
   return (usage ?? [])
     .map((row) => {
-      const target = [(row.crop ?? "").trim(), (row.pest ?? "").trim()].filter(Boolean).join(" · ");
+      const target = [(row.crop ?? "").trim(), (row.pest ?? "").trim(), (row.stage ?? "").trim()].filter(Boolean).join(" · ");
       const dose = [
         (row.perAcre ?? "").trim() ? `${(row.perAcre ?? "").trim()} / acre` : "",
         (row.perHectare ?? "").trim() ? `${(row.perHectare ?? "").trim()} / ha` : "",
